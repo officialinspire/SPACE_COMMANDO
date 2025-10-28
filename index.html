@@ -12,6 +12,13 @@
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Press+Start+2P&display=swap" rel="stylesheet">
 </head>
 <body>
+  <!-- Intro video plays when the page first loads.  Once the clip
+       finishes it hides itself, revealing the game canvas and menus
+       underneath.  Muted is required for autoplay on mobile
+       browsers.  The CSS class intro-video positions the clip full
+       screen. -->
+  <video id="intro-video" class="intro-video" src="inspiresoftwareintro.mp4" autoplay muted playsinline></video>
+
   <!-- The game runs inside this canvas. It is scaled via CSS to fill the page while preserving the aspect ratio. -->
   <canvas id="game-canvas" width="800" height="450"></canvas>
 
@@ -53,5 +60,17 @@
 
   <!-- Main game logic -->
   <script src="index.js"></script>
+
+  <!-- Hide the intro once it finishes playing.  Listening on the
+       ended event ensures that the game only becomes visible when
+       the credit video is complete. -->
+  <script>
+    const introVideo = document.getElementById('intro-video');
+    if (introVideo) {
+      introVideo.addEventListener('ended', () => {
+        introVideo.style.display = 'none';
+      });
+    }
+  </script>
 </body>
 </html>

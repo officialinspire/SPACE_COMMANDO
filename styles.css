@@ -15,6 +15,13 @@ html, body {
   color: #fff;
 }
 
+/* Define shared CSS custom properties.  The controls bar height is
+   referenced by both the canvas sizing and the bar itself.  Setting
+   it at :root makes it accessible throughout the stylesheet. */
+:root {
+  --controls-height: 120px;
+}
+
 /* -------------------------------------------------------------------
  * Mobile control bar
  *
@@ -32,9 +39,8 @@ html, body {
   left: 0;
   bottom: 0;
   width: 100%;
-  /* Reserve space for the control bar on mobile devices.  The height is
-     reused in the mobile canvas sizing via a calc() expression. */
-  --controls-height: 120px;
+  /* Use the shared custom property for consistent sizing between
+     elements. */
   height: var(--controls-height);
   background: #0f1c47;
   /* Hidden on desktop by default; shown via script on mobile */
@@ -123,6 +129,26 @@ html, body {
     width: 100vw;
     height: calc(100vh - var(--controls-height));
   }
+}
+
+/* When the device is in landscape orientation, ensure the game fills
+   the full width and height (minus controls) on small screens. */
+@media (orientation: landscape) and (max-width: 768px) {
+  #game-canvas {
+    width: 100vw;
+    height: calc(100vh - var(--controls-height));
+  }
+}
+
+/* Style the intro video to cover the entire viewport until it is hidden. */
+.intro-video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 1000;
 }
 
 /* Style the canvas. By default it is fixed to 800×450 pixels; on larger screens we scale it up while preserving
