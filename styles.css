@@ -19,7 +19,7 @@ html, body {
    referenced by both the canvas sizing and the bar itself.  Setting
    it at :root makes it accessible throughout the stylesheet. */
 :root {
-  --controls-height: 120px;
+  --controls-height: 140px;
 }
 
 /* -------------------------------------------------------------------
@@ -39,18 +39,16 @@ html, body {
   left: 0;
   bottom: 0;
   width: 100%;
-  /* Use the shared custom property for consistent sizing between
-     elements. */
   height: var(--controls-height);
   background: #0f1c47;
   /* Hidden on desktop by default; shown via script on mobile */
   display: none;
   z-index: 500;
-  padding: 8px;
+  padding: 8px 12px;
   box-sizing: border-box;
   font-family: 'Press Start 2P', monospace;
   flex-direction: row;
-  justify-content: space-around;
+  justify-content: space-between;
   align-items: center;
 }
 
@@ -58,11 +56,11 @@ html, body {
   background: #1a2e64;
   border: 3px solid #e3c95b;
   color: #f7e6b0;
-  padding: 4px 6px;
+  padding: 6px 8px;
   margin: 4px;
-  font-size: 10px;
-  width: 64px;
-  height: 48px;
+  font-size: 12px;
+  width: 72px;
+  height: 54px;
   text-align: center;
   cursor: pointer;
   user-select: none;
@@ -71,21 +69,23 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 6px;
 }
 
 /* Smaller arrow buttons */
 #mobile-controls .arrow-btn {
-  width: 40px;
-  height: 40px;
+  width: 54px;
+  height: 54px;
   padding: 4px;
 }
 
 /* Wider menu button to accommodate the label */
 #mobile-controls .menu-btn {
-  width: 72px;
+  width: 80px;
 }
 
-/* Column layout for control clusters */
+/* Cluster layouts for controls.  Left and centre groups stack
+   vertically; arrow group stacks arrows but centre row is horizontal. */
 #mobile-controls .controls-left,
 #mobile-controls .controls-center,
 #mobile-controls .controls-arrows {
@@ -94,10 +94,10 @@ html, body {
   align-items: center;
 }
 
-/* Stack shoot/reload and store/jump/select with spacing */
+/* Spacing within each vertical cluster */
 #mobile-controls .controls-left .control-btn,
 #mobile-controls .controls-center .control-btn {
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 /* Directional pad layout */
@@ -105,21 +105,20 @@ html, body {
   flex-direction: column;
   align-items: center;
 }
-
 #mobile-controls .arrow-row {
   display: flex;
   justify-content: center;
   align-items: center;
+  margin-top: 4px;
 }
-
 #mobile-controls .arrow-row .control-btn {
-  margin: 0 4px;
+  margin: 0 6px;
 }
 
-/* Game container positions the game and intro video.  On desktop it
-   centres the content with a fixed internal resolution scaled via a
-   transform.  On mobile it occupies the full viewport width and
-   reserves space for the control bar. */
+/* Game container positions and scales the canvas and intro video.  On
+   desktop it is centered with a fixed internal resolution scaled via
+   transform.  On mobile it occupies the full width and reserves
+   space for the control bar. */
 #game-container {
   position: absolute;
   top: 50%;
@@ -130,19 +129,17 @@ html, body {
   image-rendering: pixelated;
 }
 
-/* Canvas fills the container.  It no longer has its own transform
-   because the container handles positioning. */
+/* Canvas fills the container without its own transform */
 #game-container canvas {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
+  image-rendering: pixelated;
 }
 
-/* Intro video overlays the canvas within the game container.  It
-   covers the same area and maintains aspect ratio without stretching
-   across the entire page.  Initially visible until ended. */
+/* Intro video overlays the canvas within the game container */
 #game-container .intro-video {
   position: absolute;
   top: 0;
@@ -154,32 +151,52 @@ html, body {
   display: block;
 }
 
-/* Adjust container sizing on small screens to leave room for the mobile controls */
+/* Overlay prompting the user to rotate their device to landscape */
+#rotate-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+  color: #f7e6b0;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 18px;
+  z-index: 2000;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+/* Mobile styles: expand game container and show controls; hide on portrait */
 @media (max-width: 768px) {
-  #game-container {
-    position: absolute;
-    top: 0;
-    left: 0;
-    transform: none;
-    width: 100vw;
-    height: calc(100vh - var(--controls-height));
+  /* When in portrait orientation, hide game and controls, show overlay */
+  @media (orientation: portrait) {
+    #game-container,
+    #mobile-controls {
+      display: none !important;
+    }
+    #rotate-overlay {
+      display: flex;
+    }
   }
-}
-
-/* When the device is in landscape orientation, ensure the game
-   container fills the full width and height (minus controls) on small screens. */
-@media (orientation: landscape) and (max-width: 768px) {
-  #game-container {
-    width: 100vw;
-    height: calc(100vh - var(--controls-height));
+  /* When in landscape on small screens, fill available space and hide the rotate overlay */
+  @media (orientation: landscape) {
+    #rotate-overlay {
+      display: none;
+    }
+    #game-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      transform: none;
+      width: 100vw;
+      height: calc(100vh - var(--controls-height));
+    }
   }
-}
-
-/* Base styling for the canvas.  The canvas itself does not position
-   relative to the page; instead, the game container manages
-   centring and scaling.  We still enable pixel art rendering. */
-#game-canvas {
-  image-rendering: pixelated;
 }
 
 /* Heads‑up display (HUD) elements */

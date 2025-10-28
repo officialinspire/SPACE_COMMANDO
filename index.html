@@ -12,16 +12,21 @@
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Press+Start+2P&display=swap" rel="stylesheet">
 </head>
 <body>
-  <!-- Game container holds both the intro video and the canvas.  The
-       video overlays the canvas on first load and plays the credit
-       sequence with audio.  Once complete it hides itself.  Using a
-       container allows the intro to share the same dimensions as
-       the game rather than occupying the full page. -->
+  <!-- Game container groups the intro video and the canvas together so
+       the credit sequence plays within the game area instead of
+       filling the entire screen.  The intro will start once the
+       player interacts with the page (a requirement for audio
+       playback on many mobile browsers) and hides itself when
+       finished. -->
   <div id="game-container">
     <video id="intro-video" class="intro-video" src="inspiresoftwareintro.mp4" playsinline></video>
-    <!-- The game runs inside this canvas. It is scaled via CSS to fill the page while preserving the aspect ratio. -->
     <canvas id="game-canvas" width="800" height="450"></canvas>
   </div>
+
+  <!-- Overlay message prompting the user to rotate their device when in
+       portrait orientation.  Only shown on small screens where
+       landscape mode is required for gameplay. -->
+  <div id="rotate-overlay">Please rotate your device to landscape mode to play.</div>
 
   <!--
     On touch‑enabled devices a custom control bar appears beneath the
@@ -68,23 +73,23 @@
   <script>
     const introVideo = document.getElementById('intro-video');
     if (introVideo) {
-      // When the credit finishes, hide the video so the game is visible
+      // Hide the video once playback ends
       introVideo.addEventListener('ended', () => {
         introVideo.style.display = 'none';
       });
-      // Trigger playback with audio on the first user interaction (click or key press)
-      const startIntro = () => {
+      // Start the video with audio when the user first interacts
+      const startVideo = () => {
         if (introVideo.paused) {
           try {
             introVideo.muted = false;
             introVideo.play();
           } catch (err) {
-            /* swallow autoplay errors */
+            // ignore autoplay rejection
           }
         }
       };
-      document.addEventListener('click', startIntro, { once: true });
-      document.addEventListener('keydown', startIntro, { once: true });
+      document.addEventListener('click', startVideo, { once: true });
+      document.addEventListener('keydown', startVideo, { once: true });
     }
   </script>
 </body>
