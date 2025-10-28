@@ -14,22 +14,43 @@
 <body>
   <!-- The game runs inside this canvas. It is scaled via CSS to fill the page while preserving the aspect ratio. -->
   <canvas id="game-canvas" width="800" height="450"></canvas>
-    <!-- Mobile touch controls. These buttons are hidden on desktop and shown on touch devices. Each button sets a corresponding key value in the game logic. -->
-    <div id="mobile-controls" class="mobile-controls">
-      <!-- Movement controls -->
-      <button class="control-btn" data-key="ArrowLeft">←</button>
-      <button class="control-btn" data-key="ArrowRight">→</button>
-      <button class="control-btn" data-key="ArrowUp">↑</button>
-      <button class="control-btn" data-key="ArrowDown">↓</button>
-      <!-- Action buttons: jump (space), shoot (z), reload (x) -->
-      <button class="control-btn" data-key=" ">⟠</button>
-      <button class="control-btn" data-key="z">Z</button>
-      <button class="control-btn" data-key="x">X</button>
-      <!-- Menu buttons: purchase (p), escape (Esc), select (Enter) -->
-      <button class="control-btn" data-key="p">P</button>
-      <button class="control-btn" data-key="Escape">ESC</button>
-      <button class="control-btn" data-key="Enter">ENT</button>
+
+  <!--
+    On touch‑enabled devices a custom control bar appears beneath the
+    game.  These controls mirror the keyboard inputs (movement,
+    jump, shoot, reload, store, select and menu) so that the
+    touchscreen can be used for gameplay.  Each button carries a
+    data‑key attribute corresponding to the key it triggers.
+
+    The layout loosely follows the provided mock‑up (mobile_uxui_controls.png):
+    shoot/reload on the far left, a central cluster for store, jump
+    and select, a directional pad to the right, and a menu button
+    anchored on the far right.  The container is hidden on desktop
+    and only shown on mobile via JavaScript.
+  -->
+  <div id="mobile-controls" class="mobile-controls">
+    <div class="controls-left">
+      <button data-key="z" class="control-btn">SHOOT</button>
+      <button data-key="x" class="control-btn">RELOAD</button>
     </div>
+    <div class="controls-center">
+      <button data-key="p" class="control-btn">STORE</button>
+      <button data-key=" " class="control-btn">JUMP</button>
+      <button data-key="Enter" class="control-btn">SELECT</button>
+    </div>
+    <div class="controls-arrows">
+      <button data-key="ArrowUp" class="control-btn arrow-btn">↑</button>
+      <div class="arrow-row">
+        <button data-key="ArrowLeft" class="control-btn arrow-btn">←</button>
+        <button data-key="ArrowDown" class="control-btn arrow-btn">↓</button>
+        <button data-key="ArrowRight" class="control-btn arrow-btn">→</button>
+      </div>
+    </div>
+    <!-- The right-most button triggers the escape key to toggle the game menu.  Labelled
+         “ESC” to match the keyboard input for clarity. -->
+    <button data-key="Escape" class="control-btn menu-btn">ESC</button>
+  </div>
+
   <!-- Main game logic -->
   <script src="index.js"></script>
 </body>

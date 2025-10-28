@@ -15,6 +15,116 @@ html, body {
   color: #fff;
 }
 
+/* -------------------------------------------------------------------
+ * Mobile control bar
+ *
+ * A responsive touch controller appears at the bottom of the screen
+ * when the game is played on a mobile device.  The controls are
+ * hidden by default and revealed via JavaScript when a touch or
+ * mobile environment is detected.  Buttons are styled with a retro
+ * gold outline on a deep blue background to evoke an 8‑bit arcade
+ * aesthetic.  The layout groups controls logically: shooting and
+ * reloading on the left, store/jump/select in the centre, a
+ * directional pad on the right and a menu button on the far edge.
+ */
+#mobile-controls {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  /* Reserve space for the control bar on mobile devices.  The height is
+     reused in the mobile canvas sizing via a calc() expression. */
+  --controls-height: 120px;
+  height: var(--controls-height);
+  background: #0f1c47;
+  /* Hidden on desktop by default; shown via script on mobile */
+  display: none;
+  z-index: 500;
+  padding: 8px;
+  box-sizing: border-box;
+  font-family: 'Press Start 2P', monospace;
+  flex-direction: row;
+  justify-content: space-around;
+  align-items: center;
+}
+
+#mobile-controls .control-btn {
+  background: #1a2e64;
+  border: 3px solid #e3c95b;
+  color: #f7e6b0;
+  padding: 4px 6px;
+  margin: 4px;
+  font-size: 10px;
+  width: 64px;
+  height: 48px;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  outline: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Smaller arrow buttons */
+#mobile-controls .arrow-btn {
+  width: 40px;
+  height: 40px;
+  padding: 4px;
+}
+
+/* Wider menu button to accommodate the label */
+#mobile-controls .menu-btn {
+  width: 72px;
+}
+
+/* Column layout for control clusters */
+#mobile-controls .controls-left,
+#mobile-controls .controls-center,
+#mobile-controls .controls-arrows {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Stack shoot/reload and store/jump/select with spacing */
+#mobile-controls .controls-left .control-btn,
+#mobile-controls .controls-center .control-btn {
+  margin-bottom: 6px;
+}
+
+/* Directional pad layout */
+#mobile-controls .controls-arrows {
+  flex-direction: column;
+  align-items: center;
+}
+
+#mobile-controls .arrow-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+#mobile-controls .arrow-row .control-btn {
+  margin: 0 4px;
+}
+
+/* Adjust canvas sizing on small screens to leave room for the mobile controls */
+@media (max-width: 768px) {
+  #game-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform: none;
+    /* Fill the width of the viewport and subtract the control bar height to
+       maintain aspect ratio.  Because the canvas has a fixed internal
+       resolution, its CSS height must be computed separately. */
+    width: 100vw;
+    height: calc(100vh - var(--controls-height));
+  }
+}
+
 /* Style the canvas. By default it is fixed to 800×450 pixels; on larger screens we scale it up while preserving
    the aspect ratio by using CSS transforms. */
 #game-canvas {
@@ -24,60 +134,6 @@ html, body {
   transform: translate(-50%, -50%);
   image-rendering: pixelated;
   /* Ensure crisp rendering of pixel art */
-}
-
-/* Responsive scaling for mobile devices: stretch the canvas to the width of the viewport
-   and maintain aspect ratio. Remove the centring transform so the canvas anchors to the
-   top left, allowing space for the mobile control bar at the bottom. */
-@media (max-width: 768px) {
-  #game-canvas {
-    width: 100vw;
-    height: auto;
-    max-height: calc(100vw * (9 / 16));
-    top: 0;
-    left: 0;
-    transform: none;
-  }
-}
-
-/* Mobile control bar positioned at the bottom of the viewport. Hidden by default and
-   enabled via JavaScript when running on a touch device. Buttons use a gold retro theme
-   reminiscent of 8‑bit games. */
-.mobile-controls {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  display: none;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: center;
-  padding: 6px 0;
-  background: rgba(0, 0, 0, 0.6);
-  z-index: 500;
-}
-
-.mobile-controls .control-btn {
-  margin: 4px;
-  padding: 6px 8px;
-  min-width: 44px;
-  min-height: 44px;
-  background: #d4af37; /* gold tone */
-  color: #111;
-  font-family: 'Press Start 2P', monospace;
-  font-size: 14px;
-  border: 2px solid #444;
-  border-radius: 4px;
-  text-align: center;
-  outline: none;
-  cursor: pointer;
-  user-select: none;
-  image-rendering: pixelated;
-  touch-action: none; /* prevent scrolling when touching buttons */
-}
-
-.mobile-controls .control-btn:active {
-  background: #ffd700;
 }
 
 /* Heads‑up display (HUD) elements */

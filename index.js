@@ -145,43 +145,45 @@
     // Assault rifle: first purchase.  Fully automatic, fires rapidly and
     // holds fifty rounds.  Reloads quickly and deals similar damage to
     // the pistol.  Enemies drop ammo cartridges containing ten rounds.
-        rifle:   { name:'Assault Rifle', cost:100, damage:2, magazine:50, reloadTime:800,  bulletSpeed:8, fireRate:100, auto:true,  ammoDrop:10 },
+    rifle:   { name:'Rifle',   cost:100, damage:2, magazine:50, reloadTime:800,  bulletSpeed:8, fireRate:100, auto:true,  ammoDrop:10 },
     // Shotgun: second purchase.  Fires a high‑powered blast once per
     // trigger pull.  Holds five shells and takes longer to reload.  Each
     // pellet deals significant damage.  Enemies drop shells in packs of five.
     shotgun: { name:'Shotgun', cost:200, damage:8, magazine:5,  reloadTime:2000, bulletSpeed:5, fireRate:500, auto:false, pellets:3, spread:0.3, ammoDrop:5 },
-    // Laser beam: third purchase.  Rapid‑fire energy weapon that holds
-    // thirty shots and takes a long time to recharge between clips.  Each
-    // individual beam does modest damage but the high fire rate makes it
-    // formidable.  Batteries dropped by enemies restore one shot each.
     // Laser beam: third purchase.  Slow reload emphasises the need to
     // conserve shots.  The beam fires continuously while the trigger is
     // held until the magazine is depleted.  A reload time of four
-    // seconds slows the pace relative to the other guns.
-        laser:   { name:'Laser Beam',   cost:300, damage:5, magazine:30, reloadTime:4000, bulletSpeed:10, fireRate:80, auto:true,  ammoDrop:1 }
+    // seconds slows the pace relative to the other guns.  The high
+    // damage per shot reflects the weapon's futuristic lethality.
+    laser:   { name:'Laser',   cost:300, damage:5, magazine:30, reloadTime:4000, bulletSpeed:10, fireRate:80, auto:true,  ammoDrop:1 }
   };
 
   // Weapon order used in the shop menu
-      const WEAPON_ORDER = ['pistol','rifle','shotgun','laser'];
+  const WEAPON_ORDER = ['pistol','rifle','shotgun','laser'];
 
-      /*
-       * Define shop items.  In addition to purchasing weapons, the player can
-       * buy extra ammunition.  Each entry specifies a key (weapon or ammo
-       * identifier), a type ("weapon" or "ammo"), and, for ammo items, the
-       * ammoKey, cost and quantity added to the player's reserve.  Weapon
-       * items derive their cost and name from the WEAPONS object.  Adding
-       * ammunition to the shop allows players to top up clips when drops are
-       * scarce.
-       */
-      const SHOP_ITEMS = [
-        { key: 'rifle', type: 'weapon' },
-        { key: 'shotgun', type: 'weapon' },
-        { key: 'laser', type: 'weapon' },
-        { key: 'pistolAmmo', type: 'ammo', ammoKey: 'pistol', name: 'Pistol Ammo', cost: 5, value: 1 },
-        { key: 'rifleAmmo', type: 'ammo', ammoKey: 'rifle', name: 'Rifle Ammo', cost: 10, value: 10 },
-        { key: 'shotgunAmmo', type: 'ammo', ammoKey: 'shotgun', name: 'Shotgun Shells', cost: 5, value: 5 },
-        { key: 'laserAmmo', type: 'ammo', ammoKey: 'laser', name: 'Battery', cost: 10, value: 1 }
-      ];
+  /**
+   * Shop items definition.  Extends the weapon list with purchasable
+   * ammunition.  Each entry contains a type (weapon or ammo),
+   * identifying key, display name, cost in gold and a quantity for
+   * ammo purchases.  Weapons refer back to the WEAPONS object for
+   * magazine sizes and other stats.
+   */
+  const SHOP_ITEMS = [
+    // Weapons – names and costs are pulled from WEAPONS
+    { type: 'weapon', key: 'pistol' },
+    { type: 'weapon', key: 'rifle' },
+    { type: 'weapon', key: 'shotgun' },
+    { type: 'weapon', key: 'laser' },
+    // Ammo – each entry defines a human‑readable name, cost per purchase
+    // and the quantity of rounds provided.  These values reflect
+    // balanced pricing: pistol bullets and shotgun shells are cheap,
+    // rifle cartridges are mid‑priced and batteries (laser ammo) are
+    // expensive.
+    { type: 'ammo', ammoType: 'pistol', name: 'PISTOL AMMO', cost: 5, qty: 1 },
+    { type: 'ammo', ammoType: 'rifle', name: 'RIFLE AMMO', cost: 10, qty: 10 },
+    { type: 'ammo', ammoType: 'shotgun', name: 'SHOTGUN SHELLS', cost: 5, qty: 5 },
+    { type: 'ammo', ammoType: 'laser', name: 'BATTERY', cost: 10, qty: 1 }
+  ];
 
   /**
    * Global game settings adjustable via the settings menu.  Difficulty
@@ -202,11 +204,6 @@
   // including the shop, pause and settings screens.
   let gameMusic;
   let menuMusic;
-
-      // Detect whether the user is on a mobile or touch‑centric device.  This
-      // heuristic uses the user agent string and presence of the touchstart
-      // event.  Mobile users will be presented with on‑screen controls.
-      const isMobile = /Mobi|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window && window.innerWidth < 1024);
 
   // -----------------------------------------------------------------------------
   // Sound effects
@@ -359,36 +356,44 @@
       }
     });
 
-        // If running on a mobile device, display and wire up on‑screen controls.
-        // These controls simulate key presses by mutating the keys object and
-        // forwarding relevant events to the menu handler.  Using pointer events
-        // ensures both mouse and touch interactions are captured on modern
-        // devices.  Fallback touch events are provided for older browsers.
-        const mobileControls = document.getElementById('mobile-controls');
-        if (isMobile && mobileControls) {
-          mobileControls.style.display = 'flex';
-          const btns = mobileControls.querySelectorAll('.control-btn');
-          btns.forEach(btn => {
-            const key = btn.dataset.key;
-            const press = (ev) => {
-              ev.preventDefault();
-              keys[key] = true;
-              // Forward to menu handling so arrow/menu keys work on mobile
-              handleMenuInput({ key: key });
-            };
-            const release = (ev) => {
-              ev.preventDefault();
-              keys[key] = false;
-            };
-            btn.addEventListener('pointerdown', press);
-            btn.addEventListener('pointerup', release);
-            btn.addEventListener('pointerleave', release);
-            btn.addEventListener('pointercancel', release);
-            // Fallback touch events
-            btn.addEventListener('touchstart', press);
-            btn.addEventListener('touchend', release);
-          });
-        }
+    // ---------------------------------------------------------------------
+    // Mobile controls
+    // Detect whether we are on a touch‑capable mobile device.  If so,
+    // reveal the custom on‑screen controller and wire up each button to
+    // simulate keyboard presses.  Using both touch and pointer events
+    // ensures compatibility across browsers.  The data‑key attribute on
+    // each button specifies which key should be set in the keys object
+    // when pressed.  Menu navigation triggers handleMenuInput() immediately
+    // on press so the purchase and settings menus respond without delay.
+    const isMobile = /Mobi|Android|iPhone|iPad|iPod|Tablet/i.test(navigator.userAgent) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
+    if (isMobile) {
+      const ctrlBar = document.getElementById('mobile-controls');
+      if (ctrlBar) {
+        ctrlBar.style.display = 'flex';
+        const buttons = ctrlBar.querySelectorAll('.control-btn');
+        buttons.forEach(btn => {
+          const keyName = btn.getAttribute('data-key');
+          const press = (event) => {
+            event.preventDefault();
+            keys[keyName] = true;
+            // Trigger immediate menu handling for Enter, Escape, P etc.
+            handleMenuInput({ key: keyName });
+          };
+          const release = (event) => {
+            event.preventDefault();
+            keys[keyName] = false;
+          };
+          // Touch events
+          btn.addEventListener('touchstart', press);
+          btn.addEventListener('touchend', release);
+          btn.addEventListener('touchcancel', release);
+          // Pointer events for mouse / stylus
+          btn.addEventListener('pointerdown', press);
+          btn.addEventListener('pointerup', release);
+          btn.addEventListener('pointerleave', release);
+        });
+      }
+    }
 
     // Collections for dynamic entities
     let bullets = [];
@@ -561,7 +566,7 @@
     function handleMenuInput(e) {
       // Handle input based on the current game state
       if (gameState === 'shop') {
-        // Purchase menu navigation
+        // Purchase menu navigation for both weapons and ammo items
         if (e.key === 'ArrowUp') {
           menuSelection = (menuSelection + SHOP_ITEMS.length - 1) % SHOP_ITEMS.length;
         } else if (e.key === 'ArrowDown') {
@@ -571,16 +576,19 @@
           if (item.type === 'weapon') {
             const key = item.key;
             const w = WEAPONS[key];
+            // Only allow purchase if not already equipped and enough gold
             if (player.weapon !== key && player.gold >= w.cost) {
               player.gold -= w.cost;
               player.weapon = key;
+              // refill clip and grant two extra magazines of reserve
               player.ammoInClip[key] = w.magazine;
               player.reserveAmmo[key] += w.magazine * 2;
             }
           } else if (item.type === 'ammo') {
+            // purchase ammunition
             if (player.gold >= item.cost) {
               player.gold -= item.cost;
-              player.reserveAmmo[item.ammoKey] += item.value;
+              player.reserveAmmo[item.ammoType] += item.qty;
             }
           }
           // Play selection sound whenever a purchase is attempted
@@ -591,6 +599,7 @@
         } else if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
           // Close shop and resume play
           gameState = 'play';
+          // resume game music
           fadeOut(menuMusic);
           fadeIn(gameMusic);
         }
@@ -598,10 +607,9 @@
         if (e.key === 'p' || e.key === 'P') {
           // Open purchase menu
           gameState = 'shop';
-          // highlight current weapon in the shop list.  Default to first item
-          // if the weapon is not found (e.g. pistol isn't in the purchasable list).
-          menuSelection = SHOP_ITEMS.findIndex(it => it.type === 'weapon' && it.key === player.weapon);
-          if (menuSelection < 0) menuSelection = 0;
+          // Highlight the current weapon if present in the shop items.
+          const idx = SHOP_ITEMS.findIndex(it => it.type === 'weapon' && it.key === player.weapon);
+          menuSelection = idx >= 0 ? idx : 0;
           // switch music: fade out game track and fade in menu track
           fadeOut(gameMusic);
           fadeIn(menuMusic);
@@ -1724,31 +1732,51 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
       // Draw player
       const ppx = player.x - cameraX;
       if (sheetLoaded) {
-        // Determine animation: jump > shoot > run > idle
+        // Determine which animation frames to use.  Jump takes priority,
+        // followed by shooting, running, idle.  When crouching we reuse
+        // the same frames but draw only the lower portion of each frame
+        // (cropping off the top) to simulate ducking.  Shooting while
+        // crouched uses the shoot frames; moving while crouched uses
+        // running frames; otherwise the idle frame is used.
         let frames;
         const isShooting = (keys['z'] || keys['Z']) && player.shootCooldown > 0;
         if (!player.onGround) {
           frames = ANIMATIONS.playerJump;
-        } else if (isShooting) {
-          frames = ANIMATIONS.playerShoot;
-        } else if (player.onGround && Math.abs(player.vx) > 0.1) {
-          frames = ANIMATIONS.playerRun;
+        } else if (player.isDucking) {
+          if (isShooting) {
+            frames = ANIMATIONS.playerShoot;
+          } else if (Math.abs(player.vx) > 0.1) {
+            frames = ANIMATIONS.playerRun;
+          } else {
+            frames = ANIMATIONS.playerIdle;
+          }
         } else {
-          frames = ANIMATIONS.playerIdle;
+          if (isShooting) {
+            frames = ANIMATIONS.playerShoot;
+          } else if (Math.abs(player.vx) > 0.1) {
+            frames = ANIMATIONS.playerRun;
+          } else {
+            frames = ANIMATIONS.playerIdle;
+          }
         }
         const idx = Math.floor(player.animTime / 150) % frames.length;
         const f = frames[idx];
         ctx.save();
+        // Calculate cropping for crouch: when ducking we draw only the
+        // bottom portion of the 32px sprite.  The amount to crop off the
+        // top equals (32 - current player.height).
+        const cropOffsetY = player.isDucking ? (32 - player.height) : 0;
+        const cropHeight = player.isDucking ? player.height : 32;
         if (player.facing < 0) {
-          // Flip horizontally by translating and scaling
           ctx.translate(ppx + player.width, player.y);
           ctx.scale(-1,1);
-          ctx.drawImage(spriteSheet, f.sx, f.sy, 32, 32, 0, 0, player.width, player.height);
+          ctx.drawImage(spriteSheet, f.sx, f.sy + cropOffsetY, 32, cropHeight, 0, 0, player.width, player.height);
         } else {
-          ctx.drawImage(spriteSheet, f.sx, f.sy, 32, 32, ppx, player.y, player.width, player.height);
+          ctx.drawImage(spriteSheet, f.sx, f.sy + cropOffsetY, 32, cropHeight, ppx, player.y, player.width, player.height);
         }
         ctx.restore();
       } else {
+        // fallback: simple rectangle when sprites are not loaded
         ctx.fillStyle = '#0077ff';
         ctx.fillRect(ppx, player.y, player.width, player.height);
       }
@@ -1826,15 +1854,15 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
       }
       // Shop overlay
       if (gameState === 'shop') {
-        // Dim background
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
         ctx.fillRect(0, 0, width, height);
-        // Draw a centered panel for the shop.  Increase height based on number of items.
-        const panelW = 420;
-        const rowSpacing = 32;
+        // Widen the shop panel to allow generous column spacing
+        const panelW = 560;
+        const rowSpacing = 36;
         const panelH = 220 + SHOP_ITEMS.length * rowSpacing;
         const panelX = (width - panelW) / 2;
         const panelY = (height - panelH) / 2;
+        // Panel body and outline
         ctx.fillStyle = 'rgba(0, 0, 20, 0.9)';
         ctx.fillRect(panelX, panelY, panelW, panelH);
         ctx.strokeStyle = '#00aaff';
@@ -1844,64 +1872,47 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
         ctx.fillStyle = '#00ccff';
         ctx.font = '26px "Orbitron", Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('SHOP', panelX + panelW / 2, panelY + 40);
-        // Show player's gold at the top right of the panel
+        ctx.fillText('SHOP', panelX + panelW / 2, panelY + 44);
+        // Player gold top right
         ctx.font = '12px "Press Start 2P", Arial';
         ctx.fillStyle = '#88ccff';
         ctx.textAlign = 'right';
-        ctx.fillText(`GOLD: ${player.gold}`, panelX + panelW - 12, panelY + 22);
+        ctx.fillText(`GOLD: ${player.gold}`, panelX + panelW - 16, panelY + 26);
         ctx.textAlign = 'left';
-        // List items (weapons and ammo) with better spacing.  Start list below title
+        // List items
         ctx.font = '14px "Press Start 2P", Arial';
-        const listStartY = panelY + 90;
+        const listStartY = panelY + 100;
         SHOP_ITEMS.forEach((item, i) => {
           const y = listStartY + i * rowSpacing;
           const selected = (i === menuSelection);
-          let name;
-          let cost;
-          let qty;
+          // Determine text based on type
+          let nameText, costText, extraText;
           if (item.type === 'weapon') {
             const w = WEAPONS[item.key];
-            name = w.name.toUpperCase();
-            cost = w.cost;
-            qty = w.magazine;
+            nameText = w.name.toUpperCase();
+            costText = `COST: ${w.cost}`;
+            extraText = `MAG: ${w.magazine}`;
           } else {
-            name = item.name.toUpperCase();
-            cost = item.cost;
-            qty = item.value;
+            nameText = item.name.toUpperCase();
+            costText = `COST: ${item.cost}`;
+            extraText = `QTY: ${item.qty}`;
           }
+          // Name column
           ctx.fillStyle = selected ? '#ffdd55' : '#cccccc';
-          // Draw the name near the left edge.  Use wider spacing for the
-          // cost and quantity columns so long weapon names don’t butt up
-          // against the following text.  Adjust column offsets as
-          // necessary to accommodate the lengthiest names in the list.
-          ctx.fillText(name, panelX + 20, y);
+          ctx.fillText(nameText, panelX + 20, y);
+          // Cost column
           ctx.fillStyle = selected ? '#ffffaa' : '#8888aa';
-          ctx.fillText(`COST: ${cost}`, panelX + 240, y);
-          if (item.type === 'weapon') {
-            ctx.fillText(`MAG: ${qty}`, panelX + 350, y);
-          } else {
-            ctx.fillText(`QTY: ${qty}`, panelX + 350, y);
-          }
+          ctx.fillText(costText, panelX + 300, y);
+          // Extra column (magazine/qty)
+          ctx.fillStyle = selected ? '#ffffaa' : '#8888aa';
+          ctx.fillText(extraText, panelX + 460, y);
         });
-        // Instructions
+        // Instructions: centre bottom line.  Use top baseline to avoid overlap
         ctx.font = '12px "Orbitron", Arial';
         ctx.fillStyle = '#ffdd55';
         ctx.textAlign = 'center';
-        // Use top baseline so consecutive lines start at the specified y
-        // coordinate without overlapping.  This avoids baseline
-        // differences between fonts causing the lines to collide.
         ctx.textBaseline = 'top';
-        // Break long instruction string into two lines so it fits neatly within
-        // the panel on narrow screens.  This improves readability on both
-        // desktop and mobile devices.
-        // Position the two instruction lines with generous spacing to avoid
-        // overlap and ensure legibility on small screens.
-        const shopInstrY1 = panelY + panelH - 50;
-        const shopInstrY2 = panelY + panelH - 30;
-        ctx.fillText('ENTER: BUY', panelX + panelW / 2, shopInstrY1);
-        ctx.fillText('P/ESC: CLOSE', panelX + panelW / 2, shopInstrY2);
-        // Restore baseline and alignment
+        ctx.fillText('ENTER: BUY    P/ESC: CLOSE', panelX + panelW / 2, panelY + panelH - 44);
         ctx.textBaseline = 'alphabetic';
         ctx.textAlign = 'left';
       }
@@ -1916,26 +1927,21 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
         ctx.fillStyle = '#ffffff';
         ctx.font = '18px "Press Start 2P", Arial';
         ctx.fillText(`FINAL GOLD: ${player.gold}`, width/2, height/2 - 10);
-        // Split the restart prompt onto two lines for better balance
-        // Use top baseline for evenly spaced lines
-        ctx.textBaseline = 'top';
-        ctx.fillText('PRESS ENTER', width/2, height/2 + 24);
-        ctx.fillText('TO RESTART', width/2, height/2 + 52);
-        // Restore default baseline and alignment
-        ctx.textBaseline = 'alphabetic';
+        ctx.fillText('PRESS ENTER TO RESTART', width/2, height/2 + 24);
         ctx.textAlign = 'left';
       }
 
       // Start menu overlay
       if (gameState === 'start') {
+        // Darken the scene behind the menu
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
         ctx.fillRect(0, 0, width, height);
-        const panelW = 420;
-        // Slightly enlarge panel height to allow more breathing room for
-        // title and options
-        const panelH = 220;
+        // Widen the panel for ample space and breathe vertically
+        const panelW = 480;
+        const panelH = 260;
         const panelX = (width - panelW) / 2;
         const panelY = (height - panelH) / 2;
+        // Panel base and outline
         ctx.fillStyle = 'rgba(0, 0, 20, 0.9)';
         ctx.fillRect(panelX, panelY, panelW, panelH);
         ctx.strokeStyle = '#00aaff';
@@ -1945,29 +1951,26 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
         // Title
         ctx.fillStyle = '#00ccff';
         ctx.font = '32px "Orbitron", Arial';
-        ctx.fillText('SPACE COMMANDO', width / 2, panelY + 40);
-        // Options centred under the title with expanded spacing
+        ctx.fillText('SPACE COMMANDO', panelX + panelW / 2, panelY + 42);
+        // Options
         const startOptions = ['START GAME', 'GAME SETTINGS'];
         ctx.font = '18px "Press Start 2P", Arial';
-        const optStartY = panelY + 90;
-        const optSpacing = 36;
+        const optStartY = panelY + 100;
+        const optSpacing = 40;
         startOptions.forEach((opt, i) => {
           const y = optStartY + i * optSpacing;
           ctx.fillStyle = (i === startMenuSelection ? '#ffdd55' : '#cccccc');
-          ctx.fillText(opt, width / 2, y);
+          ctx.fillText(opt, panelX + panelW / 2, y);
         });
-        // Instructions: split into two lines for readability
+        // Instructions – split into two lines for better fit.  Use a top baseline
+        // so that lines do not overlap even on pixelated fonts.  After drawing
+        // restore the default text baseline.  Leave the text centred.
         ctx.font = '12px "Orbitron", Arial';
         ctx.fillStyle = '#ffdd55';
-        // Increase the separation between the start menu instruction lines
-        const startInstrY1 = panelY + panelH - 50;
-        const startInstrY2 = panelY + panelH - 30;
-        // Use top baseline so the lines start exactly at the specified y
-        // positions and do not overlap
         ctx.textBaseline = 'top';
-        ctx.fillText('ARROWS: NAVIGATE', width / 2, startInstrY1);
-        ctx.fillText('ENTER: SELECT', width / 2, startInstrY2);
-        // Restore baseline and alignment
+        const instrY = panelY + panelH - 52;
+        ctx.fillText('ARROWS: NAVIGATE', panelX + panelW / 2, instrY);
+        ctx.fillText('ENTER: SELECT', panelX + panelW / 2, instrY + 20);
         ctx.textBaseline = 'alphabetic';
         ctx.textAlign = 'left';
       }
@@ -1975,13 +1978,13 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
       if (gameState === 'menu') {
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
         ctx.fillRect(0, 0, width, height);
-        const panelW = 420;
+        const panelW = 480;
         const optionsCount = 3;
-        // Increase row spacing for pause options
-        const rowSpacing = 36;
-        const panelH = 180 + optionsCount * rowSpacing;
+        const rowSpacing = 40;
+        const panelH = 220 + optionsCount * rowSpacing;
         const panelX = (width - panelW) / 2;
         const panelY = (height - panelH) / 2;
+        // Draw panel
         ctx.fillStyle = 'rgba(0, 0, 20, 0.9)';
         ctx.fillRect(panelX, panelY, panelW, panelH);
         ctx.strokeStyle = '#00aaff';
@@ -1991,33 +1994,25 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
         // Header
         ctx.fillStyle = '#00ccff';
         ctx.font = '30px "Orbitron", Arial';
-        ctx.fillText('PAUSED', width / 2, panelY + 40);
+        ctx.fillText('PAUSED', panelX + panelW / 2, panelY + 44);
         // Options
         const menuOptions = ['RETURN TO GAME', 'RESTART GAME', 'GAME SETTINGS'];
         ctx.font = '18px "Press Start 2P", Arial';
-        const menuStartY = panelY + 90;
+        const menuStartY = panelY + 100;
         menuOptions.forEach((opt, i) => {
           const y = menuStartY + i * rowSpacing;
           ctx.fillStyle = (i === mainMenuSelection ? '#ffdd55' : '#cccccc');
-          ctx.fillText(opt, width / 2, y);
+          ctx.fillText(opt, panelX + panelW / 2, y);
         });
-        // Instructions: break the long string into separate lines so it
-        // doesn’t overflow the panel.  Align centre on each line for a
-        // balanced look.
+        // Instructions: break across two lines.  Use a top baseline to
+        // ensure proper line spacing with the retro font, then restore
+        // baseline afterwards.
         ctx.font = '12px "Orbitron", Arial';
         ctx.fillStyle = '#ffdd55';
-        // Use top baseline for consistent line spacing
         ctx.textBaseline = 'top';
-        // Provide larger spacing between pause menu instruction lines to
-        // prevent overlap when rendered with pixel fonts.  30px gaps
-        // accommodate the character height plus additional padding.
-        const pauseInstrY1 = panelY + panelH - 90;
-        const pauseInstrY2 = panelY + panelH - 60;
-        const pauseInstrY3 = panelY + panelH - 30;
-        ctx.fillText('ARROWS: NAVIGATE', width / 2, pauseInstrY1);
-        ctx.fillText('ENTER: SELECT', width / 2, pauseInstrY2);
-        ctx.fillText('ESC: BACK', width / 2, pauseInstrY3);
-        // Restore baseline and alignment
+        const instrY = panelY + panelH - 52;
+        ctx.fillText('ARROWS: NAVIGATE', panelX + panelW / 2, instrY);
+        ctx.fillText('ENTER: SELECT    ESC: BACK', panelX + panelW / 2, instrY + 20);
         ctx.textBaseline = 'alphabetic';
         ctx.textAlign = 'left';
       }
@@ -2025,14 +2020,14 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
       if (gameState === 'settings') {
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
         ctx.fillRect(0, 0, width, height);
-        const panelW = 460;
         const settingKeys = ['difficulty', 'audio', 'particles'];
-        // Use larger row spacing so the settings list is easy to read.  Expand
-        // the panel height accordingly to ensure all content fits.
-        const rowSpacing = 32;
-        const panelH = 200 + settingKeys.length * rowSpacing;
+        // Panel sizing: wider and taller to comfortably fit labels and values
+        const panelW = 520;
+        const rowSpacing = 40;
+        const panelH = 220 + settingKeys.length * rowSpacing;
         const panelX = (width - panelW) / 2;
         const panelY = (height - panelH) / 2;
+        // Panel base and border
         ctx.fillStyle = 'rgba(0, 0, 20, 0.9)';
         ctx.fillRect(panelX, panelY, panelW, panelH);
         ctx.strokeStyle = '#00aaff';
@@ -2042,15 +2037,15 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
         // Header
         ctx.fillStyle = '#00ccff';
         ctx.font = '30px "Orbitron", Arial';
-        ctx.fillText('SETTINGS', width / 2, panelY + 40);
-        // List settings with current values
+        ctx.fillText('SETTINGS', panelX + panelW / 2, panelY + 44);
+        // Draw each setting: align labels left and values right
         ctx.font = '16px "Press Start 2P", Arial';
-        const settingsStartY = panelY + 90;
+        const settingsStartY = panelY + 100;
         settingKeys.forEach((key, i) => {
           const y = settingsStartY + i * rowSpacing;
           const selected = (i === settingsSelection);
-          let label = '';
-          let value = '';
+          let label;
+          let value;
           if (key === 'difficulty') {
             label = 'DIFFICULTY';
             value = SETTINGS.difficulty.toUpperCase();
@@ -2061,22 +2056,25 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
             label = 'PARTICLES';
             value = SETTINGS.particles ? 'ON' : 'OFF';
           }
+          // Highlight selected line
           ctx.fillStyle = selected ? '#ffdd55' : '#cccccc';
-          ctx.fillText(label, panelX + 40, y);
+          ctx.textAlign = 'left';
+          // 60px padding from left edge for labels
+          ctx.fillText(label, panelX + 60, y);
+          ctx.textAlign = 'right';
+          // Align values 60px from right edge
           ctx.fillStyle = selected ? '#ffffaa' : '#8888aa';
-          ctx.fillText(value, panelX + panelW - 80, y);
+          ctx.fillText(value, panelX + panelW - 60, y);
         });
-        // Instructions: break into two lines for clarity.  Use arrow
-        // symbols to indicate control keys and centre each line.
+        // Instructions: broken into two concise lines.  Set a top baseline
+        // for consistent spacing, then restore alignment.
         ctx.font = '12px "Orbitron", Arial';
         ctx.fillStyle = '#ffdd55';
-        // Use top baseline so lines stack cleanly and don’t overlap
+        ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        const settingsInstrY1 = panelY + panelH - 50;
-        const settingsInstrY2 = panelY + panelH - 30;
-        ctx.fillText('←/→/ENTER: CHANGE', width / 2, settingsInstrY1);
-        ctx.fillText('ARROWS: NAVIGATE    ESC: BACK', width / 2, settingsInstrY2);
-        // Restore baseline and alignment
+        const instrY = panelY + panelH - 56;
+        ctx.fillText('←/→/ENTER: CHANGE', panelX + panelW / 2, instrY);
+        ctx.fillText('ARROWS: NAVIGATE    ESC: BACK', panelX + panelW / 2, instrY + 20);
         ctx.textBaseline = 'alphabetic';
         ctx.textAlign = 'left';
       }
