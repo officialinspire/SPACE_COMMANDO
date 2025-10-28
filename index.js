@@ -110,6 +110,21 @@
     playerIdle: [ {sx:0, sy:0} ],
     // Player jumping frames (row 1, cols 0–1). These show the commando in mid‑air.
     playerJump: [ {sx:0, sy:32}, {sx:32, sy:32} ],
+    // Player crouching frames.  Because the sprite sheet does not
+    // include dedicated crouch poses, reuse the idle frame for a
+    // simple crouch.  When drawing these frames while ducking the
+    // renderer will crop off the top portion of the sprite based on
+    // player.height.  This array remains separate for clarity and
+    // future extensibility.
+    playerCrouch: [ {sx:0, sy:0} ],
+    // Player crouch shooting frames.  Reuse the standing shoot frames.
+    // These frames include muzzle flash.  When ducking the draw
+    // function crops the top portion so the commando appears crouched.
+    playerCrouchShoot: [ {sx:128, sy:0}, {sx:160, sy:0}, {sx:192, sy:0} ],
+    // Player crouch walking frames.  Use the running frames to imply
+    // movement while crouched.  As with other crouch animations the
+    // draw routine crops the top based on player.height.
+    playerCrouchWalk: [ {sx:0, sy:0}, {sx:32, sy:0}, {sx:64, sy:0}, {sx:96, sy:0} ],
     // Robot walking frames (row 2, cols 0–3)
     robotWalk: [ {sx:0, sy:64}, {sx:32, sy:64}, {sx:64, sy:64}, {sx:96, sy:64} ],
     // Zombie walking frames (row 2 col4‑5 and row3 col0)
@@ -1739,18 +1754,30 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
         // crouched uses the shoot frames; moving while crouched uses
         // running frames; otherwise the idle frame is used.
         let frames;
+        // Determine if the player is currently shooting.  We rely on
+        // shootCooldown > 0 to indicate a shot has been fired this
+        // frame, which syncs the animation to actual firing rather than
+        // key presses alone.
         const isShooting = (keys['z'] || keys['Z']) && player.shootCooldown > 0;
         if (!player.onGround) {
+          // In mid‑air use the jump animation regardless of crouch.
           frames = ANIMATIONS.playerJump;
         } else if (player.isDucking) {
+          // When ducking select special crouch animations.  These reuse
+          // existing standing frames but are separated to allow
+          // customisation later.  Shooting while crouched uses the
+          // crouch shoot frames; moving uses crouch walk; otherwise use
+          // the idle crouch.
           if (isShooting) {
-            frames = ANIMATIONS.playerShoot;
+            frames = ANIMATIONS.playerCrouchShoot;
           } else if (Math.abs(player.vx) > 0.1) {
-            frames = ANIMATIONS.playerRun;
+            frames = ANIMATIONS.playerCrouchWalk;
           } else {
-            frames = ANIMATIONS.playerIdle;
+            frames = ANIMATIONS.playerCrouch;
           }
         } else {
+          // Standing animations.  Use shooting frames if a shot was
+          // recently fired; otherwise select running or idle.
           if (isShooting) {
             frames = ANIMATIONS.playerShoot;
           } else if (Math.abs(player.vx) > 0.1) {
@@ -1852,40 +1879,80 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
           ctx.fillRect(rx, ry, rW * pct, rH);
         }
       }
+      // -------------------------------------------------------------------
       // Shop overlay
+      //
+      // The original shop panel used a fixed row height and panel base
+      // height which caused the menu to extend off the bottom of the
+      // canvas when the list of items grew.  To ensure the entire
+      // purchase menu fits inside the game canvas, compute the row
+      // spacing and overall panel height dynamically based on the
+      // available canvas height.  A slightly smaller base height is
+      // used and rows are spaced a bit tighter than the original 36px.
       if (gameState === 'shop') {
+        // Dim the background behind the shop panel
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
         ctx.fillRect(0, 0, width, height);
-        // Widen the shop panel to allow generous column spacing
-        const panelW = 560;
-        const rowSpacing = 36;
-        const panelH = 220 + SHOP_ITEMS.length * rowSpacing;
+
+        // Panel width stays generous to allow three columns (name, cost,
+        // extra) without truncation.  If the canvas is narrower than
+        // 560px (unlikely on desktop), clamp the width to 90% of the
+        // canvas width.
+        const panelW = Math.min(560, width * 0.9);
+
+        // Base height allocated for the header, gold display and
+        // instructions.  This is slightly reduced from the original
+        // design to leave more room for the item list.
+        const baseHeight = 180;
+
+        // Compute a reasonable row spacing.  Start with 32px spacing but
+        // if the panel would exceed the available height, reduce the
+        // spacing proportionally so that all entries fit.  Reserve
+        // 40px padding at the top and bottom inside the panel to
+        // accommodate the title and instructions.
+        let rowSpacing = 32;
+        let panelH = baseHeight + SHOP_ITEMS.length * rowSpacing;
+        const maxPanelHeight = height - 40;
+        if (panelH > maxPanelHeight) {
+          rowSpacing = Math.floor((maxPanelHeight - baseHeight) / SHOP_ITEMS.length);
+          // Never allow the row spacing to shrink below 20px for
+          // legibility.  If this occurs the list may scroll off
+          // screen, but is preferable to unreadable text.
+          if (rowSpacing < 20) rowSpacing = 20;
+          panelH = baseHeight + SHOP_ITEMS.length * rowSpacing;
+        }
+
         const panelX = (width - panelW) / 2;
         const panelY = (height - panelH) / 2;
-        // Panel body and outline
+
+        // Draw the panel body and border
         ctx.fillStyle = 'rgba(0, 0, 20, 0.9)';
         ctx.fillRect(panelX, panelY, panelW, panelH);
         ctx.strokeStyle = '#00aaff';
         ctx.lineWidth = 2;
         ctx.strokeRect(panelX, panelY, panelW, panelH);
+
         // Title
         ctx.fillStyle = '#00ccff';
         ctx.font = '26px "Orbitron", Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('SHOP', panelX + panelW / 2, panelY + 44);
+        ctx.fillText('SHOP', panelX + panelW / 2, panelY + 40);
+
         // Player gold top right
         ctx.font = '12px "Press Start 2P", Arial';
         ctx.fillStyle = '#88ccff';
         ctx.textAlign = 'right';
-        ctx.fillText(`GOLD: ${player.gold}`, panelX + panelW - 16, panelY + 26);
+        ctx.fillText(`GOLD: ${player.gold}`, panelX + panelW - 16, panelY + 24);
         ctx.textAlign = 'left';
-        // List items
+
+        // Draw the list of items.  Start a bit lower to make room for
+        // the title and gold display.  Use the computed rowSpacing
+        // when positioning each entry.
         ctx.font = '14px "Press Start 2P", Arial';
-        const listStartY = panelY + 100;
+        const listStartY = panelY + 80;
         SHOP_ITEMS.forEach((item, i) => {
           const y = listStartY + i * rowSpacing;
           const selected = (i === menuSelection);
-          // Determine text based on type
           let nameText, costText, extraText;
           if (item.type === 'weapon') {
             const w = WEAPONS[item.key];
@@ -1902,17 +1969,24 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
           ctx.fillText(nameText, panelX + 20, y);
           // Cost column
           ctx.fillStyle = selected ? '#ffffaa' : '#8888aa';
-          ctx.fillText(costText, panelX + 300, y);
+          ctx.fillText(costText, panelX + panelW * 0.53, y);
           // Extra column (magazine/qty)
           ctx.fillStyle = selected ? '#ffffaa' : '#8888aa';
-          ctx.fillText(extraText, panelX + 460, y);
+          ctx.fillText(extraText, panelX + panelW * 0.82, y);
         });
-        // Instructions: centre bottom line.  Use top baseline to avoid overlap
+
+        // Instructions at the bottom of the panel.  Align the text
+        // centre and use a top baseline so the line sits neatly above
+        // the panel edge.
         ctx.font = '12px "Orbitron", Arial';
         ctx.fillStyle = '#ffdd55';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.fillText('ENTER: BUY    P/ESC: CLOSE', panelX + panelW / 2, panelY + panelH - 44);
+        // The instruction string is kept short so that it comfortably fits
+        // within the panel.  On narrower panels the original longer
+        // instruction could be clipped.  Here we abbreviate the
+        // spacing to avoid overflow.
+        ctx.fillText('ENTER: BUY  P/ESC: CLOSE', panelX + panelW / 2, panelY + panelH - 40);
         ctx.textBaseline = 'alphabetic';
         ctx.textAlign = 'left';
       }
