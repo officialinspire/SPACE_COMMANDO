@@ -1,0 +1,79 @@
+We are working on our SPACE COMMANDO javascript web game. All files are saved in the directory .../SPACE COMMANDO/ on my desktop and in their respective folders as labeled for development purposes.  
+
+We intend to upload the completed game on GitHub and the Inspire website at a later date.  
+
+The current version of the game has a few issues we need to fix and resolve before it is complete! We need to update and change some things though so this version of the game works properly and better!   
+
+KEEP EVERYTHING ELSE IN THE SCRIPTS/CODE THE SAME UNLESS SPECIFICALLY ASKED TO UPDATE/CHANGE! 
+
+DO NOT CHANGE EXISTING FUNCTIONALITY UNLESS ASKED TO UPDATE/CHANGE! 
+
+--Add logic for player to climb down a ladder while pressing the down key. Make sure collision logic prevents player from going below the floor layer.  
+
+--Add logic for player to press down arrow key to duck/crouch. Also add logic so player can press down arrow key + shoot ('z') + left/right to shoot while ducking in either the left or right direction. 
+
+--If player is pressing down arrow key to duck and moving left or right at the same time, then the character crouches and low-walks in that direction until they stop pressing the crouch/duck down arrow key.  
+
+--Make sure all text and menu options fit within the main-menu container/ux/ui as well as the purchase menu and game settings menu and make sure they are centered/spaced to be visually easy to read and organized 
+
+--Optimize for mobile and desktop experience! 
+
+--ONLY For mobile users create a custom UX/UI with custom left/right/up/down arrow keys, 'space bar' jump, 'z' fire, 'x' reload , 'p' purchase , 'esc' main menu toggle, and 'enter' select keys/buttons. Make the buttons gold and 8bit retro themed and place them at the footer of the game canvas in their own container running horizontally for player to use with touchscreen during mobile/android use! The player can play the game in landscape mode on the phone and use the hard embedded keys on the bottom of the screen to play. 
+
+--When player takes damage play player_damage.mp3 which is located in "...\SPACE COMMANDO\player_damage.mp3" 
+
+--When enemy dies play enemy_death.mp3 which is located in "...\SPACE COMMANDO\enemy_death.mp3" 
+
+--When player selects a menu option in the main game menu or in the purchase menu play select_sfx.mp3 which is located in "...\SPACE COMMANDO\select_sfx.mp3" 
+
+--When player shoots pistol play pistol_shoot.mp3 which is located in "...\SPACE COMMANDO\pistol_shoot.mp3"
+
+--When player shoots rifle play rifle_shoot.mp3 which is located in "...\SPACE COMMANDO\rifle_shoot.mp3"
+
+--When player shoots shotgun play shotgun_shoot.mp3 which is located in "...\SPACE COMMANDO\shotgun_shoot.mp3"
+
+--When player shoots laser beam play laser_shoot.mp3 which is located in "...\SPACE COMMANDO\laser_shoot.mp3" 
+
+--Update weapons logic and script: 
+
+-pistol (starting weapon) (12 shots) (1 shot per fire) (low to medium power) (fast reload) , 
+
+-assault-rifle (1st purchase) (automatic weapon press and hold to fire until empty) (low to medium power) (50 Rounds Capacity) (fast reload), 
+
+-shotgun (2nd purchase) (1 shot per fire then reload, slow reloading time) (high power) (5 shots), 
+
+-laser beam (3rd purchase) (slow reload) (press to fire, shoots beam until depleted or player stops pressing fire button) (high power) 
+
+--Weapons Logic: Ammo and Ammo Types: 
+
+-pistol ammo (bullet +1) , bullet can be dropped as a type of ammo (draw canvas bullet ammo type and add weapon, ammo, and item logic to index.js) (can be purchased from store for 5 gold per bullet) 
+
+-rifle ammo (ammo cartridge +10) , ammo cartridge can be dropped as a type of ammo (draw canvas ammo cartridge and add weapon, ammo, and item logic to index.js)  (can be purchased from store for 10 gold per cartridge) 
+
+-shotgun ammo (shell) (+5 shotgun shells), shotgun shell can be dropped as a type of ammo (draw canvas shotgun shell and add weapon, ammo, and item logic to index.js) (can be purchased from store for 5 gold per 5 shells) 
+
+-laser-beam ammo (battery) , battery can be dropped as a type of ammo (draw canvas battery and add weapon, ammo, and item logic to index.js) (can be purchased for 10 gold per battery, gives user fresh laser beam battery to shoot) 
+
+--Items Logic: make sure all items drop at consistent, and balanced rates and modify item logic in index.js 
+
+Game Controls: Game controls are left arrow to move left, right arrow to move right, up arrow to climb up, down arrow to climb down, 'space' for jump, and 'z' for shoot, 'x' for reload. Main Menu is accessed by pressing 'esc'. Purchase menu is accessed by pressing 'p' Select is enter. 
+
+USE SPRITE SHEET PROVIDED space-commando-sprite-sheet.png which will be located in "...\SPACE COMMANDO\space-commando-sprite-sheet.png" 
+
+Make sure all enemy movement and combat logic incorporates the following notes: (Review index.js) 
+
+-Space Commando (Player) (Need running animation, jumping animation, shooting pistol animation, shooting rifle animation, shooting shotgun animation, shooting laser beam) ,  
+
+-Robot (Enemy) (Walking, Attack/Shoot, Can climb ladders) (Drops battery and ammo cartridge)  
+
+-Space Zombie (Walking, Attack/Melee, Can't climb ladders) (Drops bullet ammo and ammo cartridge)   
+ 
+-Space Ghost (Walking/Floating, Attack/Drops Ectoplasm bomb from above (player must dodge) (Drops gold)   
+
+-Alien (Walking, Attack/Shoot, Can climb ladders) (Drops shotgun shell and battery)   
+
+Review each sprite, script, game logic and function, etc to ensure a perfectly working demo! It needs to be a fully functional working demo. 
+
+Test the game to ensure quality graphics, gameplay, game logic, etc. before submitting updated/fixed versions of index.html index.js and styles.css! Do not change anything else about the scripts unless asked too! 
+
+Thank you very much for your hard work and help in coding this and making the assets! You are the best :D 

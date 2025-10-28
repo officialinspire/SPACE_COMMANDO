@@ -1,0 +1,122 @@
+/* Basic styling for the page */
+/* Reset body to occupy the entire viewport and provide a dark backdrop for the game. */
+html, body {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #000 repeat-x top;
+  background-size: auto 100%;
+  /* Use our sci‑fi fonts by default throughout the page.  Orbitron
+     provides a clean digital look, while Press Start 2P offers a
+     pixelated retro feel for UI elements. */
+  font-family: 'Orbitron', 'Press Start 2P', monospace;
+  color: #fff;
+}
+
+/* Style the canvas. By default it is fixed to 800×450 pixels; on larger screens we scale it up while preserving
+   the aspect ratio by using CSS transforms. */
+#game-canvas {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  image-rendering: pixelated;
+  /* Ensure crisp rendering of pixel art */
+}
+
+/* Responsive scaling for mobile devices: stretch the canvas to the width of the viewport
+   and maintain aspect ratio. Remove the centring transform so the canvas anchors to the
+   top left, allowing space for the mobile control bar at the bottom. */
+@media (max-width: 768px) {
+  #game-canvas {
+    width: 100vw;
+    height: auto;
+    max-height: calc(100vw * (9 / 16));
+    top: 0;
+    left: 0;
+    transform: none;
+  }
+}
+
+/* Mobile control bar positioned at the bottom of the viewport. Hidden by default and
+   enabled via JavaScript when running on a touch device. Buttons use a gold retro theme
+   reminiscent of 8‑bit games. */
+.mobile-controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  display: none;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  padding: 6px 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 500;
+}
+
+.mobile-controls .control-btn {
+  margin: 4px;
+  padding: 6px 8px;
+  min-width: 44px;
+  min-height: 44px;
+  background: #d4af37; /* gold tone */
+  color: #111;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 14px;
+  border: 2px solid #444;
+  border-radius: 4px;
+  text-align: center;
+  outline: none;
+  cursor: pointer;
+  user-select: none;
+  image-rendering: pixelated;
+  touch-action: none; /* prevent scrolling when touching buttons */
+}
+
+.mobile-controls .control-btn:active {
+  background: #ffd700;
+}
+
+/* Heads‑up display (HUD) elements */
+.hud {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 100;
+  font-size: 16px;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.menu-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  z-index: 200;
+}
+
+.menu-overlay h1 {
+  margin-bottom: 20px;
+  font-size: 32px;
+}
+
+.menu-overlay .option {
+  padding: 8px 12px;
+  margin: 4px 0;
+  cursor: default;
+}
+
+.menu-overlay .selected {
+  background: #444;
+}
