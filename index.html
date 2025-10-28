@@ -12,15 +12,16 @@
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Press+Start+2P&display=swap" rel="stylesheet">
 </head>
 <body>
-  <!-- Intro video plays when the page first loads.  Once the clip
-       finishes it hides itself, revealing the game canvas and menus
-       underneath.  Muted is required for autoplay on mobile
-       browsers.  The CSS class intro-video positions the clip full
-       screen. -->
-  <video id="intro-video" class="intro-video" src="inspiresoftwareintro.mp4" autoplay muted playsinline></video>
-
-  <!-- The game runs inside this canvas. It is scaled via CSS to fill the page while preserving the aspect ratio. -->
-  <canvas id="game-canvas" width="800" height="450"></canvas>
+  <!-- Game container holds both the intro video and the canvas.  The
+       video overlays the canvas on first load and plays the credit
+       sequence with audio.  Once complete it hides itself.  Using a
+       container allows the intro to share the same dimensions as
+       the game rather than occupying the full page. -->
+  <div id="game-container">
+    <video id="intro-video" class="intro-video" src="inspiresoftwareintro.mp4" playsinline></video>
+    <!-- The game runs inside this canvas. It is scaled via CSS to fill the page while preserving the aspect ratio. -->
+    <canvas id="game-canvas" width="800" height="450"></canvas>
+  </div>
 
   <!--
     On touch‑enabled devices a custom control bar appears beneath the
@@ -67,9 +68,23 @@
   <script>
     const introVideo = document.getElementById('intro-video');
     if (introVideo) {
+      // When the credit finishes, hide the video so the game is visible
       introVideo.addEventListener('ended', () => {
         introVideo.style.display = 'none';
       });
+      // Trigger playback with audio on the first user interaction (click or key press)
+      const startIntro = () => {
+        if (introVideo.paused) {
+          try {
+            introVideo.muted = false;
+            introVideo.play();
+          } catch (err) {
+            /* swallow autoplay errors */
+          }
+        }
+      };
+      document.addEventListener('click', startIntro, { once: true });
+      document.addEventListener('keydown', startIntro, { once: true });
     }
   </script>
 </body>
