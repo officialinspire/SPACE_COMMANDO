@@ -1,50 +1,44 @@
 We are working on our SPACE COMMANDO javascript web game. All files are saved in the directory .../SPACE COMMANDO/ on my desktop and in their respective folders as labeled for development purposes.  
 
-We intend to upload the completed game on GitHub and the Inspire website at a later date.  
+The current version of the game is available online at: https://officialinspire.github.io/SPACE_COMMANDO/   
 
-The current version of the game has a few issues we need to fix and resolve before it is complete! We need to update and change some things though so this version of the game works properly and better!   
+The current version of the game has a few issues we need to fix and resolve before it is fully complete! 
 
-KEEP EVERYTHING ELSE IN THE SCRIPTS/CODE THE SAME UNLESS SPECIFICALLY ASKED TO UPDATE/CHANGE! 
+We need to update and change some things though so this version of the game works properly and better!   
 
-DO NOT CHANGE EXISTING FUNCTIONALITY UNLESS ASKED TO UPDATE/CHANGE! 
+WHEN UPDATING THE NEW VERSION OF INDEX.HTML INDEX.JS AND STYLES.CSS KEEP EVERYTHING ELSE IN THE SCRIPTS/CODE THE SAME UNLESS SPECIFICALLY ASKED TO UPDATE/CHANGE! 
 
---Add logic for player to climb down a ladder while pressing the down key. Make sure collision logic prevents player from going below the floor layer.  
+AGAIN DO NOT CHANGE EXISTING FUNCTIONALITY UNLESS ASKED TO UPDATE/CHANGE! 
 
---Add logic for player to press down arrow key to duck/crouch. Also add logic so player can press down arrow key + shoot ('z') + left/right to shoot while ducking in either the left or right direction. 
+DO NOT OMIT OR REMOVE ANY PARTS OF THE SCRIPT OR GAMEPLAY LOGIC UNLESS SPECIFICALLY ASKED TOO OR UPDATING AN EXISTING FUNCTIONALITY WITHIN THE GAME!   
 
---If player is pressing down arrow key to duck and moving left or right at the same time, then the character crouches and low-walks in that direction until they stop pressing the crouch/duck down arrow key.  
+------------------------------------------------------------------------------
 
---Make sure all text and menu options fit within the main-menu container/ux/ui as well as the purchase menu and game settings menu and make sure they are centered/spaced to be visually easy to read and organized 
+--Review the index.js and test each feature and peer review and edit to make sure every feature and function works properly and as intended! Make sure no issues in script, no repetitive code, no overlapping commands or errors, etc.   
 
---Optimize for mobile and desktop experience! 
+----------------------------------------------------------------------------
 
---ONLY For mobile users create a custom UX/UI with custom left/right/up/down arrow keys, 'space bar' jump, 'z' fire, 'x' reload , 'p' purchase , 'esc' main menu toggle, and 'enter' select keys/buttons. Make the buttons gold and 8bit retro themed and place them at the footer of the game canvas in their own container running horizontally for player to use with touchscreen during mobile/android use! The player can play the game in landscape mode on the phone and use the hard embedded keys on the bottom of the screen to play. 
+--Optimize and update the existing script for mobile experience! (Keep the desktop script the same, we just need the game to detect when being played on a mobile device and to utilize the following custom mobile UI/UX. (styles.css) (index.html) 
 
---When player takes damage play player_damage.mp3 which is located in "...\SPACE COMMANDO\player_damage.mp3" 
+--Use mobile_uxui_controls.png as an example of what we need. The game needs to be displayed on the phone in landscape orientation but with the phone physically turned sideways, and the bottom lower thirds is embedded with the custom mobile UX/UI based on mobile_uxui_controls.png (styles.css) (index.html) 
 
---When enemy dies play enemy_death.mp3 which is located in "...\SPACE COMMANDO\enemy_death.mp3" 
+--For the mobile users custom UX/UI make the buttons gold and 8bit retro themed and place them at the footer of the game canvas in their own container running horizontally for player to use with touchscreen during mobile/android use! (styles.css) (index.html) 
 
---When player selects a menu option in the main game menu or in the purchase menu play select_sfx.mp3 which is located in "...\SPACE COMMANDO\select_sfx.mp3" 
+--ONLY For mobile users create a custom UX/UI with the following controls/buttons added: JUMP , SHOOT , RELOAD , SELECT , ESC , LEFT ARROW , RIGHT ARROW , DOWN ARROW, UP ARROW, STORE it needs to mimic the set-up and layout of a handheld video game controller. I need the mobile UX/UI to be layered over the game and I need everything to be presented neatly on the phone while it is in landscape orientation. (styles.css) (index.html)
 
---When player shoots pistol play pistol_shoot.mp3 which is located in "...\SPACE COMMANDO\pistol_shoot.mp3"
+--Update weapons logic and script: (index.js) Make sure the index.js script for weapons logic and combat is utilizing the following: 
 
---When player shoots rifle play rifle_shoot.mp3 which is located in "...\SPACE COMMANDO\rifle_shoot.mp3"
+-pistol (starting weapon) (12 shots) (1 shot per fire) (low to medium damage) (fast reload) , 
 
---When player shoots shotgun play shotgun_shoot.mp3 which is located in "...\SPACE COMMANDO\shotgun_shoot.mp3"
+-assault-rifle (1st purchase) (automatic weapon press and hold to fire until empty) (low to medium damage) (50 Rounds Capacity) (fast reload), 
 
---When player shoots laser beam play laser_shoot.mp3 which is located in "...\SPACE COMMANDO\laser_shoot.mp3" 
+-shotgun (2nd purchase) (1 shot per fire then reload, slow reloading time) (high damage) (5 shots), 
 
---Update weapons logic and script: 
+-laser beam (3rd purchase) (slow reload) (press to fire, shoots beam until depleted or player stops pressing fire button) (high damage) 
 
--pistol (starting weapon) (12 shots) (1 shot per fire) (low to medium power) (fast reload) , 
+--Weapons Logic: Ammo and Ammo Types: (index.js)
 
--assault-rifle (1st purchase) (automatic weapon press and hold to fire until empty) (low to medium power) (50 Rounds Capacity) (fast reload), 
-
--shotgun (2nd purchase) (1 shot per fire then reload, slow reloading time) (high power) (5 shots), 
-
--laser beam (3rd purchase) (slow reload) (press to fire, shoots beam until depleted or player stops pressing fire button) (high power) 
-
---Weapons Logic: Ammo and Ammo Types: 
+Their are different ammo types. Players can pick up and store different ammo types even when they haven't unlocked that gun yet in the store. Make sure we reflect this principle within the index.js! 
 
 -pistol ammo (bullet +1) , bullet can be dropped as a type of ammo (draw canvas bullet ammo type and add weapon, ammo, and item logic to index.js) (can be purchased from store for 5 gold per bullet) 
 
@@ -56,24 +50,24 @@ DO NOT CHANGE EXISTING FUNCTIONALITY UNLESS ASKED TO UPDATE/CHANGE!
 
 --Items Logic: make sure all items drop at consistent, and balanced rates and modify item logic in index.js 
 
-Game Controls: Game controls are left arrow to move left, right arrow to move right, up arrow to climb up, down arrow to climb down, 'space' for jump, and 'z' for shoot, 'x' for reload. Main Menu is accessed by pressing 'esc'. Purchase menu is accessed by pressing 'p' Select is enter. 
+REMINDER USE SPRITE SHEET PROVIDED space-commando-sprite-sheet.png which will be located in "...\SPACE COMMANDO\space-commando-sprite-sheet.png" 
 
-USE SPRITE SHEET PROVIDED space-commando-sprite-sheet.png which will be located in "...\SPACE COMMANDO\space-commando-sprite-sheet.png" 
+WE NEED TO ALSO UPDATE AND MAKE SURE ALL ENEMY MOVEMENT AND COMBAT incorporates the following notes: (index.js)  
 
-Make sure all enemy movement and combat logic incorporates the following notes: (Review index.js) 
+-Robot (Enemy) (Drops battery and ammo cartridge)  
 
--Space Commando (Player) (Need running animation, jumping animation, shooting pistol animation, shooting rifle animation, shooting shotgun animation, shooting laser beam) ,  
-
--Robot (Enemy) (Walking, Attack/Shoot, Can climb ladders) (Drops battery and ammo cartridge)  
-
--Space Zombie (Walking, Attack/Melee, Can't climb ladders) (Drops bullet ammo and ammo cartridge)   
+-Space Zombie (Drops bullet ammo and ammo cartridge)   
  
--Space Ghost (Walking/Floating, Attack/Drops Ectoplasm bomb from above (player must dodge) (Drops gold)   
+-Space Ghost (Drops gold)   
 
--Alien (Walking, Attack/Shoot, Can climb ladders) (Drops shotgun shell and battery)   
+-Alien (Drops shotgun shell and battery)  
+
+---------------------------------------------------------- 
 
 Review each sprite, script, game logic and function, etc to ensure a perfectly working demo! It needs to be a fully functional working demo. 
 
-Test the game to ensure quality graphics, gameplay, game logic, etc. before submitting updated/fixed versions of index.html index.js and styles.css! Do not change anything else about the scripts unless asked too! 
+Test the game to ensure quality graphics, gameplay, game logic, etc. before submitting updated/fixed versions of index.html index.js and styles.css!
+
+Make sure to carefully review index.js to make sure no conflicting scripts, no over-lapping instructions or references, make sure all proper sources and syntax is used, make sure each feature of the game works correctly, etc before submitting final complete updated versions of index.html styles.css and index.js 
 
 Thank you very much for your hard work and help in coding this and making the assets! You are the best :D 

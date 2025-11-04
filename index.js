@@ -160,17 +160,17 @@
     // Assault rifle: first purchase.  Fully automatic, fires rapidly and
     // holds fifty rounds.  Reloads quickly and deals similar damage to
     // the pistol.  Enemies drop ammo cartridges containing ten rounds.
-    rifle:   { name:'Rifle',   cost:100, damage:2, magazine:50, reloadTime:800,  bulletSpeed:8, fireRate:100, auto:true,  ammoDrop:10 },
+    rifle:   { name:'Rifle',   cost:75, damage:4, magazine:50, reloadTime:800,  bulletSpeed:8, fireRate:100, auto:true,  ammoDrop:10 },
     // Shotgun: second purchase.  Fires a high‑powered blast once per
     // trigger pull.  Holds five shells and takes longer to reload.  Each
     // pellet deals significant damage.  Enemies drop shells in packs of five.
-    shotgun: { name:'Shotgun', cost:200, damage:8, magazine:5,  reloadTime:2000, bulletSpeed:5, fireRate:500, auto:false, pellets:3, spread:0.3, ammoDrop:5 },
+    shotgun: { name:'Shotgun', cost:150, damage:8, magazine:5,  reloadTime:2000, bulletSpeed:5, fireRate:500, auto:false, pellets:3, spread:0.3, ammoDrop:5 },
     // Laser beam: third purchase.  Slow reload emphasises the need to
     // conserve shots.  The beam fires continuously while the trigger is
     // held until the magazine is depleted.  A reload time of four
     // seconds slows the pace relative to the other guns.  The high
     // damage per shot reflects the weapon's futuristic lethality.
-    laser:   { name:'Laser',   cost:300, damage:5, magazine:30, reloadTime:4000, bulletSpeed:10, fireRate:80, auto:true,  ammoDrop:1 }
+    laser:   { name:'Laser',   cost:200, damage:10, magazine:30, reloadTime:4000, bulletSpeed:10, fireRate:80, auto:true,  ammoDrop:1 }
   };
 
   // Weapon order used in the shop menu
@@ -194,7 +194,7 @@
     // balanced pricing: pistol bullets and shotgun shells are cheap,
     // rifle cartridges are mid‑priced and batteries (laser ammo) are
     // expensive.
-    { type: 'ammo', ammoType: 'pistol', name: 'PISTOL AMMO', cost: 5, qty: 1 },
+    { type: 'ammo', ammoType: 'pistol', name: 'PISTOL AMMO', cost: 1, qty: 1 },
     { type: 'ammo', ammoType: 'rifle', name: 'RIFLE AMMO', cost: 10, qty: 10 },
     { type: 'ammo', ammoType: 'shotgun', name: 'SHOTGUN SHELLS', cost: 5, qty: 5 },
     { type: 'ammo', ammoType: 'laser', name: 'BATTERY', cost: 10, qty: 1 }
