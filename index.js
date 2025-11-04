@@ -194,7 +194,7 @@
     // balanced pricing: pistol bullets and shotgun shells are cheap,
     // rifle cartridges are mid‑priced and batteries (laser ammo) are
     // expensive.
-    { type: 'ammo', ammoType: 'pistol', name: 'PISTOL AMMO', cost: 1, qty: 1 },
+    { type: 'ammo', ammoType: 'pistol', name: 'PISTOL AMMO', cost: 5, qty: 1 },
     { type: 'ammo', ammoType: 'rifle', name: 'RIFLE AMMO', cost: 10, qty: 10 },
     { type: 'ammo', ammoType: 'shotgun', name: 'SHOTGUN SHELLS', cost: 5, qty: 5 },
     { type: 'ammo', ammoType: 'laser', name: 'BATTERY', cost: 10, qty: 1 }
