@@ -23,40 +23,50 @@
     <canvas id="game-canvas" width="800" height="450"></canvas>
   </div>
 
-  <!--
-    On touch‑enabled devices a custom control bar appears beneath the
-    game.  These controls mirror the keyboard inputs (movement,
-    jump, shoot, reload, store, select and menu) so that the
-    touchscreen can be used for gameplay.  Each button carries a
-    data‑key attribute corresponding to the key it triggers.
+  <!-- Rotation prompt: shown on mobile devices in portrait mode -->
+  <div id="rotation-prompt" class="rotation-prompt">
+    <div class="rotation-content">
+      <div class="phone-icon">📱 ↻</div>
+      <h2>PLEASE ROTATE YOUR DEVICE</h2>
+      <p>Turn your phone horizontally to play</p>
+    </div>
+  </div>
 
-    The layout loosely follows the provided mock‑up (mobile_uxui_controls.png):
-    shoot/reload on the far left, a central cluster for store, jump
-    and select, a directional pad to the right, and a menu button
-    anchored on the far right.  The container is hidden on desktop
-    and only shown on mobile via JavaScript.
+  <!-- Mobile controls: retro NES/Gameboy Color style overlay
+       Layout mimics classic handheld gaming:
+       - D-pad on the left for movement
+       - Action buttons (FIRE/RELOAD) on the right like NES A/B buttons
+       - Menu buttons (SHOP/SELECT/ESC) centered at top of controls
   -->
   <div id="mobile-controls" class="mobile-controls">
-    <div class="controls-left">
-      <button data-key="z" class="control-btn">SHOOT</button>
-      <button data-key="x" class="control-btn">RELOAD</button>
-    </div>
-    <div class="controls-center">
-      <button data-key="p" class="control-btn">STORE</button>
-      <button data-key=" " class="control-btn">JUMP</button>
-      <button data-key="Enter" class="control-btn">SELECT</button>
-    </div>
-    <div class="controls-arrows">
-      <button data-key="ArrowUp" class="control-btn arrow-btn">↑</button>
-      <div class="arrow-row">
-        <button data-key="ArrowLeft" class="control-btn arrow-btn">←</button>
-        <button data-key="ArrowDown" class="control-btn arrow-btn">↓</button>
-        <button data-key="ArrowRight" class="control-btn arrow-btn">→</button>
+    <!-- D-Pad (Left side) -->
+    <div class="dpad-container">
+      <div class="dpad">
+        <button data-key="ArrowUp" class="dpad-btn dpad-up">▲</button>
+        <button data-key="ArrowLeft" class="dpad-btn dpad-left">◀</button>
+        <button data-key="ArrowDown" class="dpad-btn dpad-down">▼</button>
+        <button data-key="ArrowRight" class="dpad-btn dpad-right">▶</button>
+        <div class="dpad-center"></div>
       </div>
     </div>
-    <!-- The right-most button triggers the escape key to toggle the game menu.  Labelled
-         “ESC” to match the keyboard input for clarity. -->
-    <button data-key="Escape" class="control-btn menu-btn">ESC</button>
+
+    <!-- Menu buttons (Center) -->
+    <div class="menu-buttons">
+      <button data-key="p" class="menu-btn">SHOP</button>
+      <button data-key="Enter" class="menu-btn">SELECT</button>
+      <button data-key="Escape" class="menu-btn">MENU</button>
+    </div>
+
+    <!-- Jump button (Center bottom) -->
+    <div class="jump-button">
+      <button data-key=" " class="jump-btn">JUMP</button>
+    </div>
+
+    <!-- Action buttons (Right side) -->
+    <div class="action-buttons">
+      <button data-key="z" class="action-btn fire-btn">FIRE</button>
+      <button data-key="x" class="action-btn reload-btn">RELOAD</button>
+    </div>
   </div>
 
   <!-- Main game logic -->

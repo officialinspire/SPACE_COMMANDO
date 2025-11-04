@@ -372,20 +372,39 @@
     });
 
     // ---------------------------------------------------------------------
-    // Mobile controls
+    // Mobile controls with orientation detection
     // Detect whether we are on a touch‑capable mobile device.  If so,
     // reveal the custom on‑screen controller and wire up each button to
-    // simulate keyboard presses.  Using both touch and pointer events
-    // ensures compatibility across browsers.  The data‑key attribute on
-    // each button specifies which key should be set in the keys object
-    // when pressed.  Menu navigation triggers handleMenuInput() immediately
-    // on press so the purchase and settings menus respond without delay.
+    // simulate keyboard presses.  Show rotation prompt when in portrait mode.
     const isMobile = /Mobi|Android|iPhone|iPad|iPod|Tablet/i.test(navigator.userAgent) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
+
     if (isMobile) {
       const ctrlBar = document.getElementById('mobile-controls');
+      const rotationPrompt = document.getElementById('rotation-prompt');
+
+      // Function to check orientation and show/hide controls
+      function checkOrientation() {
+        const isLandscape = window.innerWidth > window.innerHeight;
+
+        if (isLandscape) {
+          // Landscape mode: show controls, hide rotation prompt
+          if (ctrlBar) ctrlBar.style.display = 'block';
+          if (rotationPrompt) rotationPrompt.style.display = 'none';
+        } else {
+          // Portrait mode: hide controls, show rotation prompt
+          if (ctrlBar) ctrlBar.style.display = 'none';
+          if (rotationPrompt) rotationPrompt.style.display = 'flex';
+        }
+      }
+
+      // Check orientation on load and whenever it changes
+      checkOrientation();
+      window.addEventListener('resize', checkOrientation);
+      window.addEventListener('orientationchange', checkOrientation);
+
+      // Wire up all mobile control buttons
       if (ctrlBar) {
-        ctrlBar.style.display = 'flex';
-        const buttons = ctrlBar.querySelectorAll('.control-btn');
+        const buttons = ctrlBar.querySelectorAll('[data-key]');
         buttons.forEach(btn => {
           const keyName = btn.getAttribute('data-key');
           const press = (event) => {
