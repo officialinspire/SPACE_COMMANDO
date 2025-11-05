@@ -2,7 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+
+  <!-- Mobile web app meta tags -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#030712">
+
   <title>SPACE COMMANDO – Side-Scrolling Shooter</title>
   <!-- Core styles for layout and the retro mobile controls -->
   <link rel="stylesheet" href="styles.css">
@@ -35,7 +42,7 @@
 
   <div id="game-container">
     <video id="intro-video" class="intro-video" src="inspiresoftwareintro.mp4" playsinline></video>
-    <canvas id="game-canvas" width="800" height="450"></canvas>
+    <canvas id="game-canvas"></canvas>
   </div>
 
   <!--

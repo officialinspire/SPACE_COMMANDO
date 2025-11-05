@@ -11,7 +11,26 @@ html, body {
 }
 
 :root {
-  --controls-height: 120px;
+  --controls-height: 140px;
+}
+
+/* Responsive controls height for smaller screens */
+@media (max-height: 600px) and (orientation: landscape) {
+  :root {
+    --controls-height: 110px;
+  }
+}
+
+@media (max-height: 500px) and (orientation: landscape) {
+  :root {
+    --controls-height: 95px;
+  }
+}
+
+@media (max-height: 400px) and (orientation: landscape) {
+  :root {
+    --controls-height: 85px;
+  }
 }
 
 /* Game container - desktop (centered, full viewport) */
@@ -199,6 +218,23 @@ html, body {
   padding: 2px 0;
 }
 
+/* Responsive menu bar for smaller screens */
+@media (max-height: 500px) and (orientation: landscape) {
+  .menu-bar {
+    gap: 8px;
+    margin-bottom: 4px;
+    padding: 1px 0;
+  }
+}
+
+@media (max-height: 400px) and (orientation: landscape) {
+  .menu-bar {
+    gap: 6px;
+    margin-bottom: 2px;
+    padding: 0;
+  }
+}
+
 .menu-top-btn {
   background: linear-gradient(180deg, #4a4a4a 0%, #2a2a2a 100%);
   border: 3px solid #666;
@@ -212,6 +248,27 @@ html, body {
   min-width: 60px;
   height: 22px;
   text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* Responsive menu buttons for smaller screens */
+@media (max-height: 500px) and (orientation: landscape) {
+  .menu-top-btn {
+    font-size: 6px;
+    padding: 3px 8px;
+    min-width: 50px;
+    height: 18px;
+    border: 2px solid #666;
+  }
+}
+
+@media (max-height: 400px) and (orientation: landscape) {
+  .menu-top-btn {
+    font-size: 5px;
+    padding: 2px 6px;
+    min-width: 45px;
+    height: 16px;
+    border: 2px solid #666;
+  }
 }
 
 .menu-top-btn:active {
@@ -228,6 +285,19 @@ html, body {
   align-items: center;
   flex: 1;
   padding: 0 10px;
+}
+
+/* Responsive controls padding for smaller screens */
+@media (max-height: 500px) and (orientation: landscape) {
+  .controls-main {
+    padding: 0 8px;
+  }
+}
+
+@media (max-height: 400px) and (orientation: landscape) {
+  .controls-main {
+    padding: 0 6px;
+  }
 }
 
 /* -------------------------------------------------------------------
@@ -279,6 +349,35 @@ html, body {
   color: #888;
   font-size: 20px;
   position: relative;
+}
+
+/* Responsive D-pad for smaller screens */
+@media (max-height: 500px) and (orientation: landscape) {
+  .dpad-btn {
+    width: 38px;
+    height: 38px;
+    font-size: 17px;
+    border: 2px solid #2a2a2a;
+  }
+  .dpad-center {
+    width: 38px !important;
+    height: 38px !important;
+    border: 2px solid #2a2a2a !important;
+  }
+}
+
+@media (max-height: 400px) and (orientation: landscape) {
+  .dpad-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 14px;
+    border: 2px solid #2a2a2a;
+  }
+  .dpad-center {
+    width: 32px !important;
+    height: 32px !important;
+    border: 2px solid #2a2a2a !important;
+  }
 }
 
 .dpad-up {
@@ -378,6 +477,38 @@ html, body {
   gap: 2px;
   text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.9);
   position: relative;
+}
+
+/* Responsive action buttons for smaller screens */
+@media (max-height: 500px) and (orientation: landscape) {
+  .action-btn {
+    width: 52px;
+    height: 52px;
+    border: 3px solid #8b0000;
+    font-size: 6px;
+  }
+  .action-btn .btn-key {
+    font-size: 14px !important;
+  }
+  .action-btn .btn-label {
+    font-size: 5px !important;
+  }
+}
+
+@media (max-height: 400px) and (orientation: landscape) {
+  .action-btn {
+    width: 44px;
+    height: 44px;
+    border: 2px solid #8b0000;
+    font-size: 5px;
+    gap: 1px;
+  }
+  .action-btn .btn-key {
+    font-size: 12px !important;
+  }
+  .action-btn .btn-label {
+    font-size: 4px !important;
+  }
 }
 
 .action-btn .btn-label {

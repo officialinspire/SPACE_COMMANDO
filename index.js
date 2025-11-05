@@ -319,10 +319,111 @@
     document.title = 'SPACE COMMANDO – A #teaminspire Production';
     const canvas = document.getElementById('game-canvas');
     const ctx = canvas.getContext('2d');
-    const width = canvas.width;
-    const height = canvas.height;
+
+    // ---------------------------------------------------------------------
+    // Dynamic Canvas Sizing for Mobile
+    // Handle viewport sizing and mobile address bar
+    const isMobileDevice = /Mobi|Android|iPhone|iPad|iPod|Tablet/i.test(navigator.userAgent) ||
+                           (navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
+    const isLandscape = () => window.innerWidth > window.innerHeight;
+
+    // Get actual viewport height accounting for mobile address bar
+    function getViewportHeight() {
+      // Use visualViewport API if available (best for mobile)
+      if (window.visualViewport) {
+        return window.visualViewport.height;
+      }
+      // Fallback to window.innerHeight
+      return window.innerHeight;
+    }
+
+    // Get controls height from CSS variable
+    function getControlsHeight() {
+      if (!isMobileDevice || !isLandscape()) return 0;
+      const root = document.documentElement;
+      const controlsHeight = getComputedStyle(root).getPropertyValue('--controls-height');
+      return parseFloat(controlsHeight) || 140;
+    }
+
+    // Resize canvas to fit viewport
+    function resizeCanvas() {
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = getViewportHeight();
+      const controlsHeight = getControlsHeight();
+
+      let canvasWidth, canvasHeight;
+
+      if (isMobileDevice && isLandscape()) {
+        // Mobile landscape: fill width, height minus controls
+        canvasWidth = viewportWidth;
+        canvasHeight = viewportHeight - controlsHeight;
+      } else if (isMobileDevice) {
+        // Mobile portrait: show rotation prompt (handled by CSS)
+        canvasWidth = viewportWidth;
+        canvasHeight = viewportHeight;
+      } else {
+        // Desktop: maintain aspect ratio
+        const aspectRatio = 16 / 9;
+        canvasWidth = viewportWidth;
+        canvasHeight = viewportWidth / aspectRatio;
+
+        if (canvasHeight > viewportHeight) {
+          canvasHeight = viewportHeight;
+          canvasWidth = canvasHeight * aspectRatio;
+        }
+      }
+
+      // Set canvas display size
+      canvas.style.width = canvasWidth + 'px';
+      canvas.style.height = canvasHeight + 'px';
+
+      // Set canvas internal resolution (for better quality on high-DPI screens)
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = canvasWidth * dpr;
+      canvas.height = canvasHeight * dpr;
+
+      // Scale context to account for DPR
+      ctx.scale(dpr, dpr);
+
+      return { width: canvasWidth, height: canvasHeight };
+    }
+
+    // Initial resize
+    const { width: initialWidth, height: initialHeight } = resizeCanvas();
+    let width = initialWidth;
+    let height = initialHeight;
+
     const worldWidth = 5000; // world extends horizontally
-    const groundY = height - 32;
+    let groundY = height - 32;
+
+    // Update canvas and game dimensions on resize/orientation change
+    const handleResize = () => {
+      const { width: newWidth, height: newHeight } = resizeCanvas();
+      width = newWidth;
+      height = newHeight;
+      groundY = height - 32;
+
+      // Update player and camera positions proportionally if needed
+      if (player) {
+        // Ensure player stays on ground
+        if (player.y > groundY - player.height) {
+          player.y = groundY - player.height;
+        }
+      }
+    };
+
+    // Listen for resize and orientation changes
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', () => {
+      // Delay to ensure new dimensions are available
+      setTimeout(handleResize, 100);
+    });
+
+    // Listen for visualViewport changes (mobile address bar show/hide)
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleResize);
+    }
+    // ---------------------------------------------------------------------
 
     // Initialise background music once per session.  Creating audio
     // elements inside init() ensures they are tied to the document
@@ -381,22 +482,23 @@
     // each button specifies which key should be set in the keys object
     // when pressed.  Menu navigation triggers handleMenuInput() immediately
     // on press so the purchase and settings menus respond without delay.
-    const isMobile = /Mobi|Android|iPhone|iPad|iPod|Tablet/i.test(navigator.userAgent) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
-    const ctrlBar = document.getElementById('mobile-controls');
-    const orientationOverlay = document.getElementById('orientation-lock');
-
     const releaseAllKeys = () => {
       for (const k of Object.keys(keys)) {
         keys[k] = false;
       }
     };
 
-    if (isMobile) {
+    if (isMobileDevice) {
       const ctrlBar = document.getElementById('mobile-controls');
       const rotatePrompt = document.getElementById('rotate-prompt');
 
       if (ctrlBar) {
         ctrlBar.style.display = 'flex';
+
+        // Define touch/pointer event types for mobile controls
+        const startEvents = ['touchstart', 'pointerdown', 'mousedown'];
+        const endEvents = ['touchend', 'pointerup', 'mouseup', 'touchcancel', 'pointercancel'];
+
         // Select all buttons with data-key attribute (works with new retro button classes)
         const buttons = ctrlBar.querySelectorAll('[data-key]');
         buttons.forEach(btn => {
@@ -439,6 +541,35 @@
       checkOrientation();
       window.addEventListener('resize', checkOrientation);
       window.addEventListener('orientationchange', checkOrientation);
+
+      // Request fullscreen on first interaction to minimize address bar
+      let fullscreenRequested = false;
+      const requestFullscreen = () => {
+        if (fullscreenRequested) return;
+        fullscreenRequested = true;
+
+        const docElem = document.documentElement;
+        if (docElem.requestFullscreen) {
+          docElem.requestFullscreen().catch(() => {
+            // Fullscreen request failed, continue anyway
+          });
+        } else if (docElem.webkitRequestFullscreen) {
+          docElem.webkitRequestFullscreen();
+        } else if (docElem.mozRequestFullScreen) {
+          docElem.mozRequestFullScreen();
+        } else if (docElem.msRequestFullscreen) {
+          docElem.msRequestFullscreen();
+        }
+
+        // Trigger resize after attempting fullscreen
+        setTimeout(handleResize, 200);
+      };
+
+      // Try to enter fullscreen on first touch/click
+      const fullscreenEvents = ['touchstart', 'click'];
+      fullscreenEvents.forEach(eventType => {
+        document.addEventListener(eventType, requestFullscreen, { once: true });
+      });
     }
 
     // Collections for dynamic entities
