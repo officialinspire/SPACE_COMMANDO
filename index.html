@@ -26,6 +26,15 @@
        sequence with audio.  Once complete it hides itself.  Using a
        container allows the intro to share the same dimensions as
        the game rather than occupying the full page. -->
+  <!-- Landscape orientation prompt for mobile devices -->
+  <div id="rotate-prompt" class="rotate-prompt">
+    <div class="rotate-content">
+      <div class="rotate-icon">📱 ↻</div>
+      <h2>Please Rotate Your Device</h2>
+      <p>For the best gaming experience, please rotate your device to landscape orientation.</p>
+    </div>
+  </div>
+
   <div id="game-container">
     <video id="intro-video" class="intro-video" src="inspiresoftwareintro.mp4" playsinline></video>
     <!-- The game runs inside this canvas. It is scaled via CSS to fill the page while preserving the aspect ratio. -->
@@ -33,65 +42,73 @@
   </div>
 
   <!--
-    On touch‑enabled devices a custom control bar appears beneath the
-    game.  These controls mirror the keyboard inputs (movement,
-    jump, shoot, reload, store, select and menu) so that the
-    touchscreen can be used for gameplay.  Each button carries a
-    data‑key attribute corresponding to the key it triggers.
+    RETRO MOBILE CONTROLS
 
-    The layout loosely follows the provided mock‑up (mobile_uxui_controls.png):
-    shoot/reload on the far left, a central cluster for store, jump
-    and select, a directional pad to the right, and a menu button
-    anchored on the far right.  The container is hidden on desktop
-    and only shown on mobile via JavaScript.
+    NES/Gameboy Color inspired touch controls for mobile gameplay.
+    Layout mimics classic handheld consoles:
+    - D-Pad on the left side
+    - Action buttons (A/B style) on the right side
+    - Menu buttons along the top
+
+    Each button has a data-key attribute that maps to keyboard controls.
+    The container is hidden on desktop and only shown on mobile via JavaScript.
   -->
   <div id="mobile-controls" class="mobile-controls">
-    <!-- D-PAD: Classic cross directional pad on the left -->
-    <div class="dpad-container">
-      <div class="dpad">
-        <button data-key="ArrowUp" class="dpad-btn dpad-up">
-          <span class="dpad-arrow">▲</span>
-        </button>
-        <div class="dpad-middle-row">
-          <button data-key="ArrowLeft" class="dpad-btn dpad-left">
-            <span class="dpad-arrow">◀</span>
+    <!-- Top menu bar with system buttons -->
+    <div class="menu-bar">
+      <button data-key="p" class="control-btn menu-top-btn">
+        <span class="btn-label">SHOP</span>
+      </button>
+      <button data-key="Enter" class="control-btn menu-top-btn">
+        <span class="btn-label">SELECT</span>
+      </button>
+      <button data-key="Escape" class="control-btn menu-top-btn">
+        <span class="btn-label">MENU</span>
+      </button>
+    </div>
+
+    <!-- Main control area -->
+    <div class="controls-main">
+      <!-- D-Pad (Left Side) -->
+      <div class="dpad-container">
+        <div class="dpad">
+          <button data-key="ArrowUp" class="control-btn dpad-btn dpad-up">
+            <span class="arrow">▲</span>
           </button>
-          <div class="dpad-center"></div>
-          <button data-key="ArrowRight" class="dpad-btn dpad-right">
-            <span class="dpad-arrow">▶</span>
+          <div class="dpad-middle">
+            <button data-key="ArrowLeft" class="control-btn dpad-btn dpad-left">
+              <span class="arrow">◀</span>
+            </button>
+            <div class="dpad-center"></div>
+            <button data-key="ArrowRight" class="control-btn dpad-btn dpad-right">
+              <span class="arrow">▶</span>
+            </button>
+          </div>
+          <button data-key="ArrowDown" class="control-btn dpad-btn dpad-down">
+            <span class="arrow">▼</span>
           </button>
         </div>
-        <button data-key="ArrowDown" class="dpad-btn dpad-down">
-          <span class="dpad-arrow">▼</span>
-        </button>
       </div>
-    </div>
 
-    <!-- ACTION BUTTONS: Classic NES-style A/B button layout -->
-    <div class="action-buttons">
-      <div class="action-row">
-        <button data-key="z" class="action-btn fire-btn">
-          <span class="btn-label">FIRE</span>
-        </button>
-        <button data-key="x" class="action-btn reload-btn">
-          <span class="btn-label">RELOAD</span>
-        </button>
+      <!-- Action Buttons (Right Side) -->
+      <div class="action-buttons">
+        <div class="action-row action-top">
+          <button data-key="x" class="control-btn action-btn">
+            <span class="btn-label">RELOAD</span>
+            <span class="btn-key">X</span>
+          </button>
+        </div>
+        <div class="action-row action-bottom">
+          <button data-key=" " class="control-btn action-btn jump-btn">
+            <span class="btn-label">JUMP</span>
+            <span class="btn-key">A</span>
+          </button>
+          <button data-key="z" class="control-btn action-btn fire-btn">
+            <span class="btn-label">FIRE</span>
+            <span class="btn-key">B</span>
+          </button>
+        </div>
       </div>
-      <div class="action-row">
-        <button data-key="p" class="action-btn shop-btn">
-          <span class="btn-label">SHOP</span>
-        </button>
-        <button data-key="Enter" class="action-btn select-btn">
-          <span class="btn-label">SELECT</span>
-        </button>
-      </div>
-    </div>
-
-    <!-- MENU BUTTONS: Escape positioned like classic Start button -->
-    <div class="menu-buttons">
-      <button data-key="Escape" class="menu-btn esc-btn">
-        <span class="btn-label-small">ESC</span>
-      </button>
     </div>
   </div>
 

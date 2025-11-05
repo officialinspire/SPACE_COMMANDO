@@ -23,277 +23,329 @@ html, body {
 }
 
 /* -------------------------------------------------------------------
- * ORIENTATION PROMPT
- * Prompts mobile users to rotate their device to landscape mode
- */
-.orientation-prompt {
+ * LANDSCAPE ORIENTATION PROMPT
+ * Shows on mobile devices in portrait mode, prompting rotation
+ * ------------------------------------------------------------------- */
+.rotate-prompt {
   position: fixed;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  width: 100vw;
+  height: 100vh;
+  background: linear-gradient(135deg, #1a0033 0%, #0a001a 100%);
   display: none;
-  justify-content: center;
   align-items: center;
+  justify-content: center;
   z-index: 9999;
   font-family: 'Press Start 2P', monospace;
 }
 
-.orientation-content {
+.rotate-content {
   text-align: center;
   padding: 20px;
-  color: #ffd700;
-  animation: pulse 2s infinite;
+  max-width: 300px;
 }
 
 .rotate-icon {
   font-size: 64px;
   margin-bottom: 20px;
-  animation: rotate 3s infinite;
+  animation: rotatePhone 2s ease-in-out infinite;
 }
 
-@keyframes rotate {
+.rotate-prompt h2 {
+  color: #ffd700;
+  font-size: 14px;
+  margin: 20px 0;
+  line-height: 1.6;
+}
+
+.rotate-prompt p {
+  color: #fff;
+  font-size: 10px;
+  line-height: 1.8;
+}
+
+@keyframes rotatePhone {
   0%, 100% { transform: rotate(0deg); }
   50% { transform: rotate(90deg); }
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
-}
-
-.orientation-content h2 {
-  font-size: 18px;
-  margin: 10px 0;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-}
-
-.orientation-content p {
-  font-size: 12px;
-  color: #ffa500;
-}
-
-/* Show orientation prompt only on portrait mobile devices */
-@media (orientation: portrait) and (max-width: 768px) {
-  .orientation-prompt {
+/* Show rotation prompt only on mobile in portrait mode */
+@media (max-width: 768px) and (orientation: portrait) {
+  .rotate-prompt {
     display: flex;
+  }
+  #game-container,
+  #mobile-controls {
+    display: none !important;
   }
 }
 
 /* -------------------------------------------------------------------
  * RETRO MOBILE CONTROLS
- * NES/Gameboy Color inspired control overlay
- */
+ *
+ * NES/Gameboy Color inspired touch controls with authentic retro styling.
+ * Features classic D-pad on left, action buttons on right, menu bar on top.
+ * Gold and burgundy color scheme evokes classic Nintendo aesthetics.
+ * ------------------------------------------------------------------- */
 #mobile-controls {
   position: fixed;
   left: 0;
   bottom: 0;
   width: 100%;
   height: var(--controls-height);
-  background: linear-gradient(180deg, #2c2c3e 0%, #1a1a2e 100%);
-  border-top: 4px solid #4a4a5e;
+  background: linear-gradient(180deg, #2a1a4a 0%, #1a0a2a 100%);
+  border-top: 4px solid #ffd700;
   box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.8);
   display: none;
+  flex-direction: column;
   z-index: 500;
-  padding: 12px 16px;
+  padding: 6px 12px;
   box-sizing: border-box;
   font-family: 'Press Start 2P', monospace;
-  flex-direction: row;
-  justify-content: space-between;
+}
+
+/* Menu Bar at Top */
+.menu-bar {
+  display: flex;
+  justify-content: center;
   align-items: center;
   gap: 12px;
+  margin-bottom: 6px;
+  padding: 2px 0;
+}
+
+.menu-top-btn {
+  background: linear-gradient(180deg, #4a4a4a 0%, #2a2a2a 100%);
+  border: 3px solid #666;
+  border-radius: 4px;
+  box-shadow:
+    inset 0 -2px 0 rgba(0, 0, 0, 0.5),
+    0 2px 4px rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 7px;
+  padding: 4px 10px;
+  min-width: 60px;
+  height: 22px;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.menu-top-btn:active {
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.8),
+    0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* Main Controls Container */
+.controls-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex: 1;
+  padding: 0 10px;
 }
 
 /* -------------------------------------------------------------------
- * D-PAD (Directional Pad) - Classic NES Style
- */
+ * D-PAD STYLING (Left Side)
+ * Classic cross-shaped directional pad
+ * ------------------------------------------------------------------- */
 .dpad-container {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: 8px;
-}
-
-.dpad {
-  position: relative;
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0;
-  width: 110px;
-  height: 110px;
-}
-
-.dpad-middle-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0;
-}
-
-.dpad-center {
-  width: 30px;
-  height: 30px;
-  background: #1a1a2e;
-  border-radius: 50%;
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
-}
-
-.dpad-btn {
-  background: linear-gradient(145deg, #3a3a4e, #2a2a3e);
-  border: 3px solid #ffd700;
-  color: #ffd700;
-  font-size: 20px;
-  cursor: pointer;
-  user-select: none;
-  -webkit-user-select: none;
-  outline: none;
-  position: relative;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.6),
-              inset 0 -2px 4px rgba(0, 0, 0, 0.3);
-  transition: all 0.1s;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
 }
 
+.dpad {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+.dpad-middle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dpad-btn {
+  background: linear-gradient(180deg, #3a3a3a 0%, #1a1a1a 100%);
+  border: 3px solid #2a2a2a;
+  box-shadow:
+    inset 0 -2px 0 rgba(0, 0, 0, 0.6),
+    0 2px 6px rgba(0, 0, 0, 0.8);
+  width: 45px;
+  height: 45px;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #888;
+  font-size: 20px;
+  position: relative;
+}
+
+.dpad-up {
+  border-radius: 6px 6px 0 0;
+  margin-bottom: -3px;
+}
+
+.dpad-down {
+  border-radius: 0 0 6px 6px;
+  margin-top: -3px;
+}
+
+.dpad-left {
+  border-radius: 6px 0 0 6px;
+  margin-right: -3px;
+}
+
+.dpad-right {
+  border-radius: 0 6px 6px 0;
+  margin-left: -3px;
+}
+
+.dpad-center {
+  width: 45px;
+  height: 45px;
+  background: #0a0a0a;
+  border: 3px solid #2a2a2a;
+}
+
 .dpad-btn:active {
-  background: linear-gradient(145deg, #2a2a3e, #1a1a2e);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.8),
-              inset 0 2px 4px rgba(0, 0, 0, 0.5);
-  transform: translateY(2px);
-  border-color: #ffb700;
+  background: linear-gradient(180deg, #ffd700 0%, #cc9900 100%);
+  color: #000;
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.5),
+    0 1px 3px rgba(255, 215, 0, 0.8);
+  transform: scale(0.95);
 }
 
-.dpad-up, .dpad-down {
-  width: 40px;
-  height: 30px;
-  margin: 0 auto;
-  border-radius: 4px;
-}
-
-.dpad-left, .dpad-right {
-  width: 30px;
-  height: 40px;
-  border-radius: 4px;
-}
-
-.dpad-arrow {
-  font-size: 18px;
-  text-shadow: 0 0 8px rgba(255, 215, 0, 0.8);
+.dpad-btn .arrow {
+  filter: drop-shadow(1px 1px 1px rgba(0, 0, 0, 0.8));
 }
 
 /* -------------------------------------------------------------------
- * ACTION BUTTONS - NES/Gameboy Style
- */
+ * ACTION BUTTONS (Right Side)
+ * Classic NES-style A/B button layout
+ * ------------------------------------------------------------------- */
 .action-buttons {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-right: auto;
+  align-items: flex-end;
+  gap: 6px;
 }
 
 .action-row {
   display: flex;
-  gap: 8px;
+  gap: 12px;
+  align-items: center;
+}
+
+.action-top {
+  margin-right: 20px;
 }
 
 .action-btn {
-  background: radial-gradient(circle at 30% 30%, #ff6b6b, #cc3333);
-  border: 4px solid #ffd700;
+  width: 62px;
+  height: 62px;
   border-radius: 50%;
-  width: 50px;
-  height: 50px;
+  border: 4px solid #8b0000;
+  background: linear-gradient(135deg, #dc143c 0%, #8b0000 100%);
+  box-shadow:
+    inset 0 -3px 0 rgba(0, 0, 0, 0.4),
+    inset 0 3px 0 rgba(255, 255, 255, 0.2),
+    0 4px 8px rgba(0, 0, 0, 0.8),
+    0 0 0 2px #4a0000;
   color: #fff;
-  font-size: 8px;
-  font-weight: bold;
-  cursor: pointer;
-  user-select: none;
-  -webkit-user-select: none;
-  outline: none;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.6),
-              inset 0 -3px 6px rgba(0, 0, 0, 0.4),
-              inset 0 2px 6px rgba(255, 255, 255, 0.2);
-  transition: all 0.1s;
+  font-size: 7px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  gap: 2px;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.9);
+  position: relative;
 }
 
-.action-btn:active {
-  background: radial-gradient(circle at 30% 30%, #cc3333, #991111);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.8),
-              inset 0 3px 8px rgba(0, 0, 0, 0.6);
-  transform: translateY(2px);
-  border-color: #ffb700;
-}
-
-.fire-btn {
-  background: radial-gradient(circle at 30% 30%, #ff4444, #cc0000);
-}
-
-.reload-btn {
-  background: radial-gradient(circle at 30% 30%, #ff8844, #cc5500);
-}
-
-.shop-btn {
-  background: radial-gradient(circle at 30% 30%, #44ff44, #00cc00);
-}
-
-.select-btn {
-  background: radial-gradient(circle at 30% 30%, #4488ff, #0044cc);
-}
-
-.btn-label {
-  font-size: 7px;
-  line-height: 1.2;
-  text-align: center;
+.action-btn .btn-label {
+  font-size: 6px;
   letter-spacing: 0.5px;
 }
 
-/* -------------------------------------------------------------------
- * MENU BUTTON - Like classic Start button
- */
-.menu-buttons {
-  display: flex;
-  flex-direction: column;
-  margin-right: 8px;
+.action-btn .btn-key {
+  font-size: 16px;
+  font-weight: bold;
+  color: rgba(255, 255, 255, 0.9);
 }
 
-.menu-btn {
-  background: linear-gradient(145deg, #4a4a5e, #3a3a4e);
-  border: 3px solid #ffd700;
-  border-radius: 8px;
-  color: #ffd700;
-  font-size: 10px;
-  width: 60px;
-  height: 30px;
+.action-btn:active {
+  background: linear-gradient(135deg, #ff6347 0%, #dc143c 100%);
+  box-shadow:
+    inset 0 3px 6px rgba(0, 0, 0, 0.6),
+    0 2px 4px rgba(0, 0, 0, 0.8),
+    0 0 0 2px #4a0000,
+    0 0 12px rgba(255, 215, 0, 0.6);
+  transform: translateY(2px) scale(0.96);
+}
+
+/* X button (Reload) - slightly different color */
+.action-btn:not(.fire-btn):not(.jump-btn) {
+  background: linear-gradient(135deg, #ff8c00 0%, #cc6600 100%);
+  border-color: #994d00;
+  box-shadow:
+    inset 0 -3px 0 rgba(0, 0, 0, 0.4),
+    inset 0 3px 0 rgba(255, 255, 255, 0.2),
+    0 4px 8px rgba(0, 0, 0, 0.8),
+    0 0 0 2px #663300;
+}
+
+.action-btn:not(.fire-btn):not(.jump-btn):active {
+  background: linear-gradient(135deg, #ffa500 0%, #ff8c00 100%);
+  box-shadow:
+    inset 0 3px 6px rgba(0, 0, 0, 0.6),
+    0 2px 4px rgba(0, 0, 0, 0.8),
+    0 0 0 2px #663300,
+    0 0 12px rgba(255, 215, 0, 0.6);
+}
+
+/* Jump button - gold accent */
+.jump-btn {
+  background: linear-gradient(135deg, #ffd700 0%, #cc9900 100%);
+  border-color: #996600;
+  color: #000;
+  box-shadow:
+    inset 0 -3px 0 rgba(0, 0, 0, 0.4),
+    inset 0 3px 0 rgba(255, 255, 255, 0.3),
+    0 4px 8px rgba(0, 0, 0, 0.8),
+    0 0 0 2px #664400;
+}
+
+.jump-btn .btn-key {
+  color: #000;
+}
+
+.jump-btn:active {
+  background: linear-gradient(135deg, #ffed4e 0%, #ffd700 100%);
+  box-shadow:
+    inset 0 3px 6px rgba(0, 0, 0, 0.4),
+    0 2px 4px rgba(0, 0, 0, 0.8),
+    0 0 0 2px #664400,
+    0 0 16px rgba(255, 215, 0, 0.9);
+}
+
+/* Base button reset */
+.control-btn {
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
   outline: none;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.6),
-              inset 0 -2px 4px rgba(0, 0, 0, 0.3);
-  transition: all 0.1s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-shadow: 0 0 6px rgba(255, 215, 0, 0.6);
-}
-
-.menu-btn:active {
-  background: linear-gradient(145deg, #2a2a3e, #1a1a2e);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.8),
-              inset 0 2px 4px rgba(0, 0, 0, 0.5);
-  transform: translateY(2px);
-  border-color: #ffb700;
-}
-
-.btn-label-small {
-  font-size: 9px;
-  letter-spacing: 1px;
+  touch-action: manipulation;
+  transition: all 0.08s ease;
 }
 
 /* Game container positions the game and intro video.  On desktop it

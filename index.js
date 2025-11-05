@@ -383,6 +383,8 @@
     const isMobile = /Mobi|Android|iPhone|iPad|iPod|Tablet/i.test(navigator.userAgent) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
     if (isMobile) {
       const ctrlBar = document.getElementById('mobile-controls');
+      const rotatePrompt = document.getElementById('rotate-prompt');
+
       if (ctrlBar) {
         ctrlBar.style.display = 'flex';
         // Select all buttons with data-key attribute (works with new retro button classes)
@@ -392,12 +394,16 @@
           const press = (event) => {
             event.preventDefault();
             keys[keyName] = true;
+            // Add visual feedback
+            btn.style.opacity = '0.8';
             // Trigger immediate menu handling for Enter, Escape, P etc.
             handleMenuInput({ key: keyName });
           };
           const release = (event) => {
             event.preventDefault();
             keys[keyName] = false;
+            // Remove visual feedback
+            btn.style.opacity = '1';
           };
           // Touch events
           btn.addEventListener('touchstart', press);
@@ -409,6 +415,24 @@
           btn.addEventListener('pointerleave', release);
         });
       }
+
+      // Orientation detection and rotation prompt handling
+      function checkOrientation() {
+        // Check if device is in portrait mode (on mobile devices)
+        const isPortrait = window.innerHeight > window.innerWidth;
+        const isMobileWidth = window.innerWidth <= 768;
+
+        if (isPortrait && isMobileWidth && rotatePrompt) {
+          rotatePrompt.style.display = 'flex';
+        } else if (rotatePrompt) {
+          rotatePrompt.style.display = 'none';
+        }
+      }
+
+      // Check orientation on load and whenever it changes
+      checkOrientation();
+      window.addEventListener('resize', checkOrientation);
+      window.addEventListener('orientationchange', checkOrientation);
     }
 
     // Collections for dynamic entities
