@@ -217,13 +217,13 @@ html, body {
   bottom: 0;
   width: 100%;
   height: var(--controls-height);
-  background: linear-gradient(180deg, #2a1a4a 0%, #1a0a2a 100%);
+  background: #000000; /* Solid black background */
   border-top: 4px solid #ffd700;
   box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.8);
   display: none;
   flex-direction: column;
   z-index: 500;
-  padding: 6px 12px;
+  padding: 8px 15px; /* Increased padding for better spacing */
   box-sizing: border-box;
   font-family: 'Press Start 2P', monospace;
 }
@@ -233,9 +233,9 @@ html, body {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 6px;
-  padding: 2px 0;
+  gap: 15px; /* Increased gap for better spacing */
+  margin-bottom: 8px;
+  padding: 3px 0;
 }
 
 /* Responsive menu bar for smaller screens */
@@ -256,18 +256,19 @@ html, body {
 }
 
 .menu-top-btn {
-  background: linear-gradient(180deg, #4a4a4a 0%, #2a2a2a 100%);
-  border: 3px solid #666;
+  background: #ffd700; /* Solid gold NES style */
+  border: 3px solid #cc9900;
   border-radius: 4px;
   box-shadow:
-    inset 0 -2px 0 rgba(0, 0, 0, 0.5),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.3),
     0 2px 4px rgba(0, 0, 0, 0.6);
-  color: #fff;
+  color: #000; /* Black text on gold */
   font-size: 7px;
+  font-weight: bold;
   padding: 4px 10px;
   min-width: 60px;
-  height: 22px;
-  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  height: 24px;
+  text-shadow: none;
 }
 
 /* Responsive menu buttons for smaller screens */
@@ -292,9 +293,10 @@ html, body {
 }
 
 .menu-top-btn:active {
-  transform: translateY(1px);
+  background: #cc9900; /* Darker gold when pressed */
+  transform: translateY(2px);
   box-shadow:
-    inset 0 1px 2px rgba(0, 0, 0, 0.8),
+    inset 0 2px 4px rgba(0, 0, 0, 0.5),
     0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
@@ -304,7 +306,8 @@ html, body {
   justify-content: space-between;
   align-items: center;
   flex: 1;
-  padding: 0 10px;
+  padding: 0 15px; /* Increased padding for better spacing */
+  gap: 20px; /* Add gap between D-pad and action buttons */
 }
 
 /* Responsive controls padding for smaller screens */
@@ -354,10 +357,10 @@ html, body {
 }
 
 .dpad-btn {
-  background: linear-gradient(180deg, #3a3a3a 0%, #1a1a1a 100%);
-  border: 3px solid #2a2a2a;
+  background: #ffd700; /* Solid gold NES style */
+  border: 3px solid #cc9900;
   box-shadow:
-    inset 0 -2px 0 rgba(0, 0, 0, 0.6),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.3),
     0 2px 6px rgba(0, 0, 0, 0.8);
   width: 45px;
   height: 45px;
@@ -366,7 +369,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #888;
+  color: #000; /* Black arrows */
   font-size: 20px;
   position: relative;
 }
@@ -428,7 +431,7 @@ html, body {
 }
 
 .dpad-btn:active {
-  background: linear-gradient(180deg, #ffd700 0%, #cc9900 100%);
+  background: #cc9900; /* Darker gold when pressed */
   color: #000;
   box-shadow:
     inset 0 2px 4px rgba(0, 0, 0, 0.5),
@@ -481,21 +484,22 @@ html, body {
   width: 62px;
   height: 62px;
   border-radius: 50%;
-  border: 4px solid #8b0000;
-  background: linear-gradient(135deg, #dc143c 0%, #8b0000 100%);
+  border: 4px solid #cc9900;
+  background: #ffd700; /* Solid gold NES style */
   box-shadow:
-    inset 0 -3px 0 rgba(0, 0, 0, 0.4),
-    inset 0 3px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.3),
+    inset 0 3px 0 rgba(255, 255, 255, 0.3),
     0 4px 8px rgba(0, 0, 0, 0.8),
-    0 0 0 2px #4a0000;
-  color: #fff;
+    0 0 0 2px #cc9900;
+  color: #000; /* Black text on gold */
   font-size: 7px;
+  font-weight: bold;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 2px;
-  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.9);
+  text-shadow: none;
   position: relative;
 }
 
@@ -539,49 +543,50 @@ html, body {
 .action-btn .btn-key {
   font-size: 16px;
   font-weight: bold;
-  color: rgba(255, 255, 255, 0.9);
+  color: #000; /* Black text on gold */
 }
 
 .action-btn:active {
-  background: linear-gradient(135deg, #ff6347 0%, #dc143c 100%);
+  background: #cc9900; /* Darker gold when pressed */
   box-shadow:
-    inset 0 3px 6px rgba(0, 0, 0, 0.6),
+    inset 0 3px 6px rgba(0, 0, 0, 0.5),
     0 2px 4px rgba(0, 0, 0, 0.8),
-    0 0 0 2px #4a0000,
+    0 0 0 2px #cc9900,
     0 0 12px rgba(255, 215, 0, 0.6);
   transform: translateY(2px) scale(0.96);
 }
 
-/* X button (Reload) - slightly different color */
+/* All action buttons use same gold NES style */
 .action-btn:not(.fire-btn):not(.jump-btn) {
-  background: linear-gradient(135deg, #ff8c00 0%, #cc6600 100%);
-  border-color: #994d00;
+  background: #ffd700; /* Solid gold NES style */
+  border-color: #cc9900;
+  color: #000;
   box-shadow:
-    inset 0 -3px 0 rgba(0, 0, 0, 0.4),
-    inset 0 3px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.3),
+    inset 0 3px 0 rgba(255, 255, 255, 0.3),
     0 4px 8px rgba(0, 0, 0, 0.8),
-    0 0 0 2px #663300;
+    0 0 0 2px #cc9900;
 }
 
 .action-btn:not(.fire-btn):not(.jump-btn):active {
-  background: linear-gradient(135deg, #ffa500 0%, #ff8c00 100%);
+  background: #cc9900; /* Darker gold when pressed */
   box-shadow:
-    inset 0 3px 6px rgba(0, 0, 0, 0.6),
+    inset 0 3px 6px rgba(0, 0, 0, 0.5),
     0 2px 4px rgba(0, 0, 0, 0.8),
-    0 0 0 2px #663300,
+    0 0 0 2px #cc9900,
     0 0 12px rgba(255, 215, 0, 0.6);
 }
 
-/* Jump button - gold accent */
+/* Jump button - same gold NES style */
 .jump-btn {
-  background: linear-gradient(135deg, #ffd700 0%, #cc9900 100%);
-  border-color: #996600;
+  background: #ffd700; /* Solid gold NES style */
+  border-color: #cc9900;
   color: #000;
   box-shadow:
-    inset 0 -3px 0 rgba(0, 0, 0, 0.4),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.3),
     inset 0 3px 0 rgba(255, 255, 255, 0.3),
     0 4px 8px rgba(0, 0, 0, 0.8),
-    0 0 0 2px #664400;
+    0 0 0 2px #cc9900;
 }
 
 .jump-btn .btn-key {
@@ -589,11 +594,11 @@ html, body {
 }
 
 .jump-btn:active {
-  background: linear-gradient(135deg, #ffed4e 0%, #ffd700 100%);
+  background: #cc9900; /* Darker gold when pressed */
   box-shadow:
-    inset 0 3px 6px rgba(0, 0, 0, 0.4),
+    inset 0 3px 6px rgba(0, 0, 0, 0.5),
     0 2px 4px rgba(0, 0, 0, 0.8),
-    0 0 0 2px #664400,
+    0 0 0 2px #cc9900,
     0 0 16px rgba(255, 215, 0, 0.9);
 }
 
