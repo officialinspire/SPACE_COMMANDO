@@ -2,130 +2,127 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-
-  <!-- Mobile web app meta tags -->
-  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="theme-color" content="#030712">
-
-  <title>SPACE COMMANDO – Side-Scrolling Shooter</title>
-  <!-- Core styles for layout and the retro mobile controls -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>SPACE COMMANDO – Side‑Scrolling Shooter</title>
+  <!-- Link the stylesheet for basic page and HUD styling -->
   <link rel="stylesheet" href="styles.css">
-  <!-- Retro display fonts -->
+  <!-- Import a retro sci‑fi font for the heads‑up display.  Orbitron provides
+       a clean, futuristic look while Press Start 2P adds a pixel‑retro
+       flavour.  These fonts are free to use via Google Fonts.  -->
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Press+Start+2P&display=swap" rel="stylesheet">
 </head>
 <body>
-  <!-- Orientation prompt for mobile devices in portrait mode -->
-  <div id="orientation-prompt" class="orientation-prompt">
-    <div class="orientation-content">
-      <div class="rotate-icon">📱 ↻</div>
-      <h2>Please Rotate Your Device</h2>
-      <p>This game is best played in landscape mode</p>
-    </div>
-  </div>
-
   <!-- Game container holds both the intro video and the canvas.  The
        video overlays the canvas on first load and plays the credit
        sequence with audio.  Once complete it hides itself.  Using a
        container allows the intro to share the same dimensions as
        the game rather than occupying the full page. -->
-  <!-- Landscape orientation prompt for mobile devices -->
-  <div id="rotate-prompt" class="rotate-prompt">
-    <div class="rotate-content">
-      <div class="rotate-icon">📱 ↻</div>
-      <h2>Please Rotate Your Device</h2>
-      <p>For the best gaming experience, please rotate your device to landscape orientation.</p>
-    </div>
-  </div>
-
   <div id="game-container">
     <video id="intro-video" class="intro-video" src="inspiresoftwareintro.mp4" playsinline></video>
-    <canvas id="game-canvas"></canvas>
+    <!-- The game runs inside this canvas. It is scaled via CSS to fill the page while preserving the aspect ratio. -->
+    <canvas id="game-canvas" width="800" height="450"></canvas>
   </div>
 
   <!--
-    RETRO MOBILE CONTROLS
+    On touch‑enabled devices a custom control bar appears beneath the
+    game.  These controls mirror the keyboard inputs (movement,
+    jump, shoot, reload, store, select and menu) so that the
+    touchscreen can be used for gameplay.  Each button carries a
+    data‑key attribute corresponding to the key it triggers.
 
-    NES/Gameboy Color inspired touch controls for mobile gameplay.
-    Layout mimics classic handheld consoles:
-    - D-Pad on the left side
-    - Action buttons (A/B style) on the right side
-    - Menu buttons along the top
-
-    Each button has a data-key attribute that maps to keyboard controls.
-    The container is hidden on desktop and only shown on mobile via JavaScript.
+    The layout loosely follows the provided mock‑up (mobile_uxui_controls.png):
+    shoot/reload on the far left, a central cluster for store, jump
+    and select, a directional pad to the right, and a menu button
+    anchored on the far right.  The container is hidden on desktop
+    and only shown on mobile via JavaScript.
   -->
   <div id="mobile-controls" class="mobile-controls">
-    <!-- Top menu bar with system buttons -->
-    <div class="menu-bar">
-      <button data-key="p" class="control-btn menu-top-btn">
-        <span class="btn-label">SHOP</span>
-      </button>
-      <button data-key="Enter" class="control-btn menu-top-btn">
-        <span class="btn-label">SELECT</span>
-      </button>
-      <button data-key="Escape" class="control-btn menu-top-btn">
-        <span class="btn-label">MENU</span>
-      </button>
+    <div class="controls-left">
+      <button data-key="z" class="control-btn">SHOOT</button>
+      <button data-key="x" class="control-btn">RELOAD</button>
     </div>
-
-    <!-- Main control area -->
-    <div class="controls-main">
-      <!-- D-Pad (Left Side) -->
-      <div class="dpad-container">
-        <div class="dpad">
-          <button data-key="ArrowUp" class="control-btn dpad-btn dpad-up">
-            <span class="arrow">▲</span>
-          </button>
-          <div class="dpad-middle">
-            <button data-key="ArrowLeft" class="control-btn dpad-btn dpad-left">
-              <span class="arrow">◀</span>
-            </button>
-            <div class="dpad-center"></div>
-            <button data-key="ArrowRight" class="control-btn dpad-btn dpad-right">
-              <span class="arrow">▶</span>
-            </button>
-          </div>
-          <button data-key="ArrowDown" class="control-btn dpad-btn dpad-down">
-            <span class="arrow">▼</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Action Buttons (Right Side) -->
-      <div class="action-buttons">
-        <div class="action-row action-top">
-          <button data-key="x" class="control-btn action-btn">
-            <span class="btn-label">RELOAD</span>
-            <span class="btn-key">X</span>
-          </button>
-        </div>
-        <div class="action-row action-bottom">
-          <button data-key=" " class="control-btn action-btn jump-btn">
-            <span class="btn-label">JUMP</span>
-            <span class="btn-key">A</span>
-          </button>
-          <button data-key="z" class="control-btn action-btn fire-btn">
-            <span class="btn-label">FIRE</span>
-            <span class="btn-key">B</span>
-          </button>
-        </div>
+    <div class="controls-center">
+      <button data-key="p" class="control-btn">STORE</button>
+      <button data-key=" " class="control-btn">JUMP</button>
+      <button data-key="Enter" class="control-btn">SELECT</button>
+    </div>
+    <div class="controls-arrows">
+      <button data-key="ArrowUp" class="control-btn arrow-btn">↑</button>
+      <div class="arrow-row">
+        <button data-key="ArrowLeft" class="control-btn arrow-btn">←</button>
+        <button data-key="ArrowDown" class="control-btn arrow-btn">↓</button>
+        <button data-key="ArrowRight" class="control-btn arrow-btn">→</button>
       </div>
     </div>
+    <!-- The right-most button triggers the escape key to toggle the game menu.  Labelled
+         “ESC” to match the keyboard input for clarity. -->
+    <button data-key="Escape" class="control-btn menu-btn">ESC</button>
   </div>
 
   <!-- Main game logic -->
   <script src="index.js"></script>
 
-  <!-- Hide the intro once it finishes playing. -->
+  
+  <script>
+    // ---- Mobile full-screen & dynamic viewport height ----
+    (function() {
+      const isTouch = (('ontouchstart' in window) || navigator.maxTouchPoints > 0);
+      // Use the Visual Viewport API when available to compute a stable 100vh that
+      // ignores the collapsing URL bar on mobile browsers.
+      function setVH() {
+        const h = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
+        document.documentElement.style.setProperty('--vh', (h * 0.01) + 'px');
+      }
+      setVH();
+      window.addEventListener('resize', setVH);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', setVH);
+      }
+
+      // Try to enter fullscreen and lock landscape on first user interaction.
+      async function goFullscreen() {
+        try {
+          const el = document.getElementById('game-container');
+          if (el && document.fullscreenElement == null) {
+            if (el.requestFullscreen) await el.requestFullscreen();
+          }
+          if (screen.orientation && screen.orientation.lock) {
+            try { await screen.orientation.lock('landscape'); } catch (e) {}
+          }
+        } catch (e) { /* ignore */ }
+      }
+
+      const firstInteract = () => {
+        // Prevent bounce/scroll during gameplay
+        document.body.style.overscrollBehavior = 'none';
+        document.addEventListener('touchmove', (e) => { e.preventDefault(); }, { passive: false });
+        goFullscreen();
+        // Remove these once-run listeners
+        window.removeEventListener('click', firstInteract);
+        window.removeEventListener('touchstart', firstInteract);
+        window.removeEventListener('keydown', firstInteract);
+      };
+      if (isTouch) {
+        window.addEventListener('click', firstInteract, { once: true });
+        window.addEventListener('touchstart', firstInteract, { once: true });
+        window.addEventListener('keydown', firstInteract, { once: true });
+      }
+    })();
+  </script>
+
+  <!-- Hide the intro once it finishes playing.  Listening on the
+       ended event ensures that the game only becomes visible when
+       the credit video is complete. -->
   <script>
     const introVideo = document.getElementById('intro-video');
     if (introVideo) {
+      // When the credit finishes, hide the video so the game is visible
       introVideo.addEventListener('ended', () => {
         introVideo.style.display = 'none';
       });
+      // Trigger playback with audio on the first user interaction (click or key press)
       const startIntro = () => {
         if (introVideo.paused) {
           try {
