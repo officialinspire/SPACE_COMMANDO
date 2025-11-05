@@ -416,9 +416,24 @@
             btn.classList.add('pressed');
             event.preventDefault();
             keys[keyName] = true;
-            // Trigger immediate menu handling for Enter, Escape, P etc.
-            handleMenuInput({ key: keyName });
-            if (keyName === 'Enter') { ensureSelectSfxMobile(); }
+
+            // For menu buttons (Enter, Escape, P), immediately trigger the menu logic
+            // by simulating a keyboard event
+            if (keyName === 'Enter' || keyName === 'p' || keyName === 'P' || keyName === 'Escape') {
+              // Create a synthetic keyboard event
+              const syntheticEvent = new KeyboardEvent('keydown', {
+                key: keyName,
+                code: keyName,
+                bubbles: true,
+                cancelable: true
+              });
+              // Dispatch to trigger handleMenuInput through the keydown listener
+              document.dispatchEvent(syntheticEvent);
+              ensureSelectSfxMobile();
+            } else {
+              // For gameplay buttons, just call handleMenuInput directly
+              handleMenuInput({ key: keyName });
+            }
           };
           const release = (event) => {
             btn.classList.remove('pressed');
