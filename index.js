@@ -379,6 +379,9 @@
         e.preventDefault();
       }
       handleMenuInput(e);
+      // Flag that this keydown was processed so mobile fallbacks do not
+      // accidentally re-trigger the same action.
+      e.handled = true;
     });
     document.addEventListener('keyup', (e) => {
       // Clear key state
@@ -416,14 +419,28 @@
             btn.classList.add('pressed');
             event.preventDefault();
             keys[keyName] = true;
-            // After: Dispatches a real keyboard event
-const syntheticEvent = new KeyboardEvent('keydown', {
-  key: keyName,
-  code: keyName,
-  bubbles: true,
-  cancelable: true
-});
-document.dispatchEvent(syntheticEvent)
+            let syntheticEvent;
+            try {
+              syntheticEvent = new KeyboardEvent('keydown', {
+                key: keyName,
+                code: keyName,
+                bubbles: true,
+                cancelable: true
+              });
+            } catch (err) {
+              syntheticEvent = new Event('keydown', { bubbles: true, cancelable: true });
+              syntheticEvent.key = keyName;
+            }
+            if (syntheticEvent) {
+              syntheticEvent.handled = false;
+              document.dispatchEvent(syntheticEvent);
+              if (!syntheticEvent.handled) {
+                handleMenuInput({ key: keyName });
+              }
+            } else {
+              handleMenuInput({ key: keyName });
+            }
+          };
           const release = (event) => {
             btn.classList.remove('pressed');
             event.preventDefault();
