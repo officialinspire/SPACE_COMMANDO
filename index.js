@@ -194,7 +194,7 @@
     // balanced pricing: pistol bullets and shotgun shells are cheap,
     // rifle cartridges are mid‑priced and batteries (laser ammo) are
     // expensive.
-    { type: 'ammo', ammoType: 'pistol', name: 'PISTOL AMMO', cost: 5, qty: 1 },
+    { type: 'ammo', ammoType: 'pistol', name: 'PISTOL AMMO', cost: 1, qty: 1 },
     { type: 'ammo', ammoType: 'rifle', name: 'RIFLE AMMO', cost: 10, qty: 10 },
     { type: 'ammo', ammoType: 'shotgun', name: 'SHOTGUN SHELLS', cost: 5, qty: 5 },
     { type: 'ammo', ammoType: 'laser', name: 'BATTERY', cost: 10, qty: 1 }
@@ -255,6 +255,17 @@
   // types so that the game becomes more challenging the longer it is
   // played.
   let elapsedTime = 0;
+    // Prevent double-tap to zoom on buttons (mobile)
+    let doubleTapBlockerAdded = false;
+    function addTapBlocker() {
+      if (doubleTapBlockerAdded) return;
+      doubleTapBlockerAdded = true;
+      const ctrl = document.getElementById('mobile-controls');
+      if (ctrl) {
+        ctrl.addEventListener('touchend', function(e){ e.preventDefault(); }, { passive: false });
+      }
+    }
+    
 
   /**
    * Fade an audio track in over time.  Cancels any previous fade on
@@ -319,111 +330,10 @@
     document.title = 'SPACE COMMANDO – A #teaminspire Production';
     const canvas = document.getElementById('game-canvas');
     const ctx = canvas.getContext('2d');
-
-    // ---------------------------------------------------------------------
-    // Dynamic Canvas Sizing for Mobile
-    // Handle viewport sizing and mobile address bar
-    const isMobileDevice = /Mobi|Android|iPhone|iPad|iPod|Tablet/i.test(navigator.userAgent) ||
-                           (navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
-    const isLandscape = () => window.innerWidth > window.innerHeight;
-
-    // Get actual viewport height accounting for mobile address bar
-    function getViewportHeight() {
-      // Use visualViewport API if available (best for mobile)
-      if (window.visualViewport) {
-        return window.visualViewport.height;
-      }
-      // Fallback to window.innerHeight
-      return window.innerHeight;
-    }
-
-    // Get controls height from CSS variable
-    function getControlsHeight() {
-      if (!isMobileDevice || !isLandscape()) return 0;
-      const root = document.documentElement;
-      const controlsHeight = getComputedStyle(root).getPropertyValue('--controls-height');
-      return parseFloat(controlsHeight) || 140;
-    }
-
-    // Resize canvas to fit viewport
-    function resizeCanvas() {
-      const viewportWidth = window.innerWidth;
-      const viewportHeight = getViewportHeight();
-      const controlsHeight = getControlsHeight();
-
-      let canvasWidth, canvasHeight;
-
-      if (isMobileDevice && isLandscape()) {
-        // Mobile landscape: fill width, height minus controls
-        canvasWidth = viewportWidth;
-        canvasHeight = viewportHeight - controlsHeight;
-      } else if (isMobileDevice) {
-        // Mobile portrait: show rotation prompt (handled by CSS)
-        canvasWidth = viewportWidth;
-        canvasHeight = viewportHeight;
-      } else {
-        // Desktop: maintain aspect ratio
-        const aspectRatio = 16 / 9;
-        canvasWidth = viewportWidth;
-        canvasHeight = viewportWidth / aspectRatio;
-
-        if (canvasHeight > viewportHeight) {
-          canvasHeight = viewportHeight;
-          canvasWidth = canvasHeight * aspectRatio;
-        }
-      }
-
-      // Set canvas display size
-      canvas.style.width = canvasWidth + 'px';
-      canvas.style.height = canvasHeight + 'px';
-
-      // Set canvas internal resolution (for better quality on high-DPI screens)
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = canvasWidth * dpr;
-      canvas.height = canvasHeight * dpr;
-
-      // Scale context to account for DPR
-      ctx.scale(dpr, dpr);
-
-      return { width: canvasWidth, height: canvasHeight };
-    }
-
-    // Initial resize
-    const { width: initialWidth, height: initialHeight } = resizeCanvas();
-    let width = initialWidth;
-    let height = initialHeight;
-
+    const width = canvas.width;
+    const height = canvas.height;
     const worldWidth = 5000; // world extends horizontally
-    let groundY = height - 32;
-
-    // Update canvas and game dimensions on resize/orientation change
-    const handleResize = () => {
-      const { width: newWidth, height: newHeight } = resizeCanvas();
-      width = newWidth;
-      height = newHeight;
-      groundY = height - 32;
-
-      // Update player and camera positions proportionally if needed
-      if (player) {
-        // Ensure player stays on ground
-        if (player.y > groundY - player.height) {
-          player.y = groundY - player.height;
-        }
-      }
-    };
-
-    // Listen for resize and orientation changes
-    window.addEventListener('resize', handleResize);
-    window.addEventListener('orientationchange', () => {
-      // Delay to ensure new dimensions are available
-      setTimeout(handleResize, 100);
-    });
-
-    // Listen for visualViewport changes (mobile address bar show/hide)
-    if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', handleResize);
-    }
-    // ---------------------------------------------------------------------
+    const groundY = height - 32;
 
     // Initialise background music once per session.  Creating audio
     // elements inside init() ensures they are tied to the document
@@ -453,7 +363,6 @@
     }
     // Input state: track whether keys are pressed
     const keys = {};
-    const menuNavigationKeys = new Set(['Enter','Escape','p','P','ArrowUp','ArrowDown','ArrowLeft','ArrowRight']);
     document.addEventListener('keydown', (e) => {
       keys[e.key] = true;
       // Prevent default scrolling on arrow keys and space.  Include both
@@ -474,7 +383,7 @@
     });
 
     // ---------------------------------------------------------------------
-    // Mobile controls & Orientation handling
+    // Mobile controls
     // Detect whether we are on a touch‑capable mobile device.  If so,
     // reveal the custom on‑screen controller and wire up each button to
     // simulate keyboard presses.  Using both touch and pointer events
@@ -482,45 +391,32 @@
     // each button specifies which key should be set in the keys object
     // when pressed.  Menu navigation triggers handleMenuInput() immediately
     // on press so the purchase and settings menus respond without delay.
-    const releaseAllKeys = () => {
-      for (const k of Object.keys(keys)) {
-        keys[k] = false;
-      }
-    };
-
-    if (isMobileDevice) {
+    const isMobile = /Mobi|Android|iPhone|iPad|iPod|Tablet/i.test(navigator.userAgent) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
+    if (isMobile) { addTapBlocker();
       const ctrlBar = document.getElementById('mobile-controls');
-      const rotatePrompt = document.getElementById('rotate-prompt');
-
       if (ctrlBar) {
         ctrlBar.style.display = 'flex';
-
-        // Define touch/pointer event types for mobile controls
-        const startEvents = ['touchstart', 'pointerdown', 'mousedown'];
-        const endEvents = ['touchend', 'pointerup', 'mouseup', 'touchcancel', 'pointercancel'];
-
-        // Select all buttons with data-key attribute (works with new retro button classes)
-        const buttons = ctrlBar.querySelectorAll('[data-key]');
+        const buttons = ctrlBar.querySelectorAll('.control-btn');
         buttons.forEach(btn => {
           const keyName = btn.getAttribute('data-key');
           const press = (event) => {
             event.preventDefault();
             keys[keyName] = true;
-            // Add visual feedback
-            btn.style.opacity = '0.8';
             // Trigger immediate menu handling for Enter, Escape, P etc.
             handleMenuInput({ key: keyName });
           };
-
           const release = (event) => {
             event.preventDefault();
             keys[keyName] = false;
-            // Remove visual feedback
-            btn.style.opacity = '1';
           };
-
-          startEvents.forEach(type => btn.addEventListener(type, press));
-          endEvents.forEach(type => btn.addEventListener(type, release));
+          // Touch events
+          btn.addEventListener('touchstart', press);
+          btn.addEventListener('touchend', release);
+          btn.addEventListener('touchcancel', release);
+          // Pointer events for mouse / stylus
+          btn.addEventListener('pointerdown', press);
+          btn.addEventListener('pointerup', release);
+          btn.addEventListener('pointerleave', release);
         });
       }
 
