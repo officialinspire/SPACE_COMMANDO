@@ -4,7 +4,9 @@
   <meta charset="UTF-8">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+
   <title>SPACE COMMANDO – Side‑Scrolling Shooter</title>
   <!-- Link the stylesheet for basic page and HUD styling -->
   <link rel="stylesheet" href="styles.css">
@@ -38,28 +40,31 @@
     anchored on the far right.  The container is hidden on desktop
     and only shown on mobile via JavaScript.
   -->
-  <div id="mobile-controls" class="mobile-controls">
-    <div class="controls-left">
-      <button data-key="z" class="control-btn">SHOOT</button>
-      <button data-key="x" class="control-btn">RELOAD</button>
-    </div>
-    <div class="controls-center">
-      <button data-key="p" class="control-btn">STORE</button>
-      <button data-key=" " class="control-btn">JUMP</button>
-      <button data-key="Enter" class="control-btn">SELECT</button>
-    </div>
-    <div class="controls-arrows">
-      <button data-key="ArrowUp" class="control-btn arrow-btn">↑</button>
-      <div class="arrow-row">
-        <button data-key="ArrowLeft" class="control-btn arrow-btn">←</button>
-        <button data-key="ArrowDown" class="control-btn arrow-btn">↓</button>
-        <button data-key="ArrowRight" class="control-btn arrow-btn">→</button>
-      </div>
-    </div>
-    <!-- The right-most button triggers the escape key to toggle the game menu.  Labelled
-         “ESC” to match the keyboard input for clarity. -->
-    <button data-key="Escape" class="control-btn menu-btn">ESC/MENU</button>
+  <div id="mobile-controls">
+  <div class="controls-left">
+    <button class="control-btn" data-key="z">SHOOT</button>
+    <button class="control-btn" data-key="x">RELOAD</button>
   </div>
+
+  <div class="controls-center">
+    <button class="control-btn" data-key="p">STORE</button>
+    <button class="control-btn" data-key=" ">JUMP</button>
+    <button class="control-btn" data-key="Enter">SELECT</button>
+  </div>
+
+  <div class="controls-arrows">
+    <div class="arrow-row"><button class="control-btn arrow-btn" data-key="ArrowUp">↑</button></div>
+    <div class="arrow-row">
+      <button class="control-btn arrow-btn" data-key="ArrowLeft">←</button>
+      <button class="control-btn arrow-btn" data-key="ArrowDown">↓</button>
+      <button class="control-btn arrow-btn" data-key="ArrowUp">↑</button>
+      <button class="control-btn arrow-btn" data-key="ArrowRight">→</button>
+    </div>
+  </div>
+
+  <button class="control-btn menu-btn" data-key="Escape">ESC/MENU</button>
+</div>
+
 
   <!-- Main game logic -->
   <script src="index.js"></script>
