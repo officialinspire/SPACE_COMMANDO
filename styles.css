@@ -31,10 +31,11 @@ html, body {
  * when the game is played on a mobile device.  The controls are
  * hidden by default and revealed via JavaScript when a touch or
  * mobile environment is detected.  Buttons are styled with a retro
- * gold outline on a deep blue background to evoke an 8‑bit arcade
- * aesthetic.  The layout groups controls logically: shooting and
- * reloading on the left, store/jump/select in the centre, a
- * directional pad on the right and a menu button on the far edge.
+ * gold outline on a dark background to evoke an 8‑bit arcade
+ * aesthetic.  The layout matches whatitneedstolooklike.png:
+ * SHOOT/RELOAD side-by-side top-left, JUMP below them, ESC bottom-left,
+ * UP arrow top-right, LEFT/DOWN/RIGHT middle-right,
+ * SELECT and STORE at bottom-center/right.
  */
 #mobile-controls {
   position: absolute;
@@ -43,30 +44,28 @@ html, body {
   width: 100%;
   /* Height is measured in JS and exposed via --controls-height */
   background: #000;
-  display: none; /* shown on mobile via JS */
+  display: none; /* shown on mobile via JS - will be changed to grid */
   z-index: 500;
-  padding: 10px 12px;
+  padding: 8px 10px;
   box-sizing: border-box;
   font-family: 'Press Start 2P', monospace;
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 10px;
-  padding-bottom: calc(env(safe-area-inset-bottom) + 10px);
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: auto auto auto;
+  gap: 6px;
+  align-items: start;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 8px);
   border-top: 2px solid #e3c95b;
 }
 
-
+/* Base button styling */
 #mobile-controls .control-btn {
   background: #e3c95b;
   border: 3px solid #a58b2e;
   color: #111;
   padding: 6px 8px;
   margin: 0;
-  font-size: 12px;
-  width: 76px;
-  height: 52px;
+  font-size: 11px;
+  font-weight: bold;
   text-align: center;
   cursor: pointer;
   user-select: none;
@@ -76,29 +75,95 @@ html, body {
   align-items: center;
   justify-content: center;
   box-shadow: 0 2px 0 #6d5920, inset 0 2px 0 rgba(255,255,255,0.25);
+  white-space: nowrap;
 }
 
-/* Smaller arrow buttons */
-#mobile-controls .arrow-btn { width: 48px; height: 48px; padding: 4px; }
+/* Left column: contains SHOOT/RELOAD row, JUMP, and ESC */
+#mobile-controls .controls-left {
+  grid-column: 1;
+  grid-row: 1 / 4;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
 
-/* Wider menu button to accommodate the label */
-#mobile-controls .menu-btn { width: 86px; }
+/* SHOOT and RELOAD side by side */
+#mobile-controls .shoot-reload-row {
+  display: flex;
+  gap: 6px;
+}
 
-/* Column layout for control clusters */
-#mobile-controls .controls-left,
-#mobile-controls .controls-center,
-#mobile-controls .controls-arrows { flex-direction:column; align-items:center; gap:6px; }
+#mobile-controls .shoot-reload-row .control-btn {
+  width: 70px;
+  height: 48px;
+  font-size: 10px;
+}
 
-/* Stack shoot/reload and store/jump/select with spacing */
+/* JUMP button - wider to span roughly the width of SHOOT+RELOAD */
+#mobile-controls .jump-btn {
+  width: 146px;
+  height: 50px;
+  font-size: 12px;
+}
 
+/* ESC button */
+#mobile-controls .esc-btn {
+  width: 146px;
+  height: 48px;
+  font-size: 9px;
+}
 
-/* Directional pad layout */
-#mobile-controls .controls-arrows { flex-direction:column; align-items:center; gap:6px; }
+/* Right column: contains arrows */
+#mobile-controls .controls-right {
+  grid-column: 3;
+  grid-row: 1 / 3;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
 
-#mobile-controls .arrow-row { display:flex; justify-content:center; align-items:center; gap:8px; }
+/* Arrow buttons */
+#mobile-controls .arrow-btn {
+  width: 48px;
+  height: 48px;
+  padding: 4px;
+  font-size: 16px;
+}
 
-#mobile-controls .arrow-row .control-btn {
-  margin: 0 4px;
+#mobile-controls .arrow-row-top {
+  display: flex;
+  justify-content: center;
+}
+
+#mobile-controls .arrow-row-middle {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+/* Bottom row: SELECT and STORE */
+#mobile-controls .controls-bottom {
+  grid-column: 2 / 4;
+  grid-row: 3;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+  align-self: end;
+}
+
+#mobile-controls .select-btn {
+  width: 100px;
+  height: 48px;
+  font-size: 10px;
+}
+
+#mobile-controls .store-btn {
+  width: 100px;
+  height: 48px;
+  font-size: 11px;
 }
 
 /* Game container positions the game and intro video.  On desktop it
@@ -211,11 +276,13 @@ html, body {
 
 /* --- Responsive touch controls sizing --- */
 @media (max-height: 460px) {
-  #mobile-controls .control-btn { width: 68px; height: 46px; font-size: 11px; }
+  #mobile-controls .shoot-reload-row .control-btn { width: 62px; height: 42px; font-size: 9px; }
+  #mobile-controls .jump-btn { width: 130px; height: 44px; font-size: 11px; }
+  #mobile-controls .esc-btn { width: 130px; height: 42px; font-size: 8px; }
   #mobile-controls .arrow-btn { width: 42px; height: 42px; }
-  #mobile-controls .menu-btn { width: 78px; }
+  #mobile-controls .select-btn { width: 90px; height: 42px; font-size: 9px; }
+  #mobile-controls .store-btn { width: 90px; height: 42px; font-size: 10px; }
 }
-
 
 /* --- Tactile press feedback --- */
 #mobile-controls .control-btn {
