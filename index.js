@@ -324,7 +324,14 @@
    * event listeners, game entities, and the main loop. All of the
    * gameplay logic lives within the nested helper functions.
    */
-  function init() {
+  function updateControlsHeight() {
+      const ctrl = document.getElementById('mobile-controls');
+      if (!ctrl) return;
+      const h = ctrl.offsetHeight || 0;
+      document.documentElement.style.setProperty('--controls-height', h + 'px');
+    }
+
+    function init() {
     // Update the document title so we know the script ran. If you see
     // this title in the browser tab, the JS has executed successfully.
     document.title = 'SPACE COMMANDO – A #teaminspire Production';
@@ -396,6 +403,9 @@
       const ctrlBar = document.getElementById('mobile-controls');
       if (ctrlBar) {
         ctrlBar.style.display = 'flex';
+        updateControlsHeight();
+        window.addEventListener('resize', updateControlsHeight);
+        window.addEventListener('orientationchange', updateControlsHeight);
         const buttons = ctrlBar.querySelectorAll('.control-btn');
         buttons.forEach(btn => {
           const keyName = btn.getAttribute('data-key');
@@ -417,72 +427,11 @@
           btn.addEventListener('pointerdown', press);
           btn.addEventListener('pointerup', release);
           btn.addEventListener('pointerleave', release);
+          btn.addEventListener('mousedown', press);
+          btn.addEventListener('mouseup', release);
+          btn.addEventListener('click', function(e){ e.preventDefault(); handleMenuInput({ key: keyName }); });
         });
       }
-
-      // Orientation detection and rotation prompt handling
-      function checkOrientation() {
-        // Check if device is in portrait mode (on mobile devices)
-        const isPortrait = window.innerHeight > window.innerWidth;
-        const isMobileWidth = window.innerWidth <= 768;
-
-        if (isPortrait && isMobileWidth && rotatePrompt) {
-          rotatePrompt.style.display = 'flex';
-        } else if (rotatePrompt) {
-          rotatePrompt.style.display = 'none';
-        }
-      }
-
-      // Check orientation on load and whenever it changes
-      checkOrientation();
-      window.addEventListener('resize', checkOrientation);
-      window.addEventListener('orientationchange', checkOrientation);
-
-      // Hide address bar using scroll trick (works better than fullscreen API on mobile)
-      let addressBarHidden = false;
-      const hideAddressBar = () => {
-        if (addressBarHidden) return;
-        addressBarHidden = true;
-
-        // Scroll page to hide address bar on mobile browsers
-        // This works on iOS Safari and Android Chrome where fullscreen API doesn't
-        window.scrollTo(0, 1);
-
-        // Use setTimeout for better compatibility across browsers
-        setTimeout(() => {
-          window.scrollTo(0, 1);
-          handleResize();
-        }, 100);
-
-        // Additional delay for stubborn browsers
-        setTimeout(() => {
-          window.scrollTo(0, 1);
-          handleResize();
-        }, 300);
-
-        // Try fullscreen API as backup (works on some Android browsers)
-        const docElem = document.documentElement;
-        if (docElem.requestFullscreen) {
-          docElem.requestFullscreen().catch(() => {
-            // Fullscreen request failed, continue with scroll method
-          });
-        } else if (docElem.webkitRequestFullscreen) {
-          docElem.webkitRequestFullscreen();
-        } else if (docElem.mozRequestFullScreen) {
-          docElem.mozRequestFullScreen();
-        } else if (docElem.msRequestFullscreen) {
-          docElem.msRequestFullscreen();
-        }
-      };
-
-      // Try to hide address bar on first touch/click
-      const hideBarEvents = ['touchstart', 'click'];
-      hideBarEvents.forEach(eventType => {
-        document.addEventListener(eventType, hideAddressBar, { once: true });
-      });
-
-      // Also try to hide immediately on page load
-      setTimeout(hideAddressBar, 500);
     }
 
     // Collections for dynamic entities

@@ -6,8 +6,6 @@ html, body {
   margin: 0;
   padding: 0;
   overflow: hidden;
-  position: fixed; /* Prevent scroll on mobile */
-  background: radial-gradient(circle at top, #0a1639 0%, #030712 55%, #01030c 100%);
   background: #000 repeat-x top; /* account for notches */
   padding-bottom: env(safe-area-inset-bottom);
   background-size: auto 100%;
@@ -16,202 +14,12 @@ html, body {
      pixelated retro feel for UI elements. */
   font-family: 'Orbitron', 'Press Start 2P', monospace;
   color: #fff;
-  touch-action: none; /* Prevent pull-to-refresh and other gestures */
-  -webkit-overflow-scrolling: touch;
 }
 
 /* Define shared CSS custom properties.  The controls bar height is
    referenced by both the canvas sizing and the bar itself.  Setting
    it at :root makes it accessible throughout the stylesheet. */
 :root {
-  --controls-height: 140px;
-}
-
-/* Responsive controls height for smaller screens */
-@media (max-height: 600px) and (orientation: landscape) {
-  :root {
-    --controls-height: 110px;
-  }
-}
-
-@media (max-height: 500px) and (orientation: landscape) {
-  :root {
-    --controls-height: 95px;
-  }
-}
-
-@media (max-height: 400px) and (orientation: landscape) {
-  :root {
-    --controls-height: 85px;
-  }
-}
-
-/* Game container - desktop (centered, full viewport) */
-#game-container {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  touch-action: none;
-}
-
-/* Canvas styling for desktop */
-#game-canvas {
-  display: block;
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
-  object-fit: contain; /* Maintain aspect ratio */
-}
-
-/* Intro video positioning */
-.intro-video {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
-  z-index: 1000;
-  object-fit: contain;
-}
-
-/* Intro video on mobile - fit within game container */
-@media (max-width: 768px) and (orientation: landscape) {
-  .intro-video {
-    max-height: calc(100vh - var(--controls-height));
-    max-height: calc(100dvh - var(--controls-height));
-  }
-}
-
-/* -------------------------------------------------------------------
- * LANDSCAPE ORIENTATION PROMPT
- * Shows on mobile devices in portrait mode, prompting rotation
- * ------------------------------------------------------------------- */
-.rotate-prompt {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: linear-gradient(135deg, #1a0033 0%, #0a001a 100%);
-  display: none;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-  font-family: 'Press Start 2P', monospace;
-}
-
-.rotate-content {
-  text-align: center;
-  padding: 20px;
-  max-width: 300px;
-}
-
-.rotate-icon {
-  font-size: 64px;
-  margin-bottom: 20px;
-  animation: rotatePhone 2s ease-in-out infinite;
-}
-
-.rotate-prompt h2 {
-  color: #ffd700;
-  font-size: 14px;
-  margin: 20px 0;
-  line-height: 1.6;
-}
-
-.rotate-prompt p {
-  color: #fff;
-  font-size: 10px;
-  line-height: 1.8;
-}
-
-@keyframes rotatePhone {
-  0%, 100% { transform: rotate(0deg); }
-  50% { transform: rotate(90deg); }
-}
-
-/* Show rotation prompt only on mobile in portrait mode */
-@media (max-width: 768px) and (orientation: portrait) {
-  .rotate-prompt {
-    display: flex;
-  }
-  #game-container,
-  #mobile-controls {
-    display: none !important;
-  }
-}
-
-/* Mobile landscape mode - adjust game container for controls */
-@media (max-width: 768px) and (orientation: landscape) {
-  html, body {
-    height: 100vh;
-    height: 100dvh; /* Dynamic viewport height for mobile */
-  }
-
-  #game-container {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: calc(100vh - var(--controls-height));
-    height: calc(100dvh - var(--controls-height)); /* Use dvh for better mobile support */
-  }
-
-  #game-canvas {
-    width: 100%;
-    height: 100%;
-    max-width: 100vw;
-    max-height: calc(100vh - var(--controls-height));
-    max-height: calc(100dvh - var(--controls-height));
-    object-fit: contain;
-  }
-
-  /* Ensure mobile controls stay at bottom and are fully visible */
-  #mobile-controls {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    width: 100vw;
-    height: var(--controls-height);
-    z-index: 500;
-  }
-}
-
-/* Tablet and larger mobile devices in landscape */
-@media (min-width: 769px) and (max-width: 1024px) and (orientation: landscape) {
-  #game-container {
-    height: calc(100vh - var(--controls-height));
-  }
-
-  #game-canvas {
-    max-height: calc(100vh - var(--controls-height));
-  }
-}
-
-/* Desktop - full viewport, no mobile controls */
-@media (min-width: 1025px) {
-  #game-container {
-    height: 100vh;
-  }
-
-  #game-canvas {
-    max-height: 100vh;
-  }
-
-  #mobile-controls {
-    display: none !important;
-  }
   --controls-height: 120px;
   --vh: 1vh; /* dynamic vh set from JS for mobile URL-bar safe sizing */
 }
@@ -229,21 +37,36 @@ html, body {
  * directional pad on the right and a menu button on the far edge.
  */
 #mobile-controls {
-position: absolute; left: 0; bottom: 0; width: 100%; /* Use the shared custom property for consistent sizing between elements. */ height: var(--controls-height); background: #0f1c47; /* Hidden on desktop by default; shown via script on mobile */ display: none; z-index: 500; padding: 8px; box-sizing: border-box; font-family: 'Press Start 2P', monospace; flex-direction: row; justify-content: space-around; align-items: center;
-  padding-bottom: calc(env(safe-area-inset-bottom) + 8px);
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  /* Height is measured in JS and exposed via --controls-height */
+  background: #000;
+  display: none; /* shown on mobile via JS */
+  z-index: 500;
+  padding: 10px 12px;
+  box-sizing: border-box;
+  font-family: 'Press Start 2P', monospace;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 10px);
   border-top: 2px solid #e3c95b;
 }
 
 
 #mobile-controls .control-btn {
-  background: #1a2e64;
-  border: 3px solid #e3c95b;
-  color: #f7e6b0;
-  padding: 4px 6px;
-  margin: 4px;
-  font-size: 10px;
-  width: 64px;
-  height: 48px;
+  background: #e3c95b;
+  border: 3px solid #a58b2e;
+  color: #111;
+  padding: 6px 8px;
+  margin: 0;
+  font-size: 12px;
+  width: 76px;
+  height: 52px;
   text-align: center;
   cursor: pointer;
   user-select: none;
@@ -252,46 +75,27 @@ position: absolute; left: 0; bottom: 0; width: 100%; /* Use the shared custom pr
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 2px 0 #6d5920, inset 0 2px 0 rgba(255,255,255,0.25);
 }
 
 /* Smaller arrow buttons */
-#mobile-controls .arrow-btn {
-  width: 40px;
-  height: 40px;
-  padding: 4px;
-}
+#mobile-controls .arrow-btn { width: 48px; height: 48px; padding: 4px; }
 
 /* Wider menu button to accommodate the label */
-#mobile-controls .menu-btn {
-  width: 72px;
-}
+#mobile-controls .menu-btn { width: 86px; }
 
 /* Column layout for control clusters */
 #mobile-controls .controls-left,
 #mobile-controls .controls-center,
-#mobile-controls .controls-arrows {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
+#mobile-controls .controls-arrows { flex-direction:column; align-items:center; gap:6px; }
 
 /* Stack shoot/reload and store/jump/select with spacing */
-#mobile-controls .controls-left .control-btn,
-#mobile-controls .controls-center .control-btn {
-  margin-bottom: 6px;
-}
+
 
 /* Directional pad layout */
-#mobile-controls .controls-arrows {
-  flex-direction: column;
-  align-items: center;
-}
+#mobile-controls .controls-arrows { flex-direction:column; align-items:center; gap:6px; }
 
-#mobile-controls .arrow-row {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
+#mobile-controls .arrow-row { display:flex; justify-content:center; align-items:center; gap:8px; }
 
 #mobile-controls .arrow-row .control-btn {
   margin: 0 4px;
@@ -402,4 +206,12 @@ position: absolute; left: 0; bottom: 0; width: 100%; /* Use the shared custom pr
 
 .menu-overlay .selected {
   background: #444;
+}
+
+
+/* --- Responsive touch controls sizing --- */
+@media (max-height: 460px) {
+  #mobile-controls .control-btn { width: 68px; height: 46px; font-size: 11px; }
+  #mobile-controls .arrow-btn { width: 42px; height: 42px; }
+  #mobile-controls .menu-btn { width: 78px; }
 }
