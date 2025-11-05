@@ -10,52 +10,101 @@
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Press+Start+2P&display=swap" rel="stylesheet">
 </head>
 <body>
-  <!-- Game container holds both the intro video and the canvas. -->
+  <!-- Orientation prompt for mobile devices in portrait mode -->
+  <div id="orientation-prompt" class="orientation-prompt">
+    <div class="orientation-content">
+      <div class="rotate-icon">📱 ↻</div>
+      <h2>Please Rotate Your Device</h2>
+      <p>This game is best played in landscape mode</p>
+    </div>
+  </div>
+
+  <!-- Game container holds both the intro video and the canvas.  The
+       video overlays the canvas on first load and plays the credit
+       sequence with audio.  Once complete it hides itself.  Using a
+       container allows the intro to share the same dimensions as
+       the game rather than occupying the full page. -->
+  <!-- Landscape orientation prompt for mobile devices -->
+  <div id="rotate-prompt" class="rotate-prompt">
+    <div class="rotate-content">
+      <div class="rotate-icon">📱 ↻</div>
+      <h2>Please Rotate Your Device</h2>
+      <p>For the best gaming experience, please rotate your device to landscape orientation.</p>
+    </div>
+  </div>
+
   <div id="game-container">
     <video id="intro-video" class="intro-video" src="inspiresoftwareintro.mp4" playsinline></video>
     <canvas id="game-canvas" width="800" height="450"></canvas>
   </div>
 
-  <!-- Orientation message shown on mobile when the device is in portrait. -->
-  <div id="orientation-lock" class="orientation-lock" role="alert" aria-live="assertive" aria-hidden="true">
-    <div class="orientation-lock__content">
-      <h2>Rotate Your Device</h2>
-      <p>Turn your phone to landscape mode to access the Space Commando controls.</p>
-    </div>
-  </div>
+  <!--
+    RETRO MOBILE CONTROLS
 
-  <!-- Gold retro themed mobile controls. Hidden on desktop and portrait. -->
-  <div id="mobile-controls" class="mobile-controls" aria-hidden="true">
-    <div class="control-panel control-panel--dpad">
-      <div class="dpad">
-        <button class="control-btn control-btn--dpad" data-keys="ArrowUp" aria-label="Up">
-          <span class="control-icon">▲</span>
-          <span class="control-label">UP</span>
-        </button>
-        <div class="dpad-horizontal">
-          <button class="control-btn control-btn--dpad" data-keys="ArrowLeft" aria-label="Left">
-            <span class="control-icon">◀</span>
-            <span class="control-label">LEFT</span>
+    NES/Gameboy Color inspired touch controls for mobile gameplay.
+    Layout mimics classic handheld consoles:
+    - D-Pad on the left side
+    - Action buttons (A/B style) on the right side
+    - Menu buttons along the top
+
+    Each button has a data-key attribute that maps to keyboard controls.
+    The container is hidden on desktop and only shown on mobile via JavaScript.
+  -->
+  <div id="mobile-controls" class="mobile-controls">
+    <!-- Top menu bar with system buttons -->
+    <div class="menu-bar">
+      <button data-key="p" class="control-btn menu-top-btn">
+        <span class="btn-label">SHOP</span>
+      </button>
+      <button data-key="Enter" class="control-btn menu-top-btn">
+        <span class="btn-label">SELECT</span>
+      </button>
+      <button data-key="Escape" class="control-btn menu-top-btn">
+        <span class="btn-label">MENU</span>
+      </button>
+    </div>
+
+    <!-- Main control area -->
+    <div class="controls-main">
+      <!-- D-Pad (Left Side) -->
+      <div class="dpad-container">
+        <div class="dpad">
+          <button data-key="ArrowUp" class="control-btn dpad-btn dpad-up">
+            <span class="arrow">▲</span>
           </button>
-          <button class="control-btn control-btn--dpad" data-keys="ArrowDown" aria-label="Down">
-            <span class="control-icon">▼</span>
-            <span class="control-label">DOWN</span>
-          </button>
-          <button class="control-btn control-btn--dpad" data-keys="ArrowRight" aria-label="Right">
-            <span class="control-icon">▶</span>
-            <span class="control-label">RIGHT</span>
+          <div class="dpad-middle">
+            <button data-key="ArrowLeft" class="control-btn dpad-btn dpad-left">
+              <span class="arrow">◀</span>
+            </button>
+            <div class="dpad-center"></div>
+            <button data-key="ArrowRight" class="control-btn dpad-btn dpad-right">
+              <span class="arrow">▶</span>
+            </button>
+          </div>
+          <button data-key="ArrowDown" class="control-btn dpad-btn dpad-down">
+            <span class="arrow">▼</span>
           </button>
         </div>
       </div>
-    </div>
-    <div class="control-panel control-panel--actions">
-      <div class="action-grid">
-        <button class="control-btn" data-keys="p" aria-label="Shop">SHOP</button>
-        <button class="control-btn" data-keys="Escape" aria-label="Menu">MENU</button>
-        <button class="control-btn" data-keys="Escape" aria-label="Esc">ESC</button>
-        <button class="control-btn" data-keys="Enter|Space" aria-label="Select">SELECT</button>
-        <button class="control-btn control-btn--primary" data-keys="z" aria-label="Fire">FIRE</button>
-        <button class="control-btn" data-keys="x" aria-label="Reload">RELOAD</button>
+
+      <!-- Action Buttons (Right Side) -->
+      <div class="action-buttons">
+        <div class="action-row action-top">
+          <button data-key="x" class="control-btn action-btn">
+            <span class="btn-label">RELOAD</span>
+            <span class="btn-key">X</span>
+          </button>
+        </div>
+        <div class="action-row action-bottom">
+          <button data-key=" " class="control-btn action-btn jump-btn">
+            <span class="btn-label">JUMP</span>
+            <span class="btn-key">A</span>
+          </button>
+          <button data-key="z" class="control-btn action-btn fire-btn">
+            <span class="btn-label">FIRE</span>
+            <span class="btn-key">B</span>
+          </button>
+        </div>
       </div>
     </div>
   </div>

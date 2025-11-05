@@ -373,10 +373,14 @@
     });
 
     // ---------------------------------------------------------------------
-    // Mobile controls
-    // Detect whether we are on a touch‑capable mobile device. If so, wire up
-    // the landscape prompt and the gold retro control overlay. Buttons emit
-    // one or more keyboard events so the existing input system can be reused.
+    // Mobile controls & Orientation handling
+    // Detect whether we are on a touch‑capable mobile device.  If so,
+    // reveal the custom on‑screen controller and wire up each button to
+    // simulate keyboard presses.  Using both touch and pointer events
+    // ensures compatibility across browsers.  The data‑key attribute on
+    // each button specifies which key should be set in the keys object
+    // when pressed.  Menu navigation triggers handleMenuInput() immediately
+    // on press so the purchase and settings menus respond without delay.
     const isMobile = /Mobi|Android|iPhone|iPad|iPod|Tablet/i.test(navigator.userAgent) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
     const ctrlBar = document.getElementById('mobile-controls');
     const orientationOverlay = document.getElementById('orientation-lock');
@@ -388,86 +392,53 @@
     };
 
     if (isMobile) {
-      document.body.classList.add('mobile-active');
-
-      const toggleOrientationState = () => {
-        const landscape = window.innerWidth > window.innerHeight;
-        document.body.classList.toggle('landscape-ready', landscape);
-        document.body.classList.toggle('portrait-lock', !landscape);
-
-        if (ctrlBar) {
-          ctrlBar.classList.toggle('visible', landscape);
-          ctrlBar.setAttribute('aria-hidden', landscape ? 'false' : 'true');
-        }
-
-        if (orientationOverlay) {
-          orientationOverlay.classList.toggle('active', !landscape);
-          orientationOverlay.setAttribute('aria-hidden', landscape ? 'true' : 'false');
-        }
-
-        if (!landscape) {
-          releaseAllKeys();
-        }
-      };
-
-      toggleOrientationState();
-      window.addEventListener('resize', toggleOrientationState);
-      window.addEventListener('orientationchange', () => {
-        // A tiny delay ensures innerWidth/innerHeight have settled.
-        setTimeout(toggleOrientationState, 80);
-      });
+      const ctrlBar = document.getElementById('mobile-controls');
+      const rotatePrompt = document.getElementById('rotate-prompt');
 
       if (ctrlBar) {
-        const parseKeys = (btn) => {
-          const raw = btn.dataset.keys || btn.dataset.key || '';
-          return raw.split('|').map(k => k.trim()).filter(Boolean);
-        };
-
-        const setKeyState = (keyName, state) => {
-          if (!keyName) return;
-          if (keyName === 'Space') {
-            keys[' '] = state;
-            keys['Space'] = state;
-            keys['Spacebar'] = state;
-            return;
-          }
-          keys[keyName] = state;
-        };
-
-        const startEvents = window.PointerEvent ? ['pointerdown'] : ['touchstart', 'mousedown'];
-        const endEvents = window.PointerEvent ? ['pointerup', 'pointercancel', 'pointerleave'] : ['touchend', 'touchcancel', 'mouseup', 'mouseleave'];
-
-        ctrlBar.querySelectorAll('.control-btn').forEach(btn => {
-          const keyList = parseKeys(btn);
-
+        ctrlBar.style.display = 'flex';
+        // Select all buttons with data-key attribute (works with new retro button classes)
+        const buttons = ctrlBar.querySelectorAll('[data-key]');
+        buttons.forEach(btn => {
+          const keyName = btn.getAttribute('data-key');
           const press = (event) => {
             event.preventDefault();
-            keyList.forEach(keyName => {
-              setKeyState(keyName, true);
-              if (menuNavigationKeys.has(keyName)) {
-                handleMenuInput({ key: keyName });
-              }
-            });
+            keys[keyName] = true;
+            // Add visual feedback
+            btn.style.opacity = '0.8';
+            // Trigger immediate menu handling for Enter, Escape, P etc.
+            handleMenuInput({ key: keyName });
           };
 
           const release = (event) => {
             event.preventDefault();
-            keyList.forEach(keyName => setKeyState(keyName, false));
+            keys[keyName] = false;
+            // Remove visual feedback
+            btn.style.opacity = '1';
           };
 
           startEvents.forEach(type => btn.addEventListener(type, press));
           endEvents.forEach(type => btn.addEventListener(type, release));
         });
       }
-    } else {
-      if (ctrlBar) {
-        ctrlBar.classList.remove('visible');
-        ctrlBar.setAttribute('aria-hidden', 'true');
+
+      // Orientation detection and rotation prompt handling
+      function checkOrientation() {
+        // Check if device is in portrait mode (on mobile devices)
+        const isPortrait = window.innerHeight > window.innerWidth;
+        const isMobileWidth = window.innerWidth <= 768;
+
+        if (isPortrait && isMobileWidth && rotatePrompt) {
+          rotatePrompt.style.display = 'flex';
+        } else if (rotatePrompt) {
+          rotatePrompt.style.display = 'none';
+        }
       }
-      if (orientationOverlay) {
-        orientationOverlay.classList.remove('active');
-        orientationOverlay.setAttribute('aria-hidden', 'true');
-      }
+
+      // Check orientation on load and whenever it changes
+      checkOrientation();
+      window.addEventListener('resize', checkOrientation);
+      window.addEventListener('orientationchange', checkOrientation);
     }
 
     // Collections for dynamic entities
