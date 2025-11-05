@@ -413,38 +413,23 @@
         function ensureSelectSfxMobile() {
           try { selectSfx.currentTime = 0; selectSfx.play(); } catch (e) {}
         }
+        const menuKeys = new Set(['p','P','Escape','Enter','ArrowUp','ArrowDown','ArrowLeft','ArrowRight']);
         buttons.forEach(btn => {
           const keyName = btn.getAttribute('data-key');
           const press = (event) => {
             btn.classList.add('pressed');
             event.preventDefault();
-            keys[keyName] = true;
-            let syntheticEvent;
-            try {
-              syntheticEvent = new KeyboardEvent('keydown', {
-                key: keyName,
-                code: keyName,
-                bubbles: true,
-                cancelable: true
-              });
-            } catch (err) {
-              syntheticEvent = new Event('keydown', { bubbles: true, cancelable: true });
-              syntheticEvent.key = keyName;
-            }
-            if (syntheticEvent) {
-              syntheticEvent.handled = false;
-              document.dispatchEvent(syntheticEvent);
-              if (!syntheticEvent.handled) {
-                handleMenuInput({ key: keyName });
-              }
-            } else {
-              handleMenuInput({ key: keyName });
+            const normalizedKey = keyName === 'Space' ? ' ' : keyName;
+            keys[normalizedKey] = true;
+            if (menuKeys.has(normalizedKey)) {
+              handleMenuInput({ key: normalizedKey });
             }
           };
           const release = (event) => {
             btn.classList.remove('pressed');
             event.preventDefault();
-            keys[keyName] = false;
+            const normalizedKey = keyName === 'Space' ? ' ' : keyName;
+            keys[normalizedKey] = false;
           };
           // Touch events
           btn.addEventListener('touchstart', press);
