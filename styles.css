@@ -215,3 +215,15 @@ html, body {
   #mobile-controls .arrow-btn { width: 42px; height: 42px; }
   #mobile-controls .menu-btn { width: 78px; }
 }
+
+
+/* --- Tactile press feedback --- */
+#mobile-controls .control-btn {
+  transition: transform 60ms ease, box-shadow 60ms ease, filter 60ms ease;
+}
+#mobile-controls .control-btn:active,
+#mobile-controls .control-btn.pressed {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #6d5920, inset 0 1px 0 rgba(0,0,0,0.2);
+  filter: brightness(0.95);
+}

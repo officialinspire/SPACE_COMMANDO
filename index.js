@@ -407,15 +407,21 @@
         window.addEventListener('resize', updateControlsHeight);
         window.addEventListener('orientationchange', updateControlsHeight);
         const buttons = ctrlBar.querySelectorAll('.control-btn');
+        function ensureSelectSfxMobile() {
+          try { selectSfx.currentTime = 0; selectSfx.play(); } catch (e) {}
+        }
         buttons.forEach(btn => {
           const keyName = btn.getAttribute('data-key');
           const press = (event) => {
+            btn.classList.add('pressed');
             event.preventDefault();
             keys[keyName] = true;
             // Trigger immediate menu handling for Enter, Escape, P etc.
             handleMenuInput({ key: keyName });
+            if (keyName === 'Enter') { ensureSelectSfxMobile(); }
           };
           const release = (event) => {
+            btn.classList.remove('pressed');
             event.preventDefault();
             keys[keyName] = false;
           };
@@ -429,7 +435,8 @@
           btn.addEventListener('pointerleave', release);
           btn.addEventListener('mousedown', press);
           btn.addEventListener('mouseup', release);
-          btn.addEventListener('click', function(e){ e.preventDefault(); handleMenuInput({ key: keyName }); });
+          btn.addEventListener('click', function(e){ e.preventDefault(); handleMenuInput({ key: keyName });
+            if (keyName === 'Enter') { ensureSelectSfxMobile(); } if (keyName === 'Enter') { ensureSelectSfxMobile(); } });
         });
       }
     }
