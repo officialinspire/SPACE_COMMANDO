@@ -2,13 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SPACE COMMANDO – Side‑Scrolling Shooter</title>
-  <!-- Link the stylesheet for basic page and HUD styling -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>SPACE COMMANDO – Side-Scrolling Shooter</title>
+  <!-- Core styles for layout and the retro mobile controls -->
   <link rel="stylesheet" href="styles.css">
-  <!-- Import a retro sci‑fi font for the heads‑up display.  Orbitron provides
-       a clean, futuristic look while Press Start 2P adds a pixel‑retro
-       flavour.  These fonts are free to use via Google Fonts.  -->
+  <!-- Retro display fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Press+Start+2P&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -37,7 +35,6 @@
 
   <div id="game-container">
     <video id="intro-video" class="intro-video" src="inspiresoftwareintro.mp4" playsinline></video>
-    <!-- The game runs inside this canvas. It is scaled via CSS to fill the page while preserving the aspect ratio. -->
     <canvas id="game-canvas" width="800" height="450"></canvas>
   </div>
 
@@ -115,17 +112,13 @@
   <!-- Main game logic -->
   <script src="index.js"></script>
 
-  <!-- Hide the intro once it finishes playing.  Listening on the
-       ended event ensures that the game only becomes visible when
-       the credit video is complete. -->
+  <!-- Hide the intro once it finishes playing. -->
   <script>
     const introVideo = document.getElementById('intro-video');
     if (introVideo) {
-      // When the credit finishes, hide the video so the game is visible
       introVideo.addEventListener('ended', () => {
         introVideo.style.display = 'none';
       });
-      // Trigger playback with audio on the first user interaction (click or key press)
       const startIntro = () => {
         if (introVideo.paused) {
           try {

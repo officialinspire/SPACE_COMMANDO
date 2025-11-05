@@ -352,6 +352,7 @@
     }
     // Input state: track whether keys are pressed
     const keys = {};
+    const menuNavigationKeys = new Set(['Enter','Escape','p','P','ArrowUp','ArrowDown','ArrowLeft','ArrowRight']);
     document.addEventListener('keydown', (e) => {
       keys[e.key] = true;
       // Prevent default scrolling on arrow keys and space.  Include both
@@ -381,6 +382,15 @@
     // when pressed.  Menu navigation triggers handleMenuInput() immediately
     // on press so the purchase and settings menus respond without delay.
     const isMobile = /Mobi|Android|iPhone|iPad|iPod|Tablet/i.test(navigator.userAgent) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
+    const ctrlBar = document.getElementById('mobile-controls');
+    const orientationOverlay = document.getElementById('orientation-lock');
+
+    const releaseAllKeys = () => {
+      for (const k of Object.keys(keys)) {
+        keys[k] = false;
+      }
+    };
+
     if (isMobile) {
       const ctrlBar = document.getElementById('mobile-controls');
       const rotatePrompt = document.getElementById('rotate-prompt');
@@ -399,20 +409,16 @@
             // Trigger immediate menu handling for Enter, Escape, P etc.
             handleMenuInput({ key: keyName });
           };
+
           const release = (event) => {
             event.preventDefault();
             keys[keyName] = false;
             // Remove visual feedback
             btn.style.opacity = '1';
           };
-          // Touch events
-          btn.addEventListener('touchstart', press);
-          btn.addEventListener('touchend', release);
-          btn.addEventListener('touchcancel', release);
-          // Pointer events for mouse / stylus
-          btn.addEventListener('pointerdown', press);
-          btn.addEventListener('pointerup', release);
-          btn.addEventListener('pointerleave', release);
+
+          startEvents.forEach(type => btn.addEventListener(type, press));
+          endEvents.forEach(type => btn.addEventListener(type, release));
         });
       }
 

@@ -1,23 +1,15 @@
-/* Basic styling for the page */
-/* Reset body to occupy the entire viewport and provide a dark backdrop for the game. */
+/* Global layout ------------------------------------------------------- */
 html, body {
   height: 100%;
   width: 100%;
   margin: 0;
   padding: 0;
   overflow: hidden;
-  background: #000 repeat-x top;
-  background-size: auto 100%;
-  /* Use our sci‑fi fonts by default throughout the page.  Orbitron
-     provides a clean digital look, while Press Start 2P offers a
-     pixelated retro feel for UI elements. */
+  background: radial-gradient(circle at top, #0a1639 0%, #030712 55%, #01030c 100%);
   font-family: 'Orbitron', 'Press Start 2P', monospace;
   color: #fff;
 }
 
-/* Define shared CSS custom properties.  The controls bar height is
-   referenced by both the canvas sizing and the bar itself.  Setting
-   it at :root makes it accessible throughout the stylesheet. */
 :root {
   --controls-height: 120px;
 }
@@ -152,7 +144,16 @@ html, body {
  * ------------------------------------------------------------------- */
 .dpad-container {
   display: flex;
-  align-items: center;
+}
+
+.mobile-controls[aria-hidden="true"] {
+  visibility: hidden;
+}
+
+.control-panel {
+  display: flex;
+  flex: 1;
+  min-width: 0;
   justify-content: center;
   padding: 0;
 }
@@ -243,6 +244,22 @@ html, body {
   display: flex;
   gap: 12px;
   align-items: center;
+  justify-content: center;
+  min-width: clamp(72px, 20vw, 128px);
+  padding: clamp(10px, 2.8vw, 18px);
+  border: none;
+  border-radius: 18px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(0.58rem, 2.4vw, 0.95rem);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #2d1f05;
+  background: linear-gradient(145deg, var(--retro-gold-highlight), var(--retro-gold));
+  box-shadow: 0 6px 0 var(--retro-gold-deep), 0 12px 24px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 
 .action-top {
@@ -348,73 +365,105 @@ html, body {
   transition: all 0.08s ease;
 }
 
-/* Game container positions the game and intro video.  On desktop it
-   centres the content with a fixed internal resolution scaled via a
-   transform.  On mobile it occupies the full viewport width and
-   reserves space for the control bar. */
-#game-container {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 800px;
-  height: 450px;
-  image-rendering: pixelated;
+.control-btn--primary:active {
+  box-shadow: 0 2px 0 var(--fire-shadow), 0 6px 14px rgba(0, 0, 0, 0.55);
 }
 
-/* Canvas fills the container.  It no longer has its own transform
-   because the container handles positioning. */
-#game-container canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+.control-btn--dpad {
+  min-width: clamp(62px, 18vw, 96px);
+  aspect-ratio: 1;
 }
 
-/* Intro video overlays the canvas within the game container.  It
-   covers the same area and maintains aspect ratio without stretching
-   across the entire page.  Initially visible until ended. */
-#game-container .intro-video {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  z-index: 1000;
-  display: block;
+.control-btn--dpad .control-icon {
+  font-size: clamp(1rem, 4.5vw, 1.8rem);
 }
 
-/* Adjust container sizing on small screens to leave room for the mobile controls */
-@media (max-width: 768px) {
-  #game-container {
-    position: absolute;
-    top: 0;
-    left: 0;
-    transform: none;
-    width: 100vw;
-    height: calc(100vh - var(--controls-height));
+.control-btn--dpad .control-label {
+  font-size: clamp(0.45rem, 1.8vw, 0.65rem);
+  margin-top: 6px;
+  letter-spacing: 0.08em;
+}
+
+.control-icon {
+  font-size: clamp(0.85rem, 3vw, 1.35rem);
+  line-height: 1;
+}
+
+.control-label {
+  margin-top: clamp(4px, 1.2vw, 6px);
+}
+
+.action-grid {
+  display: grid;
+  width: min(100%, 420px);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(10px, 2.2vw, 20px);
+}
+
+.action-grid .control-btn {
+  min-width: auto;
+}
+
+@media (max-width: 720px) {
+  .mobile-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .control-panel--dpad,
+  .control-panel--actions {
+    justify-content: center;
+  }
+
+  .action-grid {
+    width: 100%;
   }
 }
 
-/* When the device is in landscape orientation, ensure the game
-   container fills the full width and height (minus controls) on small screens. */
-@media (orientation: landscape) and (max-width: 768px) {
-  #game-container {
-    width: 100vw;
-    height: calc(100vh - var(--controls-height));
-  }
+/* Orientation notice -------------------------------------------------- */
+.orientation-lock {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+  box-sizing: border-box;
+  background: rgba(4, 8, 20, 0.94);
+  z-index: 1200;
 }
 
-/* Base styling for the canvas.  The canvas itself does not position
-   relative to the page; instead, the game container manages
-   centring and scaling.  We still enable pixel art rendering. */
-#game-canvas {
-  image-rendering: pixelated;
+.orientation-lock.active {
+  display: flex;
 }
 
-/* Heads‑up display (HUD) elements */
+.orientation-lock__content {
+  max-width: 420px;
+  width: 100%;
+  padding: 28px 24px;
+  border-radius: 22px;
+  border: 3px solid var(--retro-gold);
+  background: linear-gradient(160deg, rgba(15, 24, 52, 0.95), rgba(7, 12, 30, 0.92));
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.55);
+}
+
+.orientation-lock__content h2 {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  margin: 0 0 14px;
+  color: var(--retro-gold-highlight);
+}
+
+.orientation-lock__content p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: #d6e0ff;
+}
+
+/* HUD and menu overlays ----------------------------------------------- */
 .hud {
   position: absolute;
   top: 10px;
