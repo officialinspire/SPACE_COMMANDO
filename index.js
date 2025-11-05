@@ -372,7 +372,7 @@
     });
 
     // ---------------------------------------------------------------------
-    // Mobile controls
+    // Mobile controls & Orientation handling
     // Detect whether we are on a touch‑capable mobile device.  If so,
     // reveal the custom on‑screen controller and wire up each button to
     // simulate keyboard presses.  Using both touch and pointer events
@@ -385,7 +385,8 @@
       const ctrlBar = document.getElementById('mobile-controls');
       if (ctrlBar) {
         ctrlBar.style.display = 'flex';
-        const buttons = ctrlBar.querySelectorAll('.control-btn');
+        // Select all buttons with data-key attribute (works with new retro button classes)
+        const buttons = ctrlBar.querySelectorAll('[data-key]');
         buttons.forEach(btn => {
           const keyName = btn.getAttribute('data-key');
           const press = (event) => {

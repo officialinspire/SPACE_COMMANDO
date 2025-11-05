@@ -12,6 +12,15 @@
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Press+Start+2P&display=swap" rel="stylesheet">
 </head>
 <body>
+  <!-- Orientation prompt for mobile devices in portrait mode -->
+  <div id="orientation-prompt" class="orientation-prompt">
+    <div class="orientation-content">
+      <div class="rotate-icon">📱 ↻</div>
+      <h2>Please Rotate Your Device</h2>
+      <p>This game is best played in landscape mode</p>
+    </div>
+  </div>
+
   <!-- Game container holds both the intro video and the canvas.  The
        video overlays the canvas on first load and plays the credit
        sequence with audio.  Once complete it hides itself.  Using a
@@ -37,26 +46,53 @@
     and only shown on mobile via JavaScript.
   -->
   <div id="mobile-controls" class="mobile-controls">
-    <div class="controls-left">
-      <button data-key="z" class="control-btn">SHOOT</button>
-      <button data-key="x" class="control-btn">RELOAD</button>
-    </div>
-    <div class="controls-center">
-      <button data-key="p" class="control-btn">STORE</button>
-      <button data-key=" " class="control-btn">JUMP</button>
-      <button data-key="Enter" class="control-btn">SELECT</button>
-    </div>
-    <div class="controls-arrows">
-      <button data-key="ArrowUp" class="control-btn arrow-btn">↑</button>
-      <div class="arrow-row">
-        <button data-key="ArrowLeft" class="control-btn arrow-btn">←</button>
-        <button data-key="ArrowDown" class="control-btn arrow-btn">↓</button>
-        <button data-key="ArrowRight" class="control-btn arrow-btn">→</button>
+    <!-- D-PAD: Classic cross directional pad on the left -->
+    <div class="dpad-container">
+      <div class="dpad">
+        <button data-key="ArrowUp" class="dpad-btn dpad-up">
+          <span class="dpad-arrow">▲</span>
+        </button>
+        <div class="dpad-middle-row">
+          <button data-key="ArrowLeft" class="dpad-btn dpad-left">
+            <span class="dpad-arrow">◀</span>
+          </button>
+          <div class="dpad-center"></div>
+          <button data-key="ArrowRight" class="dpad-btn dpad-right">
+            <span class="dpad-arrow">▶</span>
+          </button>
+        </div>
+        <button data-key="ArrowDown" class="dpad-btn dpad-down">
+          <span class="dpad-arrow">▼</span>
+        </button>
       </div>
     </div>
-    <!-- The right-most button triggers the escape key to toggle the game menu.  Labelled
-         “ESC” to match the keyboard input for clarity. -->
-    <button data-key="Escape" class="control-btn menu-btn">ESC</button>
+
+    <!-- ACTION BUTTONS: Classic NES-style A/B button layout -->
+    <div class="action-buttons">
+      <div class="action-row">
+        <button data-key="z" class="action-btn fire-btn">
+          <span class="btn-label">FIRE</span>
+        </button>
+        <button data-key="x" class="action-btn reload-btn">
+          <span class="btn-label">RELOAD</span>
+        </button>
+      </div>
+      <div class="action-row">
+        <button data-key="p" class="action-btn shop-btn">
+          <span class="btn-label">SHOP</span>
+        </button>
+        <button data-key="Enter" class="action-btn select-btn">
+          <span class="btn-label">SELECT</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- MENU BUTTONS: Escape positioned like classic Start button -->
+    <div class="menu-buttons">
+      <button data-key="Escape" class="menu-btn esc-btn">
+        <span class="btn-label-small">ESC</span>
+      </button>
+    </div>
   </div>
 
   <!-- Main game logic -->

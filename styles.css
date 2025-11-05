@@ -23,97 +23,277 @@ html, body {
 }
 
 /* -------------------------------------------------------------------
- * Mobile control bar
- *
- * A responsive touch controller appears at the bottom of the screen
- * when the game is played on a mobile device.  The controls are
- * hidden by default and revealed via JavaScript when a touch or
- * mobile environment is detected.  Buttons are styled with a retro
- * gold outline on a deep blue background to evoke an 8‑bit arcade
- * aesthetic.  The layout groups controls logically: shooting and
- * reloading on the left, store/jump/select in the centre, a
- * directional pad on the right and a menu button on the far edge.
+ * ORIENTATION PROMPT
+ * Prompts mobile users to rotate their device to landscape mode
+ */
+.orientation-prompt {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  display: none;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+  font-family: 'Press Start 2P', monospace;
+}
+
+.orientation-content {
+  text-align: center;
+  padding: 20px;
+  color: #ffd700;
+  animation: pulse 2s infinite;
+}
+
+.rotate-icon {
+  font-size: 64px;
+  margin-bottom: 20px;
+  animation: rotate 3s infinite;
+}
+
+@keyframes rotate {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(90deg); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.orientation-content h2 {
+  font-size: 18px;
+  margin: 10px 0;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+.orientation-content p {
+  font-size: 12px;
+  color: #ffa500;
+}
+
+/* Show orientation prompt only on portrait mobile devices */
+@media (orientation: portrait) and (max-width: 768px) {
+  .orientation-prompt {
+    display: flex;
+  }
+}
+
+/* -------------------------------------------------------------------
+ * RETRO MOBILE CONTROLS
+ * NES/Gameboy Color inspired control overlay
  */
 #mobile-controls {
-  position: absolute;
+  position: fixed;
   left: 0;
   bottom: 0;
   width: 100%;
-  /* Use the shared custom property for consistent sizing between
-     elements. */
   height: var(--controls-height);
-  background: #0f1c47;
-  /* Hidden on desktop by default; shown via script on mobile */
+  background: linear-gradient(180deg, #2c2c3e 0%, #1a1a2e 100%);
+  border-top: 4px solid #4a4a5e;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.8);
   display: none;
   z-index: 500;
-  padding: 8px;
+  padding: 12px 16px;
   box-sizing: border-box;
   font-family: 'Press Start 2P', monospace;
   flex-direction: row;
-  justify-content: space-around;
+  justify-content: space-between;
   align-items: center;
+  gap: 12px;
 }
 
-#mobile-controls .control-btn {
-  background: #1a2e64;
-  border: 3px solid #e3c95b;
-  color: #f7e6b0;
-  padding: 4px 6px;
-  margin: 4px;
-  font-size: 10px;
-  width: 64px;
-  height: 48px;
-  text-align: center;
+/* -------------------------------------------------------------------
+ * D-PAD (Directional Pad) - Classic NES Style
+ */
+.dpad-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+}
+
+.dpad {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  width: 110px;
+  height: 110px;
+}
+
+.dpad-middle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0;
+}
+
+.dpad-center {
+  width: 30px;
+  height: 30px;
+  background: #1a1a2e;
+  border-radius: 50%;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.dpad-btn {
+  background: linear-gradient(145deg, #3a3a4e, #2a2a3e);
+  border: 3px solid #ffd700;
+  color: #ffd700;
+  font-size: 20px;
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
   outline: none;
+  position: relative;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.6),
+              inset 0 -2px 4px rgba(0, 0, 0, 0.3);
+  transition: all 0.1s;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
 }
 
-/* Smaller arrow buttons */
-#mobile-controls .arrow-btn {
+.dpad-btn:active {
+  background: linear-gradient(145deg, #2a2a3e, #1a1a2e);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.8),
+              inset 0 2px 4px rgba(0, 0, 0, 0.5);
+  transform: translateY(2px);
+  border-color: #ffb700;
+}
+
+.dpad-up, .dpad-down {
   width: 40px;
+  height: 30px;
+  margin: 0 auto;
+  border-radius: 4px;
+}
+
+.dpad-left, .dpad-right {
+  width: 30px;
   height: 40px;
-  padding: 4px;
+  border-radius: 4px;
 }
 
-/* Wider menu button to accommodate the label */
-#mobile-controls .menu-btn {
-  width: 72px;
+.dpad-arrow {
+  font-size: 18px;
+  text-shadow: 0 0 8px rgba(255, 215, 0, 0.8);
 }
 
-/* Column layout for control clusters */
-#mobile-controls .controls-left,
-#mobile-controls .controls-center,
-#mobile-controls .controls-arrows {
+/* -------------------------------------------------------------------
+ * ACTION BUTTONS - NES/Gameboy Style
+ */
+.action-buttons {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  gap: 8px;
+  margin-right: auto;
 }
 
-/* Stack shoot/reload and store/jump/select with spacing */
-#mobile-controls .controls-left .control-btn,
-#mobile-controls .controls-center .control-btn {
-  margin-bottom: 6px;
-}
-
-/* Directional pad layout */
-#mobile-controls .controls-arrows {
-  flex-direction: column;
-  align-items: center;
-}
-
-#mobile-controls .arrow-row {
+.action-row {
   display: flex;
+  gap: 8px;
+}
+
+.action-btn {
+  background: radial-gradient(circle at 30% 30%, #ff6b6b, #cc3333);
+  border: 4px solid #ffd700;
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  color: #fff;
+  font-size: 8px;
+  font-weight: bold;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  outline: none;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.6),
+              inset 0 -3px 6px rgba(0, 0, 0, 0.4),
+              inset 0 2px 6px rgba(255, 255, 255, 0.2);
+  transition: all 0.1s;
+  display: flex;
+  align-items: center;
   justify-content: center;
-  align-items: center;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
 }
 
-#mobile-controls .arrow-row .control-btn {
-  margin: 0 4px;
+.action-btn:active {
+  background: radial-gradient(circle at 30% 30%, #cc3333, #991111);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.8),
+              inset 0 3px 8px rgba(0, 0, 0, 0.6);
+  transform: translateY(2px);
+  border-color: #ffb700;
+}
+
+.fire-btn {
+  background: radial-gradient(circle at 30% 30%, #ff4444, #cc0000);
+}
+
+.reload-btn {
+  background: radial-gradient(circle at 30% 30%, #ff8844, #cc5500);
+}
+
+.shop-btn {
+  background: radial-gradient(circle at 30% 30%, #44ff44, #00cc00);
+}
+
+.select-btn {
+  background: radial-gradient(circle at 30% 30%, #4488ff, #0044cc);
+}
+
+.btn-label {
+  font-size: 7px;
+  line-height: 1.2;
+  text-align: center;
+  letter-spacing: 0.5px;
+}
+
+/* -------------------------------------------------------------------
+ * MENU BUTTON - Like classic Start button
+ */
+.menu-buttons {
+  display: flex;
+  flex-direction: column;
+  margin-right: 8px;
+}
+
+.menu-btn {
+  background: linear-gradient(145deg, #4a4a5e, #3a3a4e);
+  border: 3px solid #ffd700;
+  border-radius: 8px;
+  color: #ffd700;
+  font-size: 10px;
+  width: 60px;
+  height: 30px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  outline: none;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.6),
+              inset 0 -2px 4px rgba(0, 0, 0, 0.3);
+  transition: all 0.1s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-shadow: 0 0 6px rgba(255, 215, 0, 0.6);
+}
+
+.menu-btn:active {
+  background: linear-gradient(145deg, #2a2a3e, #1a1a2e);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.8),
+              inset 0 2px 4px rgba(0, 0, 0, 0.5);
+  transform: translateY(2px);
+  border-color: #ffb700;
+}
+
+.btn-label-small {
+  font-size: 9px;
+  letter-spacing: 1px;
 }
 
 /* Game container positions the game and intro video.  On desktop it
