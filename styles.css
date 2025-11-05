@@ -1,5 +1,4 @@
-/* Basic styling for the page */
-/* Reset body to occupy the entire viewport and provide a dark backdrop for the game. */
+/* Global layout ------------------------------------------------------- */
 html, body {
   height: 100%;
   width: 100%;
@@ -16,26 +15,18 @@ html, body {
   color: #fff;
 }
 
-/* Define shared CSS custom properties.  The controls bar height is
-   referenced by both the canvas sizing and the bar itself.  Setting
-   it at :root makes it accessible throughout the stylesheet. */
 :root {
   --controls-height: 120px;
   --vh: 1vh; /* dynamic vh set from JS for mobile URL-bar safe sizing */
 }
 
 /* -------------------------------------------------------------------
- * Mobile control bar
+ * RETRO MOBILE CONTROLS
  *
- * A responsive touch controller appears at the bottom of the screen
- * when the game is played on a mobile device.  The controls are
- * hidden by default and revealed via JavaScript when a touch or
- * mobile environment is detected.  Buttons are styled with a retro
- * gold outline on a deep blue background to evoke an 8‑bit arcade
- * aesthetic.  The layout groups controls logically: shooting and
- * reloading on the left, store/jump/select in the centre, a
- * directional pad on the right and a menu button on the far edge.
- */
+ * NES/Gameboy Color inspired touch controls with authentic retro styling.
+ * Features classic D-pad on left, action buttons on right, menu bar on top.
+ * Gold and burgundy color scheme evokes classic Nintendo aesthetics.
+ * ------------------------------------------------------------------- */
 #mobile-controls {
   position: absolute;
   left: 0;
@@ -73,7 +64,6 @@ html, body {
   -webkit-user-select: none;
   outline: none;
   display: flex;
-  align-items: center;
   justify-content: center;
   box-shadow: 0 2px 0 #6d5920, inset 0 2px 0 rgba(255,255,255,0.25);
 }
@@ -97,77 +87,344 @@ html, body {
 
 #mobile-controls .arrow-row { display:flex; justify-content:center; align-items:center; gap:8px; }
 
-#mobile-controls .arrow-row .control-btn {
-  margin: 0 4px;
-}
-
-/* Game container positions the game and intro video.  On desktop it
-   centres the content with a fixed internal resolution scaled via a
-   transform.  On mobile it occupies the full viewport width and
-   reserves space for the control bar. */
-#game-container {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 800px;
-  height: 450px;
-  image-rendering: pixelated;
-}
-
-/* Canvas fills the container.  It no longer has its own transform
-   because the container handles positioning. */
-#game-container canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-}
-
-/* Intro video overlays the canvas within the game container.  It
-   covers the same area and maintains aspect ratio without stretching
-   across the entire page.  Initially visible until ended. */
-#game-container .intro-video {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  z-index: 1000;
-  display: block;
-}
-
-/* Adjust container sizing on small screens to leave room for the mobile controls */
-@media (max-width: 768px) {
-  #game-container {
-    position: absolute;
-    top: 0;
-    left: 0;
-    transform: none;
-    width: 100vw;
-    height: calc(calc(var(--vh, 1vh) * 100) - var(--controls-height));
+/* Responsive D-pad for smaller screens */
+@media (max-height: 500px) and (orientation: landscape) {
+  .dpad-btn {
+    width: 38px;
+    height: 38px;
+    font-size: 17px;
+    border: 2px solid #2a2a2a;
+  }
+  .dpad-center {
+    width: 38px !important;
+    height: 38px !important;
+    border: 2px solid #2a2a2a !important;
   }
 }
 
-/* When the device is in landscape orientation, ensure the game
-   container fills the full width and height (minus controls) on small screens. */
-@media (orientation: landscape) and (max-width: 768px) {
-  #game-container {
-    width: 100vw;
-    height: calc(calc(var(--vh, 1vh) * 100) - var(--controls-height));
+@media (max-height: 400px) and (orientation: landscape) {
+  .dpad-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 14px;
+    border: 2px solid #2a2a2a;
+  }
+  .dpad-center {
+    width: 32px !important;
+    height: 32px !important;
+    border: 2px solid #2a2a2a !important;
   }
 }
 
-/* Base styling for the canvas.  The canvas itself does not position
-   relative to the page; instead, the game container manages
-   centring and scaling.  We still enable pixel art rendering. */
-#game-canvas {
-  image-rendering: pixelated;
+.dpad-up {
+  border-radius: 6px 6px 0 0;
+  margin-bottom: -3px;
 }
 
-/* Heads‑up display (HUD) elements */
+.dpad-down {
+  border-radius: 0 0 6px 6px;
+  margin-top: -3px;
+}
+
+.dpad-left {
+  border-radius: 6px 0 0 6px;
+  margin-right: -3px;
+}
+
+.dpad-right {
+  border-radius: 0 6px 6px 0;
+  margin-left: -3px;
+}
+
+.dpad-center {
+  width: 45px;
+  height: 45px;
+  background: #0a0a0a;
+  border: 3px solid #2a2a2a;
+}
+
+.dpad-btn:active {
+  background: #cc9900; /* Darker gold when pressed */
+  color: #000;
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.5),
+    0 1px 3px rgba(255, 215, 0, 0.8);
+  transform: scale(0.95);
+}
+
+.dpad-btn .arrow {
+  filter: drop-shadow(1px 1px 1px rgba(0, 0, 0, 0.8));
+}
+
+/* -------------------------------------------------------------------
+ * ACTION BUTTONS (Right Side)
+ * Classic NES-style A/B button layout
+ * ------------------------------------------------------------------- */
+.action-buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.action-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  min-width: clamp(72px, 20vw, 128px);
+  padding: clamp(10px, 2.8vw, 18px);
+  border: none;
+  border-radius: 18px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(0.58rem, 2.4vw, 0.95rem);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #2d1f05;
+  background: linear-gradient(145deg, var(--retro-gold-highlight), var(--retro-gold));
+  box-shadow: 0 6px 0 var(--retro-gold-deep), 0 12px 24px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.action-top {
+  margin-right: 20px;
+}
+
+.action-btn {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  border: 4px solid #cc9900;
+  background: #ffd700; /* Solid gold NES style */
+  box-shadow:
+    inset 0 -3px 0 rgba(0, 0, 0, 0.3),
+    inset 0 3px 0 rgba(255, 255, 255, 0.3),
+    0 4px 8px rgba(0, 0, 0, 0.8),
+    0 0 0 2px #cc9900;
+  color: #000; /* Black text on gold */
+  font-size: 7px;
+  font-weight: bold;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  text-shadow: none;
+  position: relative;
+}
+
+/* Responsive action buttons for smaller screens */
+@media (max-height: 500px) and (orientation: landscape) {
+  .action-btn {
+    width: 52px;
+    height: 52px;
+    border: 3px solid #8b0000;
+    font-size: 6px;
+  }
+  .action-btn .btn-key {
+    font-size: 14px !important;
+  }
+  .action-btn .btn-label {
+    font-size: 5px !important;
+  }
+}
+
+@media (max-height: 400px) and (orientation: landscape) {
+  .action-btn {
+    width: 44px;
+    height: 44px;
+    border: 2px solid #8b0000;
+    font-size: 5px;
+    gap: 1px;
+  }
+  .action-btn .btn-key {
+    font-size: 12px !important;
+  }
+  .action-btn .btn-label {
+    font-size: 4px !important;
+  }
+}
+
+.action-btn .btn-label {
+  font-size: 6px;
+  letter-spacing: 0.5px;
+}
+
+.action-btn .btn-key {
+  font-size: 16px;
+  font-weight: bold;
+  color: #000; /* Black text on gold */
+}
+
+.action-btn:active {
+  background: #cc9900; /* Darker gold when pressed */
+  box-shadow:
+    inset 0 3px 6px rgba(0, 0, 0, 0.5),
+    0 2px 4px rgba(0, 0, 0, 0.8),
+    0 0 0 2px #cc9900,
+    0 0 12px rgba(255, 215, 0, 0.6);
+  transform: translateY(2px) scale(0.96);
+}
+
+/* All action buttons use same gold NES style */
+.action-btn:not(.fire-btn):not(.jump-btn) {
+  background: #ffd700; /* Solid gold NES style */
+  border-color: #cc9900;
+  color: #000;
+  box-shadow:
+    inset 0 -3px 0 rgba(0, 0, 0, 0.3),
+    inset 0 3px 0 rgba(255, 255, 255, 0.3),
+    0 4px 8px rgba(0, 0, 0, 0.8),
+    0 0 0 2px #cc9900;
+}
+
+.action-btn:not(.fire-btn):not(.jump-btn):active {
+  background: #cc9900; /* Darker gold when pressed */
+  box-shadow:
+    inset 0 3px 6px rgba(0, 0, 0, 0.5),
+    0 2px 4px rgba(0, 0, 0, 0.8),
+    0 0 0 2px #cc9900,
+    0 0 12px rgba(255, 215, 0, 0.6);
+}
+
+/* Jump button - same gold NES style */
+.jump-btn {
+  background: #ffd700; /* Solid gold NES style */
+  border-color: #cc9900;
+  color: #000;
+  box-shadow:
+    inset 0 -3px 0 rgba(0, 0, 0, 0.3),
+    inset 0 3px 0 rgba(255, 255, 255, 0.3),
+    0 4px 8px rgba(0, 0, 0, 0.8),
+    0 0 0 2px #cc9900;
+}
+
+.jump-btn .btn-key {
+  color: #000;
+}
+
+.jump-btn:active {
+  background: #cc9900; /* Darker gold when pressed */
+  box-shadow:
+    inset 0 3px 6px rgba(0, 0, 0, 0.5),
+    0 2px 4px rgba(0, 0, 0, 0.8),
+    0 0 0 2px #cc9900,
+    0 0 16px rgba(255, 215, 0, 0.9);
+}
+
+/* Base button reset */
+.control-btn {
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  touch-action: manipulation;
+  transition: all 0.08s ease;
+}
+
+.control-btn--primary:active {
+  box-shadow: 0 2px 0 var(--fire-shadow), 0 6px 14px rgba(0, 0, 0, 0.55);
+}
+
+.control-btn--dpad {
+  min-width: clamp(62px, 18vw, 96px);
+  aspect-ratio: 1;
+}
+
+.control-btn--dpad .control-icon {
+  font-size: clamp(1rem, 4.5vw, 1.8rem);
+}
+
+.control-btn--dpad .control-label {
+  font-size: clamp(0.45rem, 1.8vw, 0.65rem);
+  margin-top: 6px;
+  letter-spacing: 0.08em;
+}
+
+.control-icon {
+  font-size: clamp(0.85rem, 3vw, 1.35rem);
+  line-height: 1;
+}
+
+.control-label {
+  margin-top: clamp(4px, 1.2vw, 6px);
+}
+
+.action-grid {
+  display: grid;
+  width: min(100%, 420px);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(10px, 2.2vw, 20px);
+}
+
+.action-grid .control-btn {
+  min-width: auto;
+}
+
+@media (max-width: 720px) {
+  .mobile-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .control-panel--dpad,
+  .control-panel--actions {
+    justify-content: center;
+  }
+
+  .action-grid {
+    width: 100%;
+  }
+}
+
+/* Orientation notice -------------------------------------------------- */
+.orientation-lock {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+  box-sizing: border-box;
+  background: rgba(4, 8, 20, 0.94);
+  z-index: 1200;
+}
+
+.orientation-lock.active {
+  display: flex;
+}
+
+.orientation-lock__content {
+  max-width: 420px;
+  width: 100%;
+  padding: 28px 24px;
+  border-radius: 22px;
+  border: 3px solid var(--retro-gold);
+  background: linear-gradient(160deg, rgba(15, 24, 52, 0.95), rgba(7, 12, 30, 0.92));
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.55);
+}
+
+.orientation-lock__content h2 {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  margin: 0 0 14px;
+  color: var(--retro-gold-highlight);
+}
+
+.orientation-lock__content p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: #d6e0ff;
+}
+
+/* HUD and menu overlays ----------------------------------------------- */
 .hud {
   position: absolute;
   top: 10px;
