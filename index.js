@@ -416,10 +416,14 @@
             btn.classList.add('pressed');
             event.preventDefault();
             keys[keyName] = true;
-            // Trigger immediate menu handling for Enter, Escape, P etc.
-            handleMenuInput({ key: keyName });
-            if (keyName === 'Enter') { ensureSelectSfxMobile(); }
-          };
+            // After: Dispatches a real keyboard event
+const syntheticEvent = new KeyboardEvent('keydown', {
+  key: keyName,
+  code: keyName,
+  bubbles: true,
+  cancelable: true
+});
+document.dispatchEvent(syntheticEvent)
           const release = (event) => {
             btn.classList.remove('pressed');
             event.preventDefault();
