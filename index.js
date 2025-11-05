@@ -417,21 +417,47 @@
             event.preventDefault();
             keys[keyName] = true;
 
-            // For menu buttons (Enter, Escape, P), immediately trigger the menu logic
-            // by simulating a keyboard event
-            if (keyName === 'Enter' || keyName === 'p' || keyName === 'P' || keyName === 'Escape') {
-              // Create a synthetic keyboard event
-              const syntheticEvent = new KeyboardEvent('keydown', {
-                key: keyName,
-                code: keyName,
-                bubbles: true,
-                cancelable: true
-              });
-              // Dispatch to trigger handleMenuInput through the keydown listener
-              document.dispatchEvent(syntheticEvent);
+            // Handle menu buttons directly by manipulating game state
+            if (keyName === 'p') {
+              // STORE button - toggle shop
+              if (gameState === 'play') {
+                gameState = 'shop';
+                const idx = SHOP_ITEMS.findIndex(it => it.type === 'weapon' && it.key === player.weapon);
+                menuSelection = idx >= 0 ? idx : 0;
+                fadeOut(gameMusic);
+                fadeIn(menuMusic);
+                ensureSelectSfxMobile();
+              } else if (gameState === 'shop') {
+                gameState = 'play';
+                fadeOut(menuMusic);
+                fadeIn(gameMusic);
+                ensureSelectSfxMobile();
+              }
+            } else if (keyName === 'Escape') {
+              // ESC/MENU button - toggle pause menu
+              if (gameState === 'play') {
+                gameState = 'menu';
+                mainMenuSelection = 0;
+                fadeOut(gameMusic);
+                fadeIn(menuMusic);
+                ensureSelectSfxMobile();
+              } else if (gameState === 'menu') {
+                gameState = 'play';
+                fadeOut(menuMusic);
+                fadeIn(gameMusic);
+                ensureSelectSfxMobile();
+              } else if (gameState === 'shop') {
+                gameState = 'play';
+                fadeOut(menuMusic);
+                fadeIn(gameMusic);
+                ensureSelectSfxMobile();
+              }
+            } else if (keyName === 'Enter') {
+              // SELECT button - call handleMenuInput for complex logic
+              handleMenuInput({ key: keyName });
               ensureSelectSfxMobile();
             } else {
-              // For gameplay buttons, just call handleMenuInput directly
+              // Gameplay buttons (arrows, shoot, reload, jump)
               handleMenuInput({ key: keyName });
             }
           };
