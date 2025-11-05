@@ -402,7 +402,7 @@
     if (isMobile) { addTapBlocker();
       const ctrlBar = document.getElementById('mobile-controls');
       if (ctrlBar) {
-        ctrlBar.style.display = 'flex';
+        ctrlBar.style.display = 'grid';
         updateControlsHeight();
         window.addEventListener('resize', updateControlsHeight);
         window.addEventListener('orientationchange', updateControlsHeight);
@@ -435,8 +435,8 @@
           btn.addEventListener('pointerleave', release);
           btn.addEventListener('mousedown', press);
           btn.addEventListener('mouseup', release);
-          btn.addEventListener('click', function(e){ e.preventDefault(); handleMenuInput({ key: keyName });
-            if (keyName === 'Enter') { ensureSelectSfxMobile(); } if (keyName === 'Enter') { ensureSelectSfxMobile(); } });
+          // Click event as fallback - press/release already handle the main logic
+          btn.addEventListener('click', function(e){ e.preventDefault(); });
         });
       }
     }
@@ -716,7 +716,7 @@
             const difficulties = ['easy', 'normal', 'hard'];
             let idx = difficulties.indexOf(SETTINGS.difficulty);
             // cycle difficulty in direction based on arrow keys
-            if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') idx = (idx + difficulties.length - 1) % difficulties.length;
+            if (e.key === 'ArrowLeft') idx = (idx + difficulties.length - 1) % difficulties.length;
             else idx = (idx + 1) % difficulties.length;
             SETTINGS.difficulty = difficulties[idx];
           } else if (key === 'audio') {
