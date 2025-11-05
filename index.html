@@ -2,77 +2,74 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SPACE COMMANDO – Side‑Scrolling Shooter</title>
-  <!-- Link the stylesheet for basic page and HUD styling -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>SPACE COMMANDO – Side-Scrolling Shooter</title>
+  <!-- Core styles for layout and the retro mobile controls -->
   <link rel="stylesheet" href="styles.css">
-  <!-- Import a retro sci‑fi font for the heads‑up display.  Orbitron provides
-       a clean, futuristic look while Press Start 2P adds a pixel‑retro
-       flavour.  These fonts are free to use via Google Fonts.  -->
+  <!-- Retro display fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Press+Start+2P&display=swap" rel="stylesheet">
 </head>
 <body>
-  <!-- Game container holds both the intro video and the canvas.  The
-       video overlays the canvas on first load and plays the credit
-       sequence with audio.  Once complete it hides itself.  Using a
-       container allows the intro to share the same dimensions as
-       the game rather than occupying the full page. -->
+  <!-- Game container holds both the intro video and the canvas. -->
   <div id="game-container">
     <video id="intro-video" class="intro-video" src="inspiresoftwareintro.mp4" playsinline></video>
-    <!-- The game runs inside this canvas. It is scaled via CSS to fill the page while preserving the aspect ratio. -->
     <canvas id="game-canvas" width="800" height="450"></canvas>
   </div>
 
-  <!--
-    On touch‑enabled devices a custom control bar appears beneath the
-    game.  These controls mirror the keyboard inputs (movement,
-    jump, shoot, reload, store, select and menu) so that the
-    touchscreen can be used for gameplay.  Each button carries a
-    data‑key attribute corresponding to the key it triggers.
+  <!-- Orientation message shown on mobile when the device is in portrait. -->
+  <div id="orientation-lock" class="orientation-lock" role="alert" aria-live="assertive" aria-hidden="true">
+    <div class="orientation-lock__content">
+      <h2>Rotate Your Device</h2>
+      <p>Turn your phone to landscape mode to access the Space Commando controls.</p>
+    </div>
+  </div>
 
-    The layout loosely follows the provided mock‑up (mobile_uxui_controls.png):
-    shoot/reload on the far left, a central cluster for store, jump
-    and select, a directional pad to the right, and a menu button
-    anchored on the far right.  The container is hidden on desktop
-    and only shown on mobile via JavaScript.
-  -->
-  <div id="mobile-controls" class="mobile-controls">
-    <div class="controls-left">
-      <button data-key="z" class="control-btn">SHOOT</button>
-      <button data-key="x" class="control-btn">RELOAD</button>
-    </div>
-    <div class="controls-center">
-      <button data-key="p" class="control-btn">STORE</button>
-      <button data-key=" " class="control-btn">JUMP</button>
-      <button data-key="Enter" class="control-btn">SELECT</button>
-    </div>
-    <div class="controls-arrows">
-      <button data-key="ArrowUp" class="control-btn arrow-btn">↑</button>
-      <div class="arrow-row">
-        <button data-key="ArrowLeft" class="control-btn arrow-btn">←</button>
-        <button data-key="ArrowDown" class="control-btn arrow-btn">↓</button>
-        <button data-key="ArrowRight" class="control-btn arrow-btn">→</button>
+  <!-- Gold retro themed mobile controls. Hidden on desktop and portrait. -->
+  <div id="mobile-controls" class="mobile-controls" aria-hidden="true">
+    <div class="control-panel control-panel--dpad">
+      <div class="dpad">
+        <button class="control-btn control-btn--dpad" data-keys="ArrowUp" aria-label="Up">
+          <span class="control-icon">▲</span>
+          <span class="control-label">UP</span>
+        </button>
+        <div class="dpad-horizontal">
+          <button class="control-btn control-btn--dpad" data-keys="ArrowLeft" aria-label="Left">
+            <span class="control-icon">◀</span>
+            <span class="control-label">LEFT</span>
+          </button>
+          <button class="control-btn control-btn--dpad" data-keys="ArrowDown" aria-label="Down">
+            <span class="control-icon">▼</span>
+            <span class="control-label">DOWN</span>
+          </button>
+          <button class="control-btn control-btn--dpad" data-keys="ArrowRight" aria-label="Right">
+            <span class="control-icon">▶</span>
+            <span class="control-label">RIGHT</span>
+          </button>
+        </div>
       </div>
     </div>
-    <!-- The right-most button triggers the escape key to toggle the game menu.  Labelled
-         “ESC” to match the keyboard input for clarity. -->
-    <button data-key="Escape" class="control-btn menu-btn">ESC</button>
+    <div class="control-panel control-panel--actions">
+      <div class="action-grid">
+        <button class="control-btn" data-keys="p" aria-label="Shop">SHOP</button>
+        <button class="control-btn" data-keys="Escape" aria-label="Menu">MENU</button>
+        <button class="control-btn" data-keys="Escape" aria-label="Esc">ESC</button>
+        <button class="control-btn" data-keys="Enter|Space" aria-label="Select">SELECT</button>
+        <button class="control-btn control-btn--primary" data-keys="z" aria-label="Fire">FIRE</button>
+        <button class="control-btn" data-keys="x" aria-label="Reload">RELOAD</button>
+      </div>
+    </div>
   </div>
 
   <!-- Main game logic -->
   <script src="index.js"></script>
 
-  <!-- Hide the intro once it finishes playing.  Listening on the
-       ended event ensures that the game only becomes visible when
-       the credit video is complete. -->
+  <!-- Hide the intro once it finishes playing. -->
   <script>
     const introVideo = document.getElementById('intro-video');
     if (introVideo) {
-      // When the credit finishes, hide the video so the game is visible
       introVideo.addEventListener('ended', () => {
         introVideo.style.display = 'none';
       });
-      // Trigger playback with audio on the first user interaction (click or key press)
       const startIntro = () => {
         if (introVideo.paused) {
           try {

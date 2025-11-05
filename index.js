@@ -352,6 +352,7 @@
     }
     // Input state: track whether keys are pressed
     const keys = {};
+    const menuNavigationKeys = new Set(['Enter','Escape','p','P','ArrowUp','ArrowDown','ArrowLeft','ArrowRight']);
     document.addEventListener('keydown', (e) => {
       keys[e.key] = true;
       // Prevent default scrolling on arrow keys and space.  Include both
@@ -373,40 +374,99 @@
 
     // ---------------------------------------------------------------------
     // Mobile controls
-    // Detect whether we are on a touch‑capable mobile device.  If so,
-    // reveal the custom on‑screen controller and wire up each button to
-    // simulate keyboard presses.  Using both touch and pointer events
-    // ensures compatibility across browsers.  The data‑key attribute on
-    // each button specifies which key should be set in the keys object
-    // when pressed.  Menu navigation triggers handleMenuInput() immediately
-    // on press so the purchase and settings menus respond without delay.
+    // Detect whether we are on a touch‑capable mobile device. If so, wire up
+    // the landscape prompt and the gold retro control overlay. Buttons emit
+    // one or more keyboard events so the existing input system can be reused.
     const isMobile = /Mobi|Android|iPhone|iPad|iPod|Tablet/i.test(navigator.userAgent) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
+    const ctrlBar = document.getElementById('mobile-controls');
+    const orientationOverlay = document.getElementById('orientation-lock');
+
+    const releaseAllKeys = () => {
+      for (const k of Object.keys(keys)) {
+        keys[k] = false;
+      }
+    };
+
     if (isMobile) {
-      const ctrlBar = document.getElementById('mobile-controls');
+      document.body.classList.add('mobile-active');
+
+      const toggleOrientationState = () => {
+        const landscape = window.innerWidth > window.innerHeight;
+        document.body.classList.toggle('landscape-ready', landscape);
+        document.body.classList.toggle('portrait-lock', !landscape);
+
+        if (ctrlBar) {
+          ctrlBar.classList.toggle('visible', landscape);
+          ctrlBar.setAttribute('aria-hidden', landscape ? 'false' : 'true');
+        }
+
+        if (orientationOverlay) {
+          orientationOverlay.classList.toggle('active', !landscape);
+          orientationOverlay.setAttribute('aria-hidden', landscape ? 'true' : 'false');
+        }
+
+        if (!landscape) {
+          releaseAllKeys();
+        }
+      };
+
+      toggleOrientationState();
+      window.addEventListener('resize', toggleOrientationState);
+      window.addEventListener('orientationchange', () => {
+        // A tiny delay ensures innerWidth/innerHeight have settled.
+        setTimeout(toggleOrientationState, 80);
+      });
+
       if (ctrlBar) {
-        ctrlBar.style.display = 'flex';
-        const buttons = ctrlBar.querySelectorAll('.control-btn');
-        buttons.forEach(btn => {
-          const keyName = btn.getAttribute('data-key');
+        const parseKeys = (btn) => {
+          const raw = btn.dataset.keys || btn.dataset.key || '';
+          return raw.split('|').map(k => k.trim()).filter(Boolean);
+        };
+
+        const setKeyState = (keyName, state) => {
+          if (!keyName) return;
+          if (keyName === 'Space') {
+            keys[' '] = state;
+            keys['Space'] = state;
+            keys['Spacebar'] = state;
+            return;
+          }
+          keys[keyName] = state;
+        };
+
+        const startEvents = window.PointerEvent ? ['pointerdown'] : ['touchstart', 'mousedown'];
+        const endEvents = window.PointerEvent ? ['pointerup', 'pointercancel', 'pointerleave'] : ['touchend', 'touchcancel', 'mouseup', 'mouseleave'];
+
+        ctrlBar.querySelectorAll('.control-btn').forEach(btn => {
+          const keyList = parseKeys(btn);
+
           const press = (event) => {
             event.preventDefault();
-            keys[keyName] = true;
-            // Trigger immediate menu handling for Enter, Escape, P etc.
-            handleMenuInput({ key: keyName });
+            keyList.forEach(keyName => {
+              setKeyState(keyName, true);
+              if (menuNavigationKeys.has(keyName)) {
+                handleMenuInput({ key: keyName });
+              }
+            });
           };
+
           const release = (event) => {
             event.preventDefault();
-            keys[keyName] = false;
+            keyList.forEach(keyName => setKeyState(keyName, false));
           };
-          // Touch events
-          btn.addEventListener('touchstart', press);
-          btn.addEventListener('touchend', release);
-          btn.addEventListener('touchcancel', release);
-          // Pointer events for mouse / stylus
-          btn.addEventListener('pointerdown', press);
-          btn.addEventListener('pointerup', release);
-          btn.addEventListener('pointerleave', release);
+
+          startEvents.forEach(type => btn.addEventListener(type, press));
+          endEvents.forEach(type => btn.addEventListener(type, release));
         });
+      }
+    } else {
+      if (ctrlBar) {
+        ctrlBar.classList.remove('visible');
+        ctrlBar.setAttribute('aria-hidden', 'true');
+      }
+      if (orientationOverlay) {
+        orientationOverlay.classList.remove('active');
+        orientationOverlay.setAttribute('aria-hidden', 'true');
       }
     }
 
