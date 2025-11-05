@@ -542,16 +542,33 @@
       window.addEventListener('resize', checkOrientation);
       window.addEventListener('orientationchange', checkOrientation);
 
-      // Request fullscreen on first interaction to minimize address bar
-      let fullscreenRequested = false;
-      const requestFullscreen = () => {
-        if (fullscreenRequested) return;
-        fullscreenRequested = true;
+      // Hide address bar using scroll trick (works better than fullscreen API on mobile)
+      let addressBarHidden = false;
+      const hideAddressBar = () => {
+        if (addressBarHidden) return;
+        addressBarHidden = true;
 
+        // Scroll page to hide address bar on mobile browsers
+        // This works on iOS Safari and Android Chrome where fullscreen API doesn't
+        window.scrollTo(0, 1);
+
+        // Use setTimeout for better compatibility across browsers
+        setTimeout(() => {
+          window.scrollTo(0, 1);
+          handleResize();
+        }, 100);
+
+        // Additional delay for stubborn browsers
+        setTimeout(() => {
+          window.scrollTo(0, 1);
+          handleResize();
+        }, 300);
+
+        // Try fullscreen API as backup (works on some Android browsers)
         const docElem = document.documentElement;
         if (docElem.requestFullscreen) {
           docElem.requestFullscreen().catch(() => {
-            // Fullscreen request failed, continue anyway
+            // Fullscreen request failed, continue with scroll method
           });
         } else if (docElem.webkitRequestFullscreen) {
           docElem.webkitRequestFullscreen();
@@ -560,16 +577,16 @@
         } else if (docElem.msRequestFullscreen) {
           docElem.msRequestFullscreen();
         }
-
-        // Trigger resize after attempting fullscreen
-        setTimeout(handleResize, 200);
       };
 
-      // Try to enter fullscreen on first touch/click
-      const fullscreenEvents = ['touchstart', 'click'];
-      fullscreenEvents.forEach(eventType => {
-        document.addEventListener(eventType, requestFullscreen, { once: true });
+      // Try to hide address bar on first touch/click
+      const hideBarEvents = ['touchstart', 'click'];
+      hideBarEvents.forEach(eventType => {
+        document.addEventListener(eventType, hideAddressBar, { once: true });
       });
+
+      // Also try to hide immediately on page load
+      setTimeout(hideAddressBar, 500);
     }
 
     // Collections for dynamic entities
