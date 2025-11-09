@@ -31,11 +31,10 @@ html, body {
  * when the game is played on a mobile device.  The controls are
  * hidden by default and revealed via JavaScript when a touch or
  * mobile environment is detected.  Buttons are styled with a retro
- * gold outline on a dark background to evoke an 8‑bit arcade
- * aesthetic.  The layout matches whatitneedstolooklike.png:
- * SHOOT/RELOAD side-by-side top-left, JUMP below them, ESC bottom-left,
- * UP arrow top-right, LEFT/DOWN/RIGHT middle-right,
- * SELECT and STORE at bottom-center/right.
+ * gold outline on a deep blue background to evoke an 8‑bit arcade
+ * aesthetic.  The layout groups controls logically: shooting and
+ * reloading on the left, store/jump/select in the centre, a
+ * directional pad on the right and a menu button on the far edge.
  */
 #mobile-controls {
   position: absolute;
@@ -44,28 +43,30 @@ html, body {
   width: 100%;
   /* Height is measured in JS and exposed via --controls-height */
   background: #000;
-  display: none; /* shown on mobile via JS - will be changed to grid */
+  display: none; /* shown on mobile via JS */
   z-index: 500;
-  padding: 8px 10px;
+  padding: 10px 12px;
   box-sizing: border-box;
   font-family: 'Press Start 2P', monospace;
-  grid-template-columns: auto 1fr auto;
-  grid-template-rows: auto auto auto;
-  gap: 6px;
-  align-items: start;
-  padding-bottom: calc(env(safe-area-inset-bottom) + 8px);
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 10px);
   border-top: 2px solid #e3c95b;
 }
 
-/* Base button styling */
+
 #mobile-controls .control-btn {
   background: #e3c95b;
   border: 3px solid #a58b2e;
   color: #111;
   padding: 6px 8px;
   margin: 0;
-  font-size: 11px;
-  font-weight: bold;
+  font-size: 12px;
+  width: 76px;
+  height: 52px;
   text-align: center;
   cursor: pointer;
   user-select: none;
@@ -75,95 +76,29 @@ html, body {
   align-items: center;
   justify-content: center;
   box-shadow: 0 2px 0 #6d5920, inset 0 2px 0 rgba(255,255,255,0.25);
-  white-space: nowrap;
 }
 
-/* Left column: contains SHOOT/RELOAD row, JUMP, and ESC */
-#mobile-controls .controls-left {
-  grid-column: 1;
-  grid-row: 1 / 4;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: flex-start;
-}
+/* Smaller arrow buttons */
+#mobile-controls .arrow-btn { width: 48px; height: 48px; padding: 4px; }
 
-/* SHOOT and RELOAD side by side */
-#mobile-controls .shoot-reload-row {
-  display: flex;
-  gap: 6px;
-}
+/* Wider menu button to accommodate the label */
+#mobile-controls .menu-btn { width: 86px; }
 
-#mobile-controls .shoot-reload-row .control-btn {
-  width: 70px;
-  height: 48px;
-  font-size: 10px;
-}
+/* Column layout for control clusters */
+#mobile-controls .controls-left,
+#mobile-controls .controls-center,
+#mobile-controls .controls-arrows { flex-direction:column; align-items:center; gap:6px; }
 
-/* JUMP button - wider to span roughly the width of SHOOT+RELOAD */
-#mobile-controls .jump-btn {
-  width: 146px;
-  height: 50px;
-  font-size: 12px;
-}
+/* Stack shoot/reload and store/jump/select with spacing */
 
-/* ESC button */
-#mobile-controls .esc-btn {
-  width: 146px;
-  height: 48px;
-  font-size: 9px;
-}
 
-/* Right column: contains arrows */
-#mobile-controls .controls-right {
-  grid-column: 3;
-  grid-row: 1 / 3;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: center;
-}
+/* Directional pad layout */
+#mobile-controls .controls-arrows { flex-direction:column; align-items:center; gap:6px; }
 
-/* Arrow buttons */
-#mobile-controls .arrow-btn {
-  width: 48px;
-  height: 48px;
-  padding: 4px;
-  font-size: 16px;
-}
+#mobile-controls .arrow-row { display:flex; justify-content:center; align-items:center; gap:8px; }
 
-#mobile-controls .arrow-row-top {
-  display: flex;
-  justify-content: center;
-}
-
-#mobile-controls .arrow-row-middle {
-  display: flex;
-  gap: 6px;
-  justify-content: center;
-}
-
-/* Bottom row: SELECT and STORE */
-#mobile-controls .controls-bottom {
-  grid-column: 2 / 4;
-  grid-row: 3;
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-  align-items: center;
-  align-self: end;
-}
-
-#mobile-controls .select-btn {
-  width: 100px;
-  height: 48px;
-  font-size: 10px;
-}
-
-#mobile-controls .store-btn {
-  width: 100px;
-  height: 48px;
-  font-size: 11px;
+#mobile-controls .arrow-row .control-btn {
+  margin: 0 4px;
 }
 
 /* Game container positions the game and intro video.  On desktop it
@@ -206,26 +141,37 @@ html, body {
   display: block;
 }
 
-/* Adjust container sizing on small screens to leave room for the mobile controls */
+/* Adjust container sizing on small screens to leave room for the mobile controls
+while preserving the 16:9 aspect ratio. */
 @media (max-width: 768px) {
-  #game-container {
-    position: absolute;
-    top: 0;
-    left: 0;
-    transform: none;
-    width: 100vw;
-    height: calc(calc(var(--vh, 1vh) * 100) - var(--controls-height));
-  }
+#game-container {
+position: absolute;
+top: 0;
+left: 0;
+transform: none;
+width: 100vw;
+/* Maintain 16:9 and then clamp the height so we don’t overlap the
+mobile control bar. */
+aspect-ratio: 16 / 9;
+max-height: calc(calc(var(--vh, 1vh) * 100) - var(--controls-height));
 }
 
-/* When the device is in landscape orientation, ensure the game
-   container fills the full width and height (minus controls) on small screens. */
-@media (orientation: landscape) and (max-width: 768px) {
-  #game-container {
-    width: 100vw;
-    height: calc(calc(var(--vh, 1vh) * 100) - var(--controls-height));
-  }
+
+#game-container canvas,
+#game-container .intro-video {
+width: 100%;
+height: 100%;
 }
+}
+
+
+/* Landscape-specific tweak: same as above but scoped to landscape
+orientation so we get predictable behaviour when rotating. */
+@media (orientation: landscape) and (max-width: 768px) {
+#game-container {
+width: 100vw;
+aspect-ratio: 16 / 9;
+max-height: calc(calc(var(--vh, 1vh) * 100) - var(--controls-height));
 
 /* Base styling for the canvas.  The canvas itself does not position
    relative to the page; instead, the game container manages
@@ -278,13 +224,11 @@ html, body {
 
 /* --- Responsive touch controls sizing --- */
 @media (max-height: 460px) {
-  #mobile-controls .shoot-reload-row .control-btn { width: 62px; height: 42px; font-size: 9px; }
-  #mobile-controls .jump-btn { width: 130px; height: 44px; font-size: 11px; }
-  #mobile-controls .esc-btn { width: 130px; height: 42px; font-size: 8px; }
+  #mobile-controls .control-btn { width: 68px; height: 46px; font-size: 11px; }
   #mobile-controls .arrow-btn { width: 42px; height: 42px; }
-  #mobile-controls .select-btn { width: 90px; height: 42px; font-size: 9px; }
-  #mobile-controls .store-btn { width: 90px; height: 42px; font-size: 10px; }
+  #mobile-controls .menu-btn { width: 78px; }
 }
+
 
 /* --- Tactile press feedback --- */
 #mobile-controls .control-btn {
