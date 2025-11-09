@@ -403,7 +403,7 @@ if (isMobile) {
 addTapBlocker();
 const ctrlBar = document.getElementById('mobile-controls');
 if (ctrlBar) {
-ctrlBar.style.display = 'grid';
+ctrlBar.style.display = 'flex';
 updateControlsHeight();
 window.addEventListener('resize', updateControlsHeight);
 window.addEventListener('orientationchange', updateControlsHeight);
@@ -421,46 +421,42 @@ selectSfx.play();
 
 
 buttons.forEach(btn => {
-const keyName = btn.getAttribute('data-key');
+  const keyName = btn.getAttribute('data-key');
 
+  // When a mobile button is pressed, dispatch synthetic keyboard
+  // events to the document.  This approach mirrors actual
+  // keydown/keyup behaviour so that all existing key handlers
+  // (movement, menus, shop toggling, etc.) respond correctly.  We
+  // still provide visual feedback by adding/removing the 'pressed'
+  // class.  Prevent default to avoid unwanted scroll/zoom.
+  const press = (event) => {
+    event.preventDefault();
+    btn.classList.add('pressed');
+    // Dispatch a keydown event with the appropriate key value
+    const ev = new KeyboardEvent('keydown', { key: keyName });
+    document.dispatchEvent(ev);
+    if (keyName === 'Enter') {
+      ensureSelectSfxMobile();
+    }
+  };
 
-const press = (event) => {
-event.preventDefault();
-btn.classList.add('pressed');
+  const release = (event) => {
+    event.preventDefault();
+    btn.classList.remove('pressed');
+    // Dispatch a keyup event when the touch/pointer is released
+    const ev = new KeyboardEvent('keyup', { key: keyName });
+    document.dispatchEvent(ev);
+  };
 
+  // Touch events
+  btn.addEventListener('touchstart', press, { passive: false });
+  btn.addEventListener('touchend', release);
+  btn.addEventListener('touchcancel', release);
 
-// Simulate the key being held for movement/jump/shoot
-keys[keyName] = true;
-
-
-// Immediately route menu‑style keys into the menu handler so
-// start menu, pause menu, shop, and settings react instantly.
-handleMenuInput({ key: keyName });
-
-
-if (keyName === 'Enter') {
-ensureSelectSfxMobile();
-}
-};
-
-
-const release = (event) => {
-event.preventDefault();
-btn.classList.remove('pressed');
-keys[keyName] = false;
-};
-
-
-// Touch events
-btn.addEventListener('touchstart', press, { passive: false });
-btn.addEventListener('touchend', release);
-btn.addEventListener('touchcancel', release);
-
-
-// Pointer events (covers mouse + stylus)
-btn.addEventListener('pointerdown', press);
-btn.addEventListener('pointerup', release);
-btn.addEventListener('pointerleave', release);
+  // Pointer events (covers mouse + stylus)
+  btn.addEventListener('pointerdown', press);
+  btn.addEventListener('pointerup', release);
+  btn.addEventListener('pointerleave', release);
 });
 }
 }

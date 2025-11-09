@@ -116,9 +116,13 @@ html, body {
   width: auto;
 }
 
-/* When arrow cluster appears in the first row, push it to the right */
-#mobile-controls .row1 > .control-btn.arrow-btn {
-  margin-left: auto;
+/* Wrapper for the up arrow and directional cluster.  Align items
+   vertically so the up arrow sits above the horizontal pad. */
+#mobile-controls .arrow-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
 }
 
 /* Game container positions the game and intro video.  On desktop it

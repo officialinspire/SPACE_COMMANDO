@@ -49,21 +49,23 @@
     contains the pause/menu, select and store buttons evenly spaced.
   -->
   <div id="mobile-controls">
-    <!-- Top row: Shoot/Reload on the left, Up arrow on the right -->
+    <!-- Top row: Shoot/Reload pair only -->
     <div class="row row1">
       <div class="dual-buttons">
         <button class="control-btn" data-key="z">SHOOT</button>
         <button class="control-btn" data-key="x">RELOAD</button>
       </div>
-      <button class="control-btn arrow-btn" data-key="ArrowUp">↑</button>
     </div>
-    <!-- Middle row: Jump button on the left, left/down/right arrows on the right -->
+    <!-- Middle row: Jump button on the left, up arrow above a left/down/right cluster on the right -->
     <div class="row row2">
-      <button class="control-btn jump-btn" data-key=" ">JUMP</button>
-      <div class="arrow-cluster">
-        <button class="control-btn arrow-btn" data-key="ArrowLeft">←</button>
-        <button class="control-btn arrow-btn" data-key="ArrowDown">↓</button>
-        <button class="control-btn arrow-btn" data-key="ArrowRight">→</button>
+      <button class="control-btn jump-btn" data-key="Space">JUMP</button>
+      <div class="arrow-wrapper">
+        <button class="control-btn arrow-btn" data-key="ArrowUp">↑</button>
+        <div class="arrow-cluster">
+          <button class="control-btn arrow-btn" data-key="ArrowLeft">←</button>
+          <button class="control-btn arrow-btn" data-key="ArrowDown">↓</button>
+          <button class="control-btn arrow-btn" data-key="ArrowRight">→</button>
+        </div>
       </div>
     </div>
     <!-- Bottom row: Pause/Menu, Select, and Store -->
