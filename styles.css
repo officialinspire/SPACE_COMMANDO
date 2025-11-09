@@ -49,8 +49,11 @@ html, body {
   box-sizing: border-box;
   font-family: 'Press Start 2P', monospace;
 
-  /* Grid layout: 4 columns (SHOOT, RELOAD, spacer, UP) */
-  grid-template-columns: 1fr 1fr 0.5fr 1fr;
+  /* Grid layout: 6 columns to support 3-row layout
+     Row 1: SHOOT, RELOAD, spacer, UP
+     Row 2: JUMP (wide), spacer, LEFT, DOWN, RIGHT
+     Row 3: ESC/MENU, SELECT, STORE */
+  grid-template-columns: 1fr 1fr 1fr auto auto auto;
   gap: 8px;
   padding-bottom: calc(env(safe-area-inset-bottom) + 10px);
   border-top: 2px solid #e3c95b;
@@ -84,14 +87,32 @@ html, body {
   padding: 4px 12px;
 }
 
-/* Jump button spans 2 columns */
+/* Jump button spans 3 columns to be wide */
 #mobile-controls .jump-btn {
+  grid-column: span 3;
+}
+
+/* First spacer (row 1) spans 3 columns to push UP to the right */
+#mobile-controls .spacer:nth-of-type(1) {
+  grid-column: span 3;
+}
+
+/* Second spacer (row 2) spans 1 column */
+#mobile-controls .spacer:nth-of-type(2) {
+  grid-column: span 1;
+}
+
+/* Row 3 buttons (ESC/MENU, SELECT, STORE) each span 2 columns for even distribution */
+#mobile-controls .esc-btn {
   grid-column: span 2;
 }
 
-/* Spacer takes up its column but is invisible */
-#mobile-controls .spacer {
-  grid-column: span 1;
+#mobile-controls .select-btn {
+  grid-column: span 2;
+}
+
+#mobile-controls .store-btn {
+  grid-column: span 2;
 }
 
 /* Game container positions the game and intro video.  On desktop it
