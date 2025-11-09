@@ -379,9 +379,6 @@
         e.preventDefault();
       }
       handleMenuInput(e);
-      // Flag that this keydown was processed so mobile fallbacks do not
-      // accidentally re-trigger the same action.
-      e.handled = true;
     });
     document.addEventListener('keyup', (e) => {
       // Clear key state
@@ -402,50 +399,71 @@
     // when pressed.  Menu navigation triggers handleMenuInput() immediately
     // on press so the purchase and settings menus respond without delay.
     const isMobile = /Mobi|Android|iPhone|iPad|iPod|Tablet/i.test(navigator.userAgent) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
-    if (isMobile) { addTapBlocker();
-      const ctrlBar = document.getElementById('mobile-controls');
-      if (ctrlBar) {
-        ctrlBar.style.display = 'grid';
-        updateControlsHeight();
-        window.addEventListener('resize', updateControlsHeight);
-        window.addEventListener('orientationchange', updateControlsHeight);
-        const buttons = ctrlBar.querySelectorAll('.control-btn');
-        function ensureSelectSfxMobile() {
-          try { selectSfx.currentTime = 0; selectSfx.play(); } catch (e) {}
-        }
-        const menuKeys = new Set(['p','P','Escape','Enter','ArrowUp','ArrowDown','ArrowLeft','ArrowRight']);
-        buttons.forEach(btn => {
-          const keyName = btn.getAttribute('data-key');
-          const press = (event) => {
-            btn.classList.add('pressed');
-            event.preventDefault();
-            const normalizedKey = keyName === 'Space' ? ' ' : keyName;
-            keys[normalizedKey] = true;
-            if (menuKeys.has(normalizedKey)) {
-              handleMenuInput({ key: normalizedKey });
-            }
-          };
-          const release = (event) => {
-            btn.classList.remove('pressed');
-            event.preventDefault();
-            const normalizedKey = keyName === 'Space' ? ' ' : keyName;
-            keys[normalizedKey] = false;
-          };
-          // Touch events
-          btn.addEventListener('touchstart', press);
-          btn.addEventListener('touchend', release);
-          btn.addEventListener('touchcancel', release);
-          // Pointer events for mouse / stylus
-          btn.addEventListener('pointerdown', press);
-          btn.addEventListener('pointerup', release);
-          btn.addEventListener('pointerleave', release);
-          btn.addEventListener('mousedown', press);
-          btn.addEventListener('mouseup', release);
-          // Click event as fallback - press/release already handle the main logic
-          btn.addEventListener('click', function(e){ e.preventDefault(); });
-        });
-      }
-    }
+if (isMobile) {
+addTapBlocker();
+const ctrlBar = document.getElementById('mobile-controls');
+if (ctrlBar) {
+ctrlBar.style.display = 'flex';
+updateControlsHeight();
+window.addEventListener('resize', updateControlsHeight);
+window.addEventListener('orientationchange', updateControlsHeight);
+
+
+const buttons = ctrlBar.querySelectorAll('.control-btn');
+
+
+function ensureSelectSfxMobile() {
+try {
+selectSfx.currentTime = 0;
+selectSfx.play();
+} catch (e) {}
+}
+
+
+buttons.forEach(btn => {
+const keyName = btn.getAttribute('data-key');
+
+
+const press = (event) => {
+event.preventDefault();
+btn.classList.add('pressed');
+
+
+// Simulate the key being held for movement/jump/shoot
+keys[keyName] = true;
+
+
+// Immediately route menu‑style keys into the menu handler so
+// start menu, pause menu, shop, and settings react instantly.
+handleMenuInput({ key: keyName });
+
+
+if (keyName === 'Enter') {
+ensureSelectSfxMobile();
+}
+};
+
+
+const release = (event) => {
+event.preventDefault();
+btn.classList.remove('pressed');
+keys[keyName] = false;
+};
+
+
+// Touch events
+btn.addEventListener('touchstart', press, { passive: false });
+btn.addEventListener('touchend', release);
+btn.addEventListener('touchcancel', release);
+
+
+// Pointer events (covers mouse + stylus)
+btn.addEventListener('pointerdown', press);
+btn.addEventListener('pointerup', release);
+btn.addEventListener('pointerleave', release);
+});
+}
+}
 
     // Collections for dynamic entities
     let bullets = [];
@@ -722,7 +740,7 @@
             const difficulties = ['easy', 'normal', 'hard'];
             let idx = difficulties.indexOf(SETTINGS.difficulty);
             // cycle difficulty in direction based on arrow keys
-            if (e.key === 'ArrowLeft') idx = (idx + difficulties.length - 1) % difficulties.length;
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') idx = (idx + difficulties.length - 1) % difficulties.length;
             else idx = (idx + 1) % difficulties.length;
             SETTINGS.difficulty = difficulties[idx];
           } else if (key === 'audio') {
