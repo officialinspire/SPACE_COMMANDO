@@ -390,69 +390,76 @@
     });
 
     // ---------------------------------------------------------------------
-    // Mobile controls
-    // Detect whether we are on a touch‑capable mobile device.  If so,
-    // reveal the custom on‑screen controller and wire up each button to
-    // simulate keyboard presses.  Using both touch and pointer events
-    // ensures compatibility across browsers.  The data‑key attribute on
-    // each button specifies which key should be set in the keys object
-    // when pressed.  Menu navigation triggers handleMenuInput() immediately
-    // on press so the purchase and settings menus respond without delay.
-    const isMobile = /Mobi|Android|iPhone|iPad|iPod|Tablet/i.test(navigator.userAgent) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
+// Mobile controls
+// Detect whether we are on a touch-capable mobile device.  If so,
+// reveal the custom on-screen controller and wire up each button to
+// simulate keyboard presses.  Using both touch and pointer events
+// ensures compatibility across browsers.  The data-key attribute on
+// each button specifies which key should be set in the keys object
+// when pressed.  Menu navigation triggers handleMenuInput() immediately
+// on press so the purchase and settings menus respond without delay.
+const isMobile =
+  /Mobi|Android|iPhone|iPad|iPod|Tablet/i.test(navigator.userAgent) ||
+  (navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
+
 if (isMobile) {
-addTapBlocker();
-const ctrlBar = document.getElementById('mobile-controls');
-if (ctrlBar) {
-ctrlBar.style.display = 'flex';
-updateControlsHeight();
-window.addEventListener('resize', updateControlsHeight);
-window.addEventListener('orientationchange', updateControlsHeight);
+  addTapBlocker();
+  const ctrlBar = document.getElementById('mobile-controls');
+  if (ctrlBar) {
+    ctrlBar.style.display = 'flex';
+    updateControlsHeight();
+    window.addEventListener('resize', updateControlsHeight);
+    window.addEventListener('orientationchange', updateControlsHeight);
 
+    const buttons = ctrlBar.querySelectorAll('.control-btn');
 
-const buttons = ctrlBar.querySelectorAll('.control-btn');
+    // Play the select sound when Enter is tapped
+    function ensureSelectSfxMobile() {
+      try {
+        selectSfx.currentTime = 0;
+        selectSfx.play();
+      } catch (e) {}
+    }
 
-        // Play the select sound when Enter is tapped
-        function ensureSelectSfxMobile() {
-          try {
-            selectSfx.currentTime = 0;
-            selectSfx.play();
-          } catch (e) {}
+    // Keys that should trigger menu logic immediately
+    const menuKeys = ['Enter', 'Escape', 'p', 'P', 'ArrowUp', 'ArrowDown'];
+
+    buttons.forEach(btn => {
+      const keyName = btn.getAttribute('data-key');
+
+      const press = (event) => {
+        event.preventDefault();
+        btn.classList.add('pressed');
+        // Set the key as pressed (for movement/jump/shoot etc.)
+        keys[keyName] = true;
+
+        // For menu-related keys, call the menu handler right away
+        if (menuKeys.includes(keyName)) {
+          handleMenuInput({ key: keyName });
+          if (keyName === 'Enter') {
+            ensureSelectSfxMobile();
+          }
         }
+      };
 
-        // Define which keys should trigger immediate menu actions
-        const menuKeys = ['Enter', 'Escape', 'p', 'P', 'ArrowUp', 'ArrowDown'];
+      const release = (event) => {
+        event.preventDefault();
+        btn.classList.remove('pressed');
+        keys[keyName] = false;
+      };
 
-        buttons.forEach(btn => {
-          const keyName = btn.getAttribute('data-key');
-          const press = (event) => {
-            event.preventDefault();
-            btn.classList.add('pressed');
-            // Set the key as pressed for continuous movement/shooting
-            keys[keyName] = true;
-            // For menu-related keys, call the menu handler immediately
-            if (menuKeys.includes(keyName)) {
-              handleMenuInput({ key: keyName });
-              if (keyName === 'Enter') {
-                ensureSelectSfxMobile();
-              }
-            }
-          };
-          const release = (event) => {
-            event.preventDefault();
-            btn.classList.remove('pressed');
-            keys[keyName] = false;
-          };
-          // Touch events
-          btn.addEventListener('touchstart', press, { passive: false });
-          btn.addEventListener('touchend', release);
-          btn.addEventListener('touchcancel', release);
-          // Pointer events
-          btn.addEventListener('pointerdown', press);
-          btn.addEventListener('pointerup', release);
-          btn.addEventListener('pointerleave', release);
-        });
+      // Touch events
+      btn.addEventListener('touchstart', press, { passive: false });
+      btn.addEventListener('touchend', release);
+      btn.addEventListener('touchcancel', release);
+      // Pointer events (mouse or generic pointer)
+      btn.addEventListener('pointerdown', press);
+      btn.addEventListener('pointerup', release);
+      btn.addEventListener('pointerleave', release);
+    });
+  }
 }
-}
+
 
     // Collections for dynamic entities
     let bullets = [];
