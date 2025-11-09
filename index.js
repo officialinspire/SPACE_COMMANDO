@@ -410,17 +410,16 @@
         window.addEventListener('resize', updateControlsHeight);
         window.addEventListener('orientationchange', updateControlsHeight);
         const buttons = ctrlBar.querySelectorAll('.control-btn');
-        function ensureSelectSfxMobile() {
-          try { selectSfx.currentTime = 0; selectSfx.play(); } catch (e) {}
-        }
         const menuKeys = new Set(['p','P','Escape','Enter','ArrowUp','ArrowDown','ArrowLeft','ArrowRight']);
         buttons.forEach(btn => {
           const keyName = btn.getAttribute('data-key');
           const press = (event) => {
             btn.classList.add('pressed');
             event.preventDefault();
+            event.stopPropagation();
             const normalizedKey = keyName === 'Space' ? ' ' : keyName;
             keys[normalizedKey] = true;
+            // Trigger menu input handling for menu navigation keys
             if (menuKeys.has(normalizedKey)) {
               handleMenuInput({ key: normalizedKey });
             }
@@ -428,21 +427,26 @@
           const release = (event) => {
             btn.classList.remove('pressed');
             event.preventDefault();
+            event.stopPropagation();
             const normalizedKey = keyName === 'Space' ? ' ' : keyName;
             keys[normalizedKey] = false;
           };
-          // Touch events
-          btn.addEventListener('touchstart', press);
-          btn.addEventListener('touchend', release);
-          btn.addEventListener('touchcancel', release);
+          // Touch events (primary for mobile)
+          btn.addEventListener('touchstart', press, { passive: false });
+          btn.addEventListener('touchend', release, { passive: false });
+          btn.addEventListener('touchcancel', release, { passive: false });
           // Pointer events for mouse / stylus
           btn.addEventListener('pointerdown', press);
           btn.addEventListener('pointerup', release);
           btn.addEventListener('pointerleave', release);
+          // Mouse events as fallback
           btn.addEventListener('mousedown', press);
           btn.addEventListener('mouseup', release);
-          // Click event as fallback - press/release already handle the main logic
-          btn.addEventListener('click', function(e){ e.preventDefault(); });
+          // Click event as fallback - prevent default to avoid double-tap zoom
+          btn.addEventListener('click', function(e){
+            e.preventDefault();
+            e.stopPropagation();
+          });
         });
       }
     }
