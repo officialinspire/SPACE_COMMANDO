@@ -403,7 +403,7 @@ if (isMobile) {
 addTapBlocker();
 const ctrlBar = document.getElementById('mobile-controls');
 if (ctrlBar) {
-ctrlBar.style.display = 'flex';
+ctrlBar.style.display = 'grid';
 updateControlsHeight();
 window.addEventListener('resize', updateControlsHeight);
 window.addEventListener('orientationchange', updateControlsHeight);
