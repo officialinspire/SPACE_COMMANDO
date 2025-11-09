@@ -92,6 +92,12 @@ html, body {
   gap: 8px;
 }
 
+/* The first row only contains the shoot/reload pair.  Align its
+   contents to the left rather than spacing them across the entire row. */
+#mobile-controls .row1 {
+  justify-content: flex-start;
+}
+
 /* Dual button group (shoot/reload) */
 #mobile-controls .dual-buttons {
   display: flex;
@@ -102,6 +108,14 @@ html, body {
 #mobile-controls .arrow-cluster {
   display: flex;
   gap: 8px;
+}
+
+/* Wrapper that stacks the up arrow on top of the horizontal arrow cluster */
+#mobile-controls .arrow-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
 }
 
 /* Make the jump button expand to fill remaining space */
@@ -116,13 +130,9 @@ html, body {
   width: auto;
 }
 
-/* Wrapper for the up arrow and directional cluster.  Align items
-   vertically so the up arrow sits above the horizontal pad. */
-#mobile-controls .arrow-wrapper {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
+/* Remove margin on the up arrow – its positioning is handled by the wrapper */
+#mobile-controls .row1 > .control-btn.arrow-btn {
+  margin-left: 0;
 }
 
 /* Game container positions the game and intro video.  On desktop it

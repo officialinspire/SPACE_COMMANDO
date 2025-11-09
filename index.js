@@ -409,55 +409,50 @@ window.addEventListener('resize', updateControlsHeight);
 window.addEventListener('orientationchange', updateControlsHeight);
 
 
-const buttons = ctrlBar.querySelectorAll('.control-btn');
+        const buttons = ctrlBar.querySelectorAll('.control-btn');
 
+        // Play the select sound on mobile when Enter is tapped.  This helper
+        // exists so that the audio plays independent of the synthetic
+        // keyboard event dispatch, mirroring desktop behaviour.
+        function ensureSelectSfxMobile() {
+          try {
+            selectSfx.currentTime = 0;
+            selectSfx.play();
+          } catch (e) {}
+        }
 
-function ensureSelectSfxMobile() {
-try {
-selectSfx.currentTime = 0;
-selectSfx.play();
-} catch (e) {}
-}
-
-
-buttons.forEach(btn => {
-  const keyName = btn.getAttribute('data-key');
-
-  // When a mobile button is pressed, dispatch synthetic keyboard
-  // events to the document.  This approach mirrors actual
-  // keydown/keyup behaviour so that all existing key handlers
-  // (movement, menus, shop toggling, etc.) respond correctly.  We
-  // still provide visual feedback by adding/removing the 'pressed'
-  // class.  Prevent default to avoid unwanted scroll/zoom.
-  const press = (event) => {
-    event.preventDefault();
-    btn.classList.add('pressed');
-    // Dispatch a keydown event with the appropriate key value
-    const ev = new KeyboardEvent('keydown', { key: keyName });
-    document.dispatchEvent(ev);
-    if (keyName === 'Enter') {
-      ensureSelectSfxMobile();
-    }
-  };
-
-  const release = (event) => {
-    event.preventDefault();
-    btn.classList.remove('pressed');
-    // Dispatch a keyup event when the touch/pointer is released
-    const ev = new KeyboardEvent('keyup', { key: keyName });
-    document.dispatchEvent(ev);
-  };
-
-  // Touch events
-  btn.addEventListener('touchstart', press, { passive: false });
-  btn.addEventListener('touchend', release);
-  btn.addEventListener('touchcancel', release);
-
-  // Pointer events (covers mouse + stylus)
-  btn.addEventListener('pointerdown', press);
-  btn.addEventListener('pointerup', release);
-  btn.addEventListener('pointerleave', release);
-});
+        buttons.forEach(btn => {
+          const keyName = btn.getAttribute('data-key');
+          // When the button is pressed, dispatch a synthetic keydown event
+          const press = (event) => {
+            event.preventDefault();
+            btn.classList.add('pressed');
+            // Create and dispatch a keydown event so the rest of the
+            // application responds exactly as if a real keyboard key were
+            // pressed.  This triggers both movement and menu navigation.
+            const downEvent = new KeyboardEvent('keydown', { key: keyName });
+            document.dispatchEvent(downEvent);
+            // Play select sound on Enter
+            if (keyName === 'Enter') {
+              ensureSelectSfxMobile();
+            }
+          };
+          // When the button is released, dispatch a synthetic keyup event
+          const release = (event) => {
+            event.preventDefault();
+            btn.classList.remove('pressed');
+            const upEvent = new KeyboardEvent('keyup', { key: keyName });
+            document.dispatchEvent(upEvent);
+          };
+          // Touch events
+          btn.addEventListener('touchstart', press, { passive: false });
+          btn.addEventListener('touchend', release);
+          btn.addEventListener('touchcancel', release);
+          // Pointer events (covers mouse + stylus)
+          btn.addEventListener('pointerdown', press);
+          btn.addEventListener('pointerup', release);
+          btn.addEventListener('pointerleave', release);
+        });
 }
 }
 
