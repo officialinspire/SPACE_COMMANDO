@@ -50,17 +50,15 @@
   -->
   <div id="mobile-controls">
     <!--
-      The on‑screen controls for mobile mirror the keyboard layout.  To
-      better match the provided mock‑up (see mobilekeyboardcontrols.jpg),
-      the arrows are arranged vertically with the up arrow stacked
-      above a horizontal cluster of left/down/right.  The shoot and
-      reload buttons occupy their own row and the jump button sits
-      alongside the directional pad.  The bottom row houses the
-      escape/menu, select and store buttons.  Each button declares a
-      data‑key corresponding to the keyboard input it simulates.  Note
-      that the jump button uses the literal string "Space" rather than
-      a single space character so that synthetic key events mirror
-      desktop behaviour.
+      The mobile control bar is organized into three rows to mimic the
+      desired layout.  The first row contains only the shoot and
+      reload buttons.  The second row places the jump button on the
+      left and stacks the up arrow above the left/down/right pad
+      inside an arrow-wrapper.  The bottom row evenly spaces the
+      pause/menu, select and store buttons.  Each button's data-key
+      uses the literal key name (e.g. "Space") rather than a single
+      space character to ensure synthetic keyboard events behave
+      consistently across browsers.
     -->
     <!-- First row: Shoot/Reload pair -->
     <div class="row row1">
@@ -81,7 +79,7 @@
         </div>
       </div>
     </div>
-    <!-- Third row: Pause/Menu, Select and Store -->
+    <!-- Third row: Pause/Menu, Select, and Store -->
     <div class="row row3">
       <button class="control-btn menu-btn" data-key="Escape">ESC/MENU</button>
       <button class="control-btn" data-key="Enter">SELECT</button>
@@ -149,12 +147,13 @@
     if (introVideo) {
       // When the credit finishes, hide the video so the game is visible
       introVideo.addEventListener('ended', () => {
-        // Pause and hide the credit video after it finishes so the
-        // audio does not continue or restart unexpectedly.
+        // Pause and hide the video after it finishes to prevent audio from replaying
         try { introVideo.pause(); introVideo.currentTime = 0; } catch (e) {}
         introVideo.style.display = 'none';
       });
-      // Trigger playback with audio on the first user interaction (click or key press)
+      // Trigger playback with audio on the first user interaction (click or key press).
+      // Use once:true for both click and keydown to ensure the intro does not
+      // restart if additional keys are pressed on the start screen.
       const startIntro = () => {
         if (introVideo.paused) {
           try {
@@ -165,11 +164,6 @@
           }
         }
       };
-      // Trigger playback on first click or keydown.  Use the same
-      // once:true option for both to ensure the intro does not restart
-      // if another key is pressed during the start screen.  Without
-      // once:true on keydown the video could replay its audio when
-      // navigating menus.
       document.addEventListener('click', startIntro, { once: true });
       document.addEventListener('keydown', startIntro, { once: true });
     }

@@ -398,6 +398,10 @@
     // each button specifies which key should be set in the keys object
     // when pressed.  Menu navigation triggers handleMenuInput() immediately
     // on press so the purchase and settings menus respond without delay.
+    // Detect whether this is a touch-capable mobile device.  Use the user
+    // agent and maxTouchPoints to infer mobile environments.  The
+    // previous forced override has been removed so this detection works
+    // correctly in production.
     const isMobile = /Mobi|Android|iPhone|iPad|iPod|Tablet/i.test(navigator.userAgent) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
 if (isMobile) {
 addTapBlocker();
@@ -409,11 +413,9 @@ window.addEventListener('resize', updateControlsHeight);
 window.addEventListener('orientationchange', updateControlsHeight);
 
 
-        const buttons = ctrlBar.querySelectorAll('.control-btn');
+const buttons = ctrlBar.querySelectorAll('.control-btn');
 
-        // Play the select sound on mobile when Enter is tapped.  This helper
-        // exists so that the audio plays independent of the synthetic
-        // keyboard event dispatch, mirroring desktop behaviour.
+        // Helper to play the selection sound when the Enter key is tapped
         function ensureSelectSfxMobile() {
           try {
             selectSfx.currentTime = 0;
@@ -423,21 +425,19 @@ window.addEventListener('orientationchange', updateControlsHeight);
 
         buttons.forEach(btn => {
           const keyName = btn.getAttribute('data-key');
-          // When the button is pressed, dispatch a synthetic keydown event
+          // Create and dispatch synthetic keyboard events when the
+          // on‑screen buttons are pressed and released.  This ensures
+          // consistency with desktop keyboard handling for both movement
+          // and menu navigation.
           const press = (event) => {
             event.preventDefault();
             btn.classList.add('pressed');
-            // Create and dispatch a keydown event so the rest of the
-            // application responds exactly as if a real keyboard key were
-            // pressed.  This triggers both movement and menu navigation.
             const downEvent = new KeyboardEvent('keydown', { key: keyName });
             document.dispatchEvent(downEvent);
-            // Play select sound on Enter
             if (keyName === 'Enter') {
               ensureSelectSfxMobile();
             }
           };
-          // When the button is released, dispatch a synthetic keyup event
           const release = (event) => {
             event.preventDefault();
             btn.classList.remove('pressed');
