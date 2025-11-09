@@ -104,7 +104,7 @@ html, body {
   gap: 8px;
 }
 
-/* Wrapper to stack the up arrow above the left/down/right cluster */
+/* Wrapper that stacks the up arrow above the horizontal arrow cluster */
 #mobile-controls .arrow-wrapper {
   display: flex;
   flex-direction: column;
@@ -124,16 +124,12 @@ html, body {
   width: auto;
 }
 
-/* The original layout pushed the up arrow to the right.  In the new
-   layout the up arrow is stacked above the horizontal pad, so this rule
-   resets any left margin. */
+/* Remove margin on up-arrow (no longer in first row) */
 #mobile-controls .row1 > .control-btn.arrow-btn {
   margin-left: 0;
 }
 
-/* The first row only contains the shoot/reload pair.  Align its
-   contents to the start of the row instead of spacing them across the
-   full width. */
+/* Align the first row's contents to the start; it only contains shoot/reload */
 #mobile-controls .row1 {
   justify-content: flex-start;
 }

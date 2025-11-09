@@ -398,10 +398,6 @@
     // each button specifies which key should be set in the keys object
     // when pressed.  Menu navigation triggers handleMenuInput() immediately
     // on press so the purchase and settings menus respond without delay.
-    // Detect whether this is a touch-capable mobile device.  Use the user
-    // agent and maxTouchPoints to infer mobile environments.  The
-    // previous forced override has been removed so this detection works
-    // correctly in production.
     const isMobile = /Mobi|Android|iPhone|iPad|iPod|Tablet/i.test(navigator.userAgent) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
 if (isMobile) {
 addTapBlocker();
@@ -415,7 +411,7 @@ window.addEventListener('orientationchange', updateControlsHeight);
 
 const buttons = ctrlBar.querySelectorAll('.control-btn');
 
-        // Helper to play the selection sound when the Enter key is tapped
+        // Play the select sound when Enter is tapped
         function ensureSelectSfxMobile() {
           try {
             selectSfx.currentTime = 0;
@@ -423,32 +419,34 @@ const buttons = ctrlBar.querySelectorAll('.control-btn');
           } catch (e) {}
         }
 
+        // Define which keys should trigger immediate menu actions
+        const menuKeys = ['Enter', 'Escape', 'p', 'P', 'ArrowUp', 'ArrowDown'];
+
         buttons.forEach(btn => {
           const keyName = btn.getAttribute('data-key');
-          // Create and dispatch synthetic keyboard events when the
-          // on‑screen buttons are pressed and released.  This ensures
-          // consistency with desktop keyboard handling for both movement
-          // and menu navigation.
           const press = (event) => {
             event.preventDefault();
             btn.classList.add('pressed');
-            const downEvent = new KeyboardEvent('keydown', { key: keyName });
-            document.dispatchEvent(downEvent);
-            if (keyName === 'Enter') {
-              ensureSelectSfxMobile();
+            // Set the key as pressed for continuous movement/shooting
+            keys[keyName] = true;
+            // For menu-related keys, call the menu handler immediately
+            if (menuKeys.includes(keyName)) {
+              handleMenuInput({ key: keyName });
+              if (keyName === 'Enter') {
+                ensureSelectSfxMobile();
+              }
             }
           };
           const release = (event) => {
             event.preventDefault();
             btn.classList.remove('pressed');
-            const upEvent = new KeyboardEvent('keyup', { key: keyName });
-            document.dispatchEvent(upEvent);
+            keys[keyName] = false;
           };
           // Touch events
           btn.addEventListener('touchstart', press, { passive: false });
           btn.addEventListener('touchend', release);
           btn.addEventListener('touchcancel', release);
-          // Pointer events (covers mouse + stylus)
+          // Pointer events
           btn.addEventListener('pointerdown', press);
           btn.addEventListener('pointerup', release);
           btn.addEventListener('pointerleave', release);
