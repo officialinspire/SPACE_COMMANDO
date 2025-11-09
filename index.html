@@ -40,25 +40,39 @@
     anchored on the far right.  The container is hidden on desktop
     and only shown on mobile via JavaScript.
   -->
+  <!--
+    Mobile controls are arranged into rows to better mirror the provided
+    mock‑up (see fixthismobile02.jpg).  The first row contains the
+    shoot/reload pair on the left and the up arrow on the right.  The
+    second row contains the jump button on the left and a horizontal
+    cluster of left/down/right arrows on the right.  The final row
+    contains the pause/menu, select and store buttons evenly spaced.
+  -->
   <div id="mobile-controls">
-  <!-- Row 1: SHOOT, RELOAD, spacer, UP arrow -->
-  <button class="control-btn" data-key="z">SHOOT</button>
-  <button class="control-btn" data-key="x">RELOAD</button>
-  <div class="spacer"></div>
-  <button class="control-btn arrow-btn" data-key="ArrowUp">↑</button>
-
-  <!-- Row 2: JUMP (wide), spacer, arrow pad (LEFT, DOWN, RIGHT) -->
-  <button class="control-btn jump-btn" data-key=" ">JUMP</button>
-  <div class="spacer"></div>
-  <button class="control-btn arrow-btn" data-key="ArrowLeft">←</button>
-  <button class="control-btn arrow-btn" data-key="ArrowDown">↓</button>
-  <button class="control-btn arrow-btn" data-key="ArrowRight">→</button>
-
-  <!-- Row 3: ESC/MENU, SELECT, STORE -->
-  <button class="control-btn esc-btn" data-key="Escape">ESC/MENU</button>
-  <button class="control-btn select-btn" data-key="Enter">SELECT</button>
-  <button class="control-btn store-btn" data-key="p">STORE</button>
-</div>
+    <!-- Top row: Shoot/Reload on the left, Up arrow on the right -->
+    <div class="row row1">
+      <div class="dual-buttons">
+        <button class="control-btn" data-key="z">SHOOT</button>
+        <button class="control-btn" data-key="x">RELOAD</button>
+      </div>
+      <button class="control-btn arrow-btn" data-key="ArrowUp">↑</button>
+    </div>
+    <!-- Middle row: Jump button on the left, left/down/right arrows on the right -->
+    <div class="row row2">
+      <button class="control-btn jump-btn" data-key=" ">JUMP</button>
+      <div class="arrow-cluster">
+        <button class="control-btn arrow-btn" data-key="ArrowLeft">←</button>
+        <button class="control-btn arrow-btn" data-key="ArrowDown">↓</button>
+        <button class="control-btn arrow-btn" data-key="ArrowRight">→</button>
+      </div>
+    </div>
+    <!-- Bottom row: Pause/Menu, Select, and Store -->
+    <div class="row row3">
+      <button class="control-btn menu-btn" data-key="Escape">ESC/MENU</button>
+      <button class="control-btn" data-key="Enter">SELECT</button>
+      <button class="control-btn" data-key="p">STORE</button>
+    </div>
+  </div>
 
 
   <!-- Main game logic -->

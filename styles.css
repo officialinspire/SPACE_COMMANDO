@@ -37,6 +37,7 @@ html, body {
  * directional pad on the right and a menu button on the far edge.
  */
 #mobile-controls {
+  /* Position at the bottom of the screen and stretch full width */
   position: absolute;
   left: 0;
   bottom: 0;
@@ -48,18 +49,14 @@ html, body {
   padding: 10px 12px;
   box-sizing: border-box;
   font-family: 'Press Start 2P', monospace;
-
-  /* Grid layout: 6 columns to support 3-row layout
-     Row 1: SHOOT, RELOAD, spacer, UP
-     Row 2: JUMP (wide), spacer, LEFT, DOWN, RIGHT
-     Row 3: ESC/MENU, SELECT, STORE */
-  grid-template-columns: 1fr 1fr 1fr auto auto auto;
+  /* Stack the rows vertically with consistent spacing */
+  flex-direction: column;
   gap: 8px;
   padding-bottom: calc(env(safe-area-inset-bottom) + 10px);
   border-top: 2px solid #e3c95b;
 }
 
-
+/* Base styling for control buttons */
 #mobile-controls .control-btn {
   background: #e3c95b;
   border: 3px solid #a58b2e;
@@ -81,38 +78,47 @@ html, body {
 }
 
 /* Smaller arrow buttons */
-#mobile-controls .arrow-btn {
-  width: auto;
-  height: 52px;
-  padding: 4px 12px;
+#mobile-controls .arrow-btn { width: 48px; height: 48px; padding: 4px; }
+
+/* Wider menu button on desktop; on mobile rows we override width via flex */
+#mobile-controls .menu-btn { width: 86px; }
+
+/* Row containers for the control layout */
+#mobile-controls .row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-/* Jump button spans 3 columns to be wide */
+/* Dual button group (shoot/reload) */
+#mobile-controls .dual-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+/* Arrow cluster containing left/down/right */
+#mobile-controls .arrow-cluster {
+  display: flex;
+  gap: 8px;
+}
+
+/* Make the jump button expand to fill remaining space */
 #mobile-controls .jump-btn {
-  grid-column: span 3;
+  flex: 1;
+  width: auto;
 }
 
-/* First spacer (row 1) spans 3 columns to push UP to the right */
-#mobile-controls .spacer:nth-of-type(1) {
-  grid-column: span 3;
+/* Evenly distribute the bottom row buttons (menu/select/store) */
+#mobile-controls .row3 .control-btn {
+  flex: 1;
+  width: auto;
 }
 
-/* Second spacer (row 2) spans 1 column */
-#mobile-controls .spacer:nth-of-type(2) {
-  grid-column: span 1;
-}
-
-/* Row 3 buttons (ESC/MENU, SELECT, STORE) each span 2 columns for even distribution */
-#mobile-controls .esc-btn {
-  grid-column: span 2;
-}
-
-#mobile-controls .select-btn {
-  grid-column: span 2;
-}
-
-#mobile-controls .store-btn {
-  grid-column: span 2;
+/* When arrow cluster appears in the first row, push it to the right */
+#mobile-controls .row1 > .control-btn.arrow-btn {
+  margin-left: auto;
 }
 
 /* Game container positions the game and intro video.  On desktop it
@@ -129,16 +135,14 @@ html, body {
   image-rendering: pixelated;
 }
 
-/* Canvas fills the container while preserving aspect ratio.
-   object-fit: contain ensures the 800:450 aspect ratio is maintained
-   without distortion on mobile devices. */
+/* Canvas fills the container.  It no longer has its own transform
+   because the container handles positioning. */
 #game-container canvas {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  object-fit: contain;
 }
 
 /* Intro video overlays the canvas within the game container.  It
@@ -153,6 +157,13 @@ html, body {
   object-fit: cover;
   z-index: 1000;
   display: block;
+}
+
+/* Ensure pixelated rendering on the canvas element itself.  While the
+   game container also enables pixelated rendering, some browsers may
+   ignore the property on parent elements when scaling the canvas. */
+#game-canvas {
+  image-rendering: pixelated;
 }
 
 /* Adjust container sizing on small screens to leave room for the mobile controls
@@ -178,21 +189,6 @@ height: 100%;
 }
 }
 
-
-/* Landscape-specific tweak: same as above but scoped to landscape
-orientation so we get predictable behaviour when rotating. */
-@media (orientation: landscape) and (max-width: 768px) {
-#game-container {
-width: 100vw;
-aspect-ratio: 16 / 9;
-max-height: calc(calc(var(--vh, 1vh) * 100) - var(--controls-height));
-
-/* Base styling for the canvas.  The canvas itself does not position
-   relative to the page; instead, the game container manages
-   centring and scaling.  We still enable pixel art rendering. */
-#game-canvas {
-  image-rendering: pixelated;
-}
 
 /* Heads‑up display (HUD) elements */
 .hud {
@@ -238,16 +234,9 @@ max-height: calc(calc(var(--vh, 1vh) * 100) - var(--controls-height));
 
 /* --- Responsive touch controls sizing --- */
 @media (max-height: 460px) {
-  #mobile-controls .control-btn {
-    width: auto;
-    height: 46px;
-    font-size: 11px;
-    padding: 4px 8px;
-  }
-  #mobile-controls .arrow-btn {
-    height: 42px;
-    padding: 4px 10px;
-  }
+  #mobile-controls .control-btn { width: 68px; height: 46px; font-size: 11px; }
+  #mobile-controls .arrow-btn { width: 42px; height: 42px; }
+  #mobile-controls .menu-btn { width: 78px; }
 }
 
 
