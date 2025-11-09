@@ -48,11 +48,10 @@ html, body {
   padding: 10px 12px;
   box-sizing: border-box;
   font-family: 'Press Start 2P', monospace;
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 10px;
+
+  /* Grid layout: 4 columns (SHOOT, RELOAD, spacer, UP) */
+  grid-template-columns: 1fr 1fr 0.5fr 1fr;
+  gap: 8px;
   padding-bottom: calc(env(safe-area-inset-bottom) + 10px);
   border-top: 2px solid #e3c95b;
 }
@@ -79,26 +78,20 @@ html, body {
 }
 
 /* Smaller arrow buttons */
-#mobile-controls .arrow-btn { width: 48px; height: 48px; padding: 4px; }
+#mobile-controls .arrow-btn {
+  width: auto;
+  height: 52px;
+  padding: 4px 12px;
+}
 
-/* Wider menu button to accommodate the label */
-#mobile-controls .menu-btn { width: 86px; }
+/* Jump button spans 2 columns */
+#mobile-controls .jump-btn {
+  grid-column: span 2;
+}
 
-/* Column layout for control clusters */
-#mobile-controls .controls-left,
-#mobile-controls .controls-center,
-#mobile-controls .controls-arrows { flex-direction:column; align-items:center; gap:6px; }
-
-/* Stack shoot/reload and store/jump/select with spacing */
-
-
-/* Directional pad layout */
-#mobile-controls .controls-arrows { flex-direction:column; align-items:center; gap:6px; }
-
-#mobile-controls .arrow-row { display:flex; justify-content:center; align-items:center; gap:8px; }
-
-#mobile-controls .arrow-row .control-btn {
-  margin: 0 4px;
+/* Spacer takes up its column but is invisible */
+#mobile-controls .spacer {
+  grid-column: span 1;
 }
 
 /* Game container positions the game and intro video.  On desktop it
@@ -224,9 +217,16 @@ max-height: calc(calc(var(--vh, 1vh) * 100) - var(--controls-height));
 
 /* --- Responsive touch controls sizing --- */
 @media (max-height: 460px) {
-  #mobile-controls .control-btn { width: 68px; height: 46px; font-size: 11px; }
-  #mobile-controls .arrow-btn { width: 42px; height: 42px; }
-  #mobile-controls .menu-btn { width: 78px; }
+  #mobile-controls .control-btn {
+    width: auto;
+    height: 46px;
+    font-size: 11px;
+    padding: 4px 8px;
+  }
+  #mobile-controls .arrow-btn {
+    height: 42px;
+    padding: 4px 10px;
+  }
 }
 
 
