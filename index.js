@@ -399,71 +399,78 @@
     // when pressed.  Menu navigation triggers handleMenuInput() immediately
     // on press so the purchase and settings menus respond without delay.
     const isMobile = /Mobi|Android|iPhone|iPad|iPod|Tablet/i.test(navigator.userAgent) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
-if (isMobile) {
-addTapBlocker();
-const ctrlBar = document.getElementById('mobile-controls');
-if (ctrlBar) {
-ctrlBar.style.display = 'flex';
-updateControlsHeight();
-window.addEventListener('resize', updateControlsHeight);
-window.addEventListener('orientationchange', updateControlsHeight);
+    if (isMobile) { addTapBlocker();
+      const ctrlBar = document.getElementById('mobile-controls');
+      if (ctrlBar) {
+        ctrlBar.style.display = 'grid';
+        updateControlsHeight();
+        window.addEventListener('resize', updateControlsHeight);
+        window.addEventListener('orientationchange', updateControlsHeight);
+        const buttons = ctrlBar.querySelectorAll('.control-btn');
+        const menuKeys = new Set(['p','P','Escape','Enter','ArrowUp','ArrowDown','ArrowLeft','ArrowRight']);
 
+        buttons.forEach(btn => {
+          const keyName = btn.getAttribute('data-key');
+          let isPressed = false;
 
-const buttons = ctrlBar.querySelectorAll('.control-btn');
+          const press = (event) => {
+            if (isPressed) return; // Prevent duplicate event handling
+            isPressed = true;
 
+            btn.classList.add('pressed');
+            event.preventDefault();
+            event.stopPropagation();
 
-function ensureSelectSfxMobile() {
-try {
-selectSfx.currentTime = 0;
-selectSfx.play();
-} catch (e) {}
-}
+            const normalizedKey = keyName === 'Space' ? ' ' : keyName;
+            keys[normalizedKey] = true;
 
+            // Play select sound for Enter key on mobile
+            if (normalizedKey === 'Enter') {
+              try {
+                selectSfx.currentTime = 0;
+                selectSfx.play();
+              } catch (e) {}
+            }
 
-buttons.forEach(btn => {
-const keyName = btn.getAttribute('data-key');
+            // Trigger menu input handling for menu navigation keys
+            if (menuKeys.has(normalizedKey)) {
+              handleMenuInput({ key: normalizedKey });
+            }
+          };
 
+          const release = (event) => {
+            if (!isPressed) return; // Prevent duplicate event handling
+            isPressed = false;
 
-const press = (event) => {
-event.preventDefault();
-btn.classList.add('pressed');
+            btn.classList.remove('pressed');
+            event.preventDefault();
+            event.stopPropagation();
 
+            const normalizedKey = keyName === 'Space' ? ' ' : keyName;
+            keys[normalizedKey] = false;
+          };
 
-// Simulate the key being held for movement/jump/shoot
-keys[keyName] = true;
+          // Use touch events as primary on mobile devices
+          const hasTouch = 'ontouchstart' in window;
+          if (hasTouch) {
+            btn.addEventListener('touchstart', press, { passive: false });
+            btn.addEventListener('touchend', release, { passive: false });
+            btn.addEventListener('touchcancel', release, { passive: false });
+          } else {
+            // Fallback to mouse events for desktop/stylus
+            btn.addEventListener('mousedown', press);
+            btn.addEventListener('mouseup', release);
+            btn.addEventListener('mouseleave', release);
+          }
 
-
-// Immediately route menu‑style keys into the menu handler so
-// start menu, pause menu, shop, and settings react instantly.
-handleMenuInput({ key: keyName });
-
-
-if (keyName === 'Enter') {
-ensureSelectSfxMobile();
-}
-};
-
-
-const release = (event) => {
-event.preventDefault();
-btn.classList.remove('pressed');
-keys[keyName] = false;
-};
-
-
-// Touch events
-btn.addEventListener('touchstart', press, { passive: false });
-btn.addEventListener('touchend', release);
-btn.addEventListener('touchcancel', release);
-
-
-// Pointer events (covers mouse + stylus)
-btn.addEventListener('pointerdown', press);
-btn.addEventListener('pointerup', release);
-btn.addEventListener('pointerleave', release);
-});
-}
-}
+          // Prevent click to avoid double-tap zoom on mobile
+          btn.addEventListener('click', function(e){
+            e.preventDefault();
+            e.stopPropagation();
+          });
+        });
+      }
+    }
 
     // Collections for dynamic entities
     let bullets = [];
