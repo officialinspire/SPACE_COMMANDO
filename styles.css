@@ -198,6 +198,7 @@ html, body {
   background-repeat: repeat;
   animation: twinkle 3s ease-in-out infinite;
   opacity: 0.8;
+  pointer-events: none;
 }
 
 .tap-to-start-screen::after {
@@ -217,6 +218,7 @@ html, body {
   background-repeat: repeat;
   animation: twinkle 4s ease-in-out infinite reverse;
   opacity: 0.6;
+  pointer-events: none;
 }
 
 @keyframes twinkle {
