@@ -165,7 +165,7 @@ html, body {
   left: 0;
   width: 100%;
   height: 100%;
-  background: linear-gradient(135deg, #000428 0%, #004e92 100%);
+  background: radial-gradient(ellipse at bottom, #1B2735 0%, #090a0f 100%);
   z-index: 2000;
   display: flex;
   align-items: center;
@@ -173,20 +173,83 @@ html, body {
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
+  overflow: hidden;
+}
+
+/* Animated starfield layers */
+.tap-to-start-screen::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(2px 2px at 20px 30px, white, transparent),
+    radial-gradient(2px 2px at 60px 70px, white, transparent),
+    radial-gradient(1px 1px at 50px 50px, white, transparent),
+    radial-gradient(1px 1px at 130px 80px, white, transparent),
+    radial-gradient(2px 2px at 90px 10px, white, transparent),
+    radial-gradient(1px 1px at 150px 120px, white, transparent),
+    radial-gradient(1px 1px at 200px 90px, white, transparent),
+    radial-gradient(2px 2px at 250px 30px, white, transparent),
+    radial-gradient(1px 1px at 180px 160px, white, transparent);
+  background-size: 300px 300px;
+  background-repeat: repeat;
+  animation: twinkle 3s ease-in-out infinite;
+  opacity: 0.8;
+}
+
+.tap-to-start-screen::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(1px 1px at 120px 140px, rgba(255,255,255,0.8), transparent),
+    radial-gradient(1px 1px at 80px 200px, rgba(255,255,255,0.6), transparent),
+    radial-gradient(1px 1px at 220px 180px, rgba(255,255,255,0.7), transparent),
+    radial-gradient(1px 1px at 40px 100px, rgba(255,255,255,0.6), transparent),
+    radial-gradient(1px 1px at 280px 60px, rgba(255,255,255,0.8), transparent);
+  background-size: 350px 350px;
+  background-repeat: repeat;
+  animation: twinkle 4s ease-in-out infinite reverse;
+  opacity: 0.6;
+}
+
+@keyframes twinkle {
+  0%, 100% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 
 .tap-to-start-content {
   text-align: center;
   animation: fadeInPulse 2s ease-in-out infinite;
+  position: relative;
+  z-index: 1;
 }
 
 .game-title {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 48px;
-  color: #e3c95b;
-  text-shadow: 0 0 10px #e3c95b, 0 0 20px #e3c95b, 0 0 30px #a58b2e;
+  font-family: 'Black Ops One', cursive;
+  font-size: 56px;
+  color: #00ff41;
+  text-shadow:
+    0 0 10px #00ff41,
+    0 0 20px #00ff41,
+    0 0 30px #00ff41,
+    0 0 40px #00aa2b,
+    2px 2px 0px #000,
+    -2px -2px 0px rgba(0,255,65,0.3);
   margin: 0 0 40px 0;
-  letter-spacing: 4px;
+  letter-spacing: 6px;
+  position: relative;
+  z-index: 1;
 }
 
 .tap-prompt {
