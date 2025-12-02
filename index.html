@@ -29,7 +29,7 @@
         <div class="tap-prompt">TAP TO START</div>
       </div>
     </div>
-    <video id="intro-video" class="intro-video" src="inspiresoftwareintro.mp4" playsinline></video>
+    <video id="intro-video" class="intro-video" src="inspiresoftwareintro.mp4" playsinline muted></video>
     <!-- The game runs inside this canvas. It is scaled via CSS to fill the page while preserving the aspect ratio. -->
     <canvas id="game-canvas" width="800" height="450"></canvas>
   </div>
@@ -163,18 +163,32 @@
       });
 
       // Handle TAP TO START screen
+      let gameStarted = false;
       const startGame = () => {
+        // Prevent double-triggering from both touch and click events
+        if (gameStarted) return;
+        gameStarted = true;
+
         // Hide TAP TO START screen
         tapToStart.style.display = 'none';
 
-        // Start the intro video
+        // Start the intro video (starts muted, then unmute after playback begins)
         if (introVideo.paused) {
-          try {
-            introVideo.muted = false;
-            introVideo.play();
-          } catch (err) {
-            /* swallow autoplay errors */
-          }
+          introVideo.play()
+            .then(() => {
+              // Successfully started playing, now unmute
+              introVideo.muted = false;
+            })
+            .catch((err) => {
+              console.warn('Video playback failed:', err);
+              // If video fails to play, hide it and start menu music directly
+              introVideo.style.display = 'none';
+              setTimeout(() => {
+                if (window.menuMusic && window.fadeIn) {
+                  window.fadeIn(window.menuMusic);
+                }
+              }, 100);
+            });
         }
       };
 
@@ -182,7 +196,7 @@
       tapToStart.addEventListener('click', startGame);
       tapToStart.addEventListener('touchstart', startGame, { passive: true });
       document.addEventListener('keydown', (e) => {
-        if (tapToStart.style.display !== 'none') {
+        if (!gameStarted) {
           startGame();
         }
       }, { once: true });
