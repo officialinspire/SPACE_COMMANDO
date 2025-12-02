@@ -450,8 +450,8 @@ if (isMobile) {
 
       // Touch events
       btn.addEventListener('touchstart', press, { passive: false });
-      btn.addEventListener('touchend', release);
-      btn.addEventListener('touchcancel', release);
+      btn.addEventListener('touchend', release, { passive: false });
+      btn.addEventListener('touchcancel', release, { passive: false });
       // Pointer events (mouse or generic pointer)
       btn.addEventListener('pointerdown', press);
       btn.addEventListener('pointerup', release);
