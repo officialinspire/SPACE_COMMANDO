@@ -160,11 +160,12 @@ html, body {
 
 /* TAP TO START screen appears above everything else */
 .tap-to-start-screen {
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
+  width: 100vw;
+  height: 100vh;
+  height: calc(var(--vh, 1vh) * 100);
   background: radial-gradient(ellipse at bottom, #1B2735 0%, #090a0f 100%);
   z-index: 2000;
   display: flex;
@@ -173,6 +174,8 @@ html, body {
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
   overflow: hidden;
 }
 
