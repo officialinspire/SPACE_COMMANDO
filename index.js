@@ -358,10 +358,12 @@
       menuMusic.volume = 0;
     }
 
-    // When the game first loads, attempt to start the menu music.
-    // Autoplay may not work until the user interacts, but fadeIn() will
-    // gracefully handle this by trying to play and adjusting volume.
-    fadeIn(menuMusic);
+    // Expose fadeIn and menuMusic to window so intro video handler can start music
+    window.fadeIn = fadeIn;
+    window.menuMusic = menuMusic;
+
+    // Menu music will start after the intro video ends (see index.html)
+    // This prevents audio overlap between the intro video and background music.
     // Precompute random stars for a fallback starfield. These are drawn
     // if the background image fails to load or simply to add sparkle.
     const stars = [];

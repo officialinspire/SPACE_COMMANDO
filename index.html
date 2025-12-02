@@ -22,6 +22,13 @@
        container allows the intro to share the same dimensions as
        the game rather than occupying the full page. -->
   <div id="game-container">
+    <!-- TAP TO START screen appears before everything else -->
+    <div id="tap-to-start" class="tap-to-start-screen">
+      <div class="tap-to-start-content">
+        <h1 class="game-title">SPACE COMMANDO</h1>
+        <div class="tap-prompt">TAP TO START</div>
+      </div>
+    </div>
     <video id="intro-video" class="intro-video" src="inspiresoftwareintro.mp4" playsinline></video>
     <!-- The game runs inside this canvas. It is scaled via CSS to fill the page while preserving the aspect ratio. -->
     <canvas id="game-canvas" width="800" height="450"></canvas>
@@ -136,23 +143,31 @@
     })();
   </script>
 
-  <!-- Hide the intro once it finishes playing.  Listening on the
-       ended event ensures that the game only becomes visible when
-       the credit video is complete. -->
+  <!-- TAP TO START and intro video handling -->
   <script>
+    const tapToStart = document.getElementById('tap-to-start');
     const introVideo = document.getElementById('intro-video');
-    if (introVideo) {
-      // When the credit finishes, hide the video so the game is visible
+
+    if (tapToStart && introVideo) {
+      // When the intro video finishes, hide it and start the menu music
       introVideo.addEventListener('ended', () => {
-        // Pause and hide the video once finished to prevent the audio from
-        // replaying on subsequent key presses.
         try { introVideo.pause(); introVideo.currentTime = 0; } catch (e) {}
         introVideo.style.display = 'none';
+
+        // Start menu music after intro video ends (accessed from index.js global scope)
+        setTimeout(() => {
+          if (window.menuMusic && window.fadeIn) {
+            window.fadeIn(window.menuMusic);
+          }
+        }, 100);
       });
-      // Start the intro on the first click or key press.  Use once:true
-      // for both listeners so that the video cannot restart if another
-      // key is pressed on the start menu.
-      const startIntro = () => {
+
+      // Handle TAP TO START screen
+      const startGame = () => {
+        // Hide TAP TO START screen
+        tapToStart.style.display = 'none';
+
+        // Start the intro video
         if (introVideo.paused) {
           try {
             introVideo.muted = false;
@@ -162,8 +177,15 @@
           }
         }
       };
-      document.addEventListener('click', startIntro, { once: true });
-      document.addEventListener('keydown', startIntro, { once: true });
+
+      // Listen for tap/click or keypress on TAP TO START screen
+      tapToStart.addEventListener('click', startGame);
+      tapToStart.addEventListener('touchstart', startGame, { passive: true });
+      document.addEventListener('keydown', (e) => {
+        if (tapToStart.style.display !== 'none') {
+          startGame();
+        }
+      }, { once: true });
     }
   </script>
 </body>
