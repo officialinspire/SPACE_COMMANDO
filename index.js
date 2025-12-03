@@ -372,259 +372,6 @@
     }
     // Input state: track whether keys are pressed
     const keys = {};
-    document.addEventListener('keydown', (e) => {
-      keys[e.key] = true;
-      // Prevent default scrolling on arrow keys and space.  Include both
-      // space representations (' ', 'Space', 'Spacebar') to ensure the
-      // browser never scrolls when jumping.
-      if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' ','Space','Spacebar'].includes(e.key)) {
-        e.preventDefault();
-      }
-      handleMenuInput(e);
-    });
-    document.addEventListener('keyup', (e) => {
-      // Clear key state
-      keys[e.key] = false;
-      // Also prevent default on release of movement keys to avoid scroll
-      if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' ','Space','Spacebar'].includes(e.key)) {
-        e.preventDefault();
-      }
-    });
-
-    // ---------------------------------------------------------------------
-// Mobile controls
-// Detect whether we are on a touch-capable mobile device.  If so,
-// reveal the custom on-screen controller and wire up each button to
-// simulate keyboard presses.  Using both touch and pointer events
-// ensures compatibility across browsers.  The data-key attribute on
-// each button specifies which key should be set in the keys object
-// when pressed.  Menu navigation triggers handleMenuInput() immediately
-// on press so the purchase and settings menus respond without delay.
-const isMobile =
-  /Mobi|Android|iPhone|iPad|iPod|Tablet/i.test(navigator.userAgent) ||
-  (navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
-
-if (isMobile) {
-  addTapBlocker();
-  const ctrlBar = document.getElementById('mobile-controls');
-  if (ctrlBar) {
-    ctrlBar.style.display = 'flex';
-    updateControlsHeight();
-    window.addEventListener('resize', updateControlsHeight);
-    window.addEventListener('orientationchange', updateControlsHeight);
-
-    const buttons = ctrlBar.querySelectorAll('.control-btn');
-
-    // Play the select sound when Enter is tapped
-    function ensureSelectSfxMobile() {
-      try {
-        selectSfx.currentTime = 0;
-        selectSfx.play();
-      } catch (e) {}
-    }
-
-    // Keys that should trigger menu logic immediately
-    const menuKeys = ['Enter', 'Escape', 'p', 'P', 'ArrowUp', 'ArrowDown'];
-
-    buttons.forEach(btn => {
-      const keyName = btn.getAttribute('data-key');
-
-      const press = (event) => {
-        event.preventDefault();
-        btn.classList.add('pressed');
-        // Set the key as pressed (for movement/jump/shoot etc.)
-        keys[keyName] = true;
-
-        // For menu-related keys, call the menu handler right away
-        if (menuKeys.includes(keyName)) {
-          handleMenuInput({ key: keyName });
-          if (keyName === 'Enter') {
-            ensureSelectSfxMobile();
-          }
-        }
-      };
-
-      const release = (event) => {
-        event.preventDefault();
-        btn.classList.remove('pressed');
-        keys[keyName] = false;
-      };
-
-      // Touch events
-      btn.addEventListener('touchstart', press, { passive: false });
-      btn.addEventListener('touchend', release, { passive: false });
-      btn.addEventListener('touchcancel', release, { passive: false });
-      // Pointer events (mouse or generic pointer)
-      btn.addEventListener('pointerdown', press);
-      btn.addEventListener('pointerup', release);
-      btn.addEventListener('pointerleave', release);
-    });
-  }
-}
-
-
-    // Collections for dynamic entities
-    let bullets = [];
-    let enemyBullets = [];
-    let enemies = [];
-    let pickups = [];
-    // Particle effects list. Each particle has x, y, vx, vy, life, maxLife
-    // and a color string. Particles are spawned when enemies are destroyed
-    // to create a simple explosion effect.
-    let particles = [];
-    let spawnCooldown = 0;
-    // Game state machine.  Additional states include:
-    // 'start'  – initial start menu shown on page load
-    // 'play'   – active gameplay
-    // 'shop'   – purchase menu
-    // 'menu'   – pause menu invoked with Escape
-    // 'settings' – game settings menu
-    // 'gameover' – player has died
-    let gameState = 'start';
-    // Selection indices for various menus
-    let menuSelection = 0;        // for shop menu (weapon list)
-    let mainMenuSelection = 0;    // for pause menu options
-    let startMenuSelection = 0;   // for initial start menu
-    let settingsSelection = 0;    // index of currently selected setting (difficulty/audio/particles)
-
-    // Track the previous state when entering the settings menu so
-    // Escaping settings returns the player to the correct screen
-    let prevSettingsState = 'start';
-
-    // World obstacles and ladders.  Obstacles include crates, barricades
-    // and elevated platforms that the player can jump on or hide behind.
-    // Ladders allow the player to climb up to platforms.  Both arrays are
-    // regenerated on every restart to keep the landscape fresh.
-    let obstacles = [];
-    let ladders = [];
-
-    /**
-     * Populate the world with random crates, platforms and ladders.  The
-     * horizontal placement is randomised within the world bounds while
-     * vertical placement for platforms is chosen so they sit above the
-     * ground.  Each platform has a ladder connecting it back to the
-     * ground on most runs.  Crates, energy shields and barricades are
-     * different obstacle types drawn in distinct colours.
-     */
-    function generateEnvironment() {
-      obstacles = [];
-      ladders = [];
-      // Generate elevated platforms
-      const platformCount = 6;
-      for (let i=0; i<platformCount; i++) {
-        // Spread platforms across the world width, leaving space near the start
-        const sectionWidth = (worldWidth - 800) / platformCount;
-        const baseX = 400 + i * sectionWidth;
-        const x = baseX + Math.random() * sectionWidth * 0.5;
-        const widthPl = 100 + Math.random() * 120;
-        const heightPl = 12;
-        // Place platforms roughly 100–160px above the ground
-        const y = groundY - (100 + Math.random() * 60);
-        obstacles.push({ type:'platform', x, y, width: widthPl, height: heightPl });
-        // With high probability, add a ladder leading to this platform
-        if (Math.random() < 0.8) {
-          const ladderWidth = 16;
-          const ladderX = x + widthPl/2 - ladderWidth/2;
-          const ladderHeight = groundY - y;
-          ladders.push({ type:'ladder', x: ladderX, y: y, width: ladderWidth, height: ladderHeight });
-        }
-      }
-      // Generate ground obstacles (crates, shields, barricades)
-      const obstacleCount = 14;
-      const types = ['crate','shield','barricade'];
-      for (let i=0; i<obstacleCount; i++) {
-        const widthOb = 32 + Math.random()*32;
-        // Keep obstacles low so the player can jump over them.  Restrict the
-        // height range more tightly to encourage traversal over crates and
-        // barricades.  The maximum height is around 28px which the player
-        // can reliably clear with a jump.
-        const heightOb = 20 + Math.random()*8;
-        const x = 500 + Math.random() * (worldWidth - 600);
-        const y = groundY - heightOb;
-        const type = types[Math.floor(Math.random() * types.length)];
-        obstacles.push({ type, x, y, width: widthOb, height: heightOb });
-      }
-    }
-    // Player stats and physics
-    const player = {
-      x: 100,
-      y: groundY - 32,
-      vx: 0,
-      vy: 0,
-      width: 32,
-      height: 32,
-      onGround: false,
-      health: 100,
-      gold: 0,
-      weapon: 'pistol',
-      ammoInClip: { pistol: WEAPONS.pistol.magazine, rifle: 0, shotgun: 0, laser: 0 },
-      reserveAmmo: { pistol: WEAPONS.pistol.magazine * 2, rifle: 0, shotgun: 0, laser: 0 },
-      reloading: false,
-      reloadTimer: 0,
-      shootCooldown: 0,
-      facing: 1,
-      animTime: 0
-      ,
-      // Ladder flags: onLadder indicates the player is currently within the
-      // bounds of a ladder; isClimbing is true while the player is actively
-      // moving up or down the ladder.  Gravity is suppressed while
-      // climbing.
-      onLadder: false,
-      isClimbing: false
-      ,
-      /**
-       * Track whether the player is currently ducking.  When ducking the
-       * player's height is reduced so they can hide behind low cover.
-       * baseHeight stores the normal standing height so it can be
-       * restored when the player stands back up.
-       */
-      isDucking: false,
-      baseHeight: 32
-    };
-
-    // Initial environment creation.  This call populates the obstacles
-    // and ladders arrays with randomised platforms and cover.  Without
-    // this call the world would be empty at the first launch.
-    generateEnvironment();
-
-    /**
-     * Reset all entities and player stats to their initial values. Called
-     * when restarting after game over.
-     */
-    function restart() {
-      bullets = [];
-      enemyBullets = [];
-      enemies = [];
-      pickups = [];
-      spawnCooldown = 0;
-      gameState = 'play';
-      player.x = 100;
-      player.y = groundY - player.height;
-      player.vx = 0;
-      player.vy = 0;
-      player.health = 100;
-      player.gold = 0;
-      player.weapon = 'pistol';
-      player.ammoInClip = { pistol: WEAPONS.pistol.magazine, rifle: 0, shotgun: 0, laser: 0 };
-      player.reserveAmmo = { pistol: WEAPONS.pistol.magazine * 2, rifle: 0, shotgun: 0, laser: 0 };
-      player.reloading = false;
-      player.reloadTimer = 0;
-      player.shootCooldown = 0;
-      player.facing = 1;
-      player.animTime = 0;
-      player.onLadder = false;
-      player.isClimbing = false;
-      player.isDucking = false;
-      // restore standing height on restart
-      player.height = player.baseHeight;
-
-      // Regenerate the random obstacles and ladders on each restart so the
-      // battlefield feels fresh.  This also clears any leftover
-      // environment from the previous run.
-      if (typeof generateEnvironment === 'function') {
-        generateEnvironment();
-      }
-    }
 
     /**
      * Handle menu navigation and selection. When the shop is open,
@@ -823,6 +570,260 @@ if (isMobile) {
             selectSfx.play();
           } catch (err) {}
         }
+      }
+    }
+
+    document.addEventListener('keydown', (e) => {
+      keys[e.key] = true;
+      // Prevent default scrolling on arrow keys and space.  Include both
+      // space representations (' ', 'Space', 'Spacebar') to ensure the
+      // browser never scrolls when jumping.
+      if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' ','Space','Spacebar'].includes(e.key)) {
+        e.preventDefault();
+      }
+      handleMenuInput(e);
+    });
+    document.addEventListener('keyup', (e) => {
+      // Clear key state
+      keys[e.key] = false;
+      // Also prevent default on release of movement keys to avoid scroll
+      if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' ','Space','Spacebar'].includes(e.key)) {
+        e.preventDefault();
+      }
+    });
+
+    // ---------------------------------------------------------------------
+// Mobile controls
+// Detect whether we are on a touch-capable mobile device.  If so,
+// reveal the custom on-screen controller and wire up each button to
+// simulate keyboard presses.  Using both touch and pointer events
+// ensures compatibility across browsers.  The data-key attribute on
+// each button specifies which key should be set in the keys object
+// when pressed.  Menu navigation triggers handleMenuInput() immediately
+// on press so the purchase and settings menus respond without delay.
+const isMobile =
+  /Mobi|Android|iPhone|iPad|iPod|Tablet/i.test(navigator.userAgent) ||
+  (navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
+
+if (isMobile) {
+  addTapBlocker();
+  const ctrlBar = document.getElementById('mobile-controls');
+  if (ctrlBar) {
+    ctrlBar.style.display = 'flex';
+    updateControlsHeight();
+    window.addEventListener('resize', updateControlsHeight);
+    window.addEventListener('orientationchange', updateControlsHeight);
+
+    const buttons = ctrlBar.querySelectorAll('.control-btn');
+
+    // Play the select sound when Enter is tapped
+    function ensureSelectSfxMobile() {
+      try {
+        selectSfx.currentTime = 0;
+        selectSfx.play();
+      } catch (e) {}
+    }
+
+    // Keys that should trigger menu logic immediately
+    const menuKeys = ['Enter', 'Escape', 'p', 'P', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+
+    buttons.forEach(btn => {
+      const keyName = btn.getAttribute('data-key');
+
+      const press = (event) => {
+        event.preventDefault();
+        btn.classList.add('pressed');
+        // Set the key as pressed (for movement/jump/shoot etc.)
+        keys[keyName] = true;
+
+        // For menu-related keys, call the menu handler right away
+        if (menuKeys.includes(keyName)) {
+          handleMenuInput({ key: keyName });
+          if (keyName === 'Enter') {
+            ensureSelectSfxMobile();
+          }
+        }
+      };
+
+      const release = (event) => {
+        event.preventDefault();
+        btn.classList.remove('pressed');
+        keys[keyName] = false;
+      };
+
+      // Touch events
+      btn.addEventListener('touchstart', press, { passive: false });
+      btn.addEventListener('touchend', release, { passive: false });
+      btn.addEventListener('touchcancel', release, { passive: false });
+      // Pointer events (mouse or generic pointer)
+      btn.addEventListener('pointerdown', press);
+      btn.addEventListener('pointerup', release);
+      btn.addEventListener('pointerleave', release);
+    });
+  }
+}
+
+
+    // Collections for dynamic entities
+    let bullets = [];
+    let enemyBullets = [];
+    let enemies = [];
+    let pickups = [];
+    // Particle effects list. Each particle has x, y, vx, vy, life, maxLife
+    // and a color string. Particles are spawned when enemies are destroyed
+    // to create a simple explosion effect.
+    let particles = [];
+    let spawnCooldown = 0;
+    // Game state machine.  Additional states include:
+    // 'start'  – initial start menu shown on page load
+    // 'play'   – active gameplay
+    // 'shop'   – purchase menu
+    // 'menu'   – pause menu invoked with Escape
+    // 'settings' – game settings menu
+    // 'gameover' – player has died
+    let gameState = 'start';
+    // Selection indices for various menus
+    let menuSelection = 0;        // for shop menu (weapon list)
+    let mainMenuSelection = 0;    // for pause menu options
+    let startMenuSelection = 0;   // for initial start menu
+    let settingsSelection = 0;    // index of currently selected setting (difficulty/audio/particles)
+
+    // Track the previous state when entering the settings menu so
+    // Escaping settings returns the player to the correct screen
+    let prevSettingsState = 'start';
+
+    // World obstacles and ladders.  Obstacles include crates, barricades
+    // and elevated platforms that the player can jump on or hide behind.
+    // Ladders allow the player to climb up to platforms.  Both arrays are
+    // regenerated on every restart to keep the landscape fresh.
+    let obstacles = [];
+    let ladders = [];
+
+    /**
+     * Populate the world with random crates, platforms and ladders.  The
+     * horizontal placement is randomised within the world bounds while
+     * vertical placement for platforms is chosen so they sit above the
+     * ground.  Each platform has a ladder connecting it back to the
+     * ground on most runs.  Crates, energy shields and barricades are
+     * different obstacle types drawn in distinct colours.
+     */
+    function generateEnvironment() {
+      obstacles = [];
+      ladders = [];
+      // Generate elevated platforms
+      const platformCount = 6;
+      for (let i=0; i<platformCount; i++) {
+        // Spread platforms across the world width, leaving space near the start
+        const sectionWidth = (worldWidth - 800) / platformCount;
+        const baseX = 400 + i * sectionWidth;
+        const x = baseX + Math.random() * sectionWidth * 0.5;
+        const widthPl = 100 + Math.random() * 120;
+        const heightPl = 12;
+        // Place platforms roughly 100–160px above the ground
+        const y = groundY - (100 + Math.random() * 60);
+        obstacles.push({ type:'platform', x, y, width: widthPl, height: heightPl });
+        // With high probability, add a ladder leading to this platform
+        if (Math.random() < 0.8) {
+          const ladderWidth = 16;
+          const ladderX = x + widthPl/2 - ladderWidth/2;
+          const ladderHeight = groundY - y;
+          ladders.push({ type:'ladder', x: ladderX, y: y, width: ladderWidth, height: ladderHeight });
+        }
+      }
+      // Generate ground obstacles (crates, shields, barricades)
+      const obstacleCount = 14;
+      const types = ['crate','shield','barricade'];
+      for (let i=0; i<obstacleCount; i++) {
+        const widthOb = 32 + Math.random()*32;
+        // Keep obstacles low so the player can jump over them.  Restrict the
+        // height range more tightly to encourage traversal over crates and
+        // barricades.  The maximum height is around 28px which the player
+        // can reliably clear with a jump.
+        const heightOb = 20 + Math.random()*8;
+        const x = 500 + Math.random() * (worldWidth - 600);
+        const y = groundY - heightOb;
+        const type = types[Math.floor(Math.random() * types.length)];
+        obstacles.push({ type, x, y, width: widthOb, height: heightOb });
+      }
+    }
+    // Player stats and physics
+    const player = {
+      x: 100,
+      y: groundY - 32,
+      vx: 0,
+      vy: 0,
+      width: 32,
+      height: 32,
+      onGround: false,
+      health: 100,
+      gold: 0,
+      weapon: 'pistol',
+      ammoInClip: { pistol: WEAPONS.pistol.magazine, rifle: 0, shotgun: 0, laser: 0 },
+      reserveAmmo: { pistol: WEAPONS.pistol.magazine * 2, rifle: 0, shotgun: 0, laser: 0 },
+      reloading: false,
+      reloadTimer: 0,
+      shootCooldown: 0,
+      facing: 1,
+      animTime: 0
+      ,
+      // Ladder flags: onLadder indicates the player is currently within the
+      // bounds of a ladder; isClimbing is true while the player is actively
+      // moving up or down the ladder.  Gravity is suppressed while
+      // climbing.
+      onLadder: false,
+      isClimbing: false
+      ,
+      /**
+       * Track whether the player is currently ducking.  When ducking the
+       * player's height is reduced so they can hide behind low cover.
+       * baseHeight stores the normal standing height so it can be
+       * restored when the player stands back up.
+       */
+      isDucking: false,
+      baseHeight: 32
+    };
+
+    // Initial environment creation.  This call populates the obstacles
+    // and ladders arrays with randomised platforms and cover.  Without
+    // this call the world would be empty at the first launch.
+    generateEnvironment();
+
+    /**
+     * Reset all entities and player stats to their initial values. Called
+     * when restarting after game over.
+     */
+    function restart() {
+      bullets = [];
+      enemyBullets = [];
+      enemies = [];
+      pickups = [];
+      spawnCooldown = 0;
+      gameState = 'play';
+      player.x = 100;
+      player.y = groundY - player.height;
+      player.vx = 0;
+      player.vy = 0;
+      player.health = 100;
+      player.gold = 0;
+      player.weapon = 'pistol';
+      player.ammoInClip = { pistol: WEAPONS.pistol.magazine, rifle: 0, shotgun: 0, laser: 0 };
+      player.reserveAmmo = { pistol: WEAPONS.pistol.magazine * 2, rifle: 0, shotgun: 0, laser: 0 };
+      player.reloading = false;
+      player.reloadTimer = 0;
+      player.shootCooldown = 0;
+      player.facing = 1;
+      player.animTime = 0;
+      player.onLadder = false;
+      player.isClimbing = false;
+      player.isDucking = false;
+      // restore standing height on restart
+      player.height = player.baseHeight;
+
+      // Regenerate the random obstacles and ladders on each restart so the
+      // battlefield feels fresh.  This also clears any leftover
+      // environment from the previous run.
+      if (typeof generateEnvironment === 'function') {
+        generateEnvironment();
       }
     }
 
