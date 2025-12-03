@@ -16,19 +16,20 @@
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Press+Start+2P&family=Black+Ops+One&display=swap" rel="stylesheet">
 </head>
 <body>
+  <!-- TAP TO START screen appears before everything else, outside game-container to avoid transform issues -->
+  <div id="tap-to-start" class="tap-to-start-screen">
+    <div class="tap-to-start-content">
+      <h1 class="game-title">SPACE COMMANDO</h1>
+      <div class="tap-prompt">TAP TO START</div>
+    </div>
+  </div>
+
   <!-- Game container holds both the intro video and the canvas.  The
        video overlays the canvas on first load and plays the credit
        sequence with audio.  Once complete it hides itself.  Using a
        container allows the intro to share the same dimensions as
        the game rather than occupying the full page. -->
   <div id="game-container">
-    <!-- TAP TO START screen appears before everything else -->
-    <div id="tap-to-start" class="tap-to-start-screen">
-      <div class="tap-to-start-content">
-        <h1 class="game-title">SPACE COMMANDO</h1>
-        <div class="tap-prompt">TAP TO START</div>
-      </div>
-    </div>
     <video id="intro-video" class="intro-video" src="inspiresoftwareintro.mp4" playsinline muted></video>
     <!-- The game runs inside this canvas. It is scaled via CSS to fill the page while preserving the aspect ratio. -->
     <canvas id="game-canvas" width="800" height="450"></canvas>
