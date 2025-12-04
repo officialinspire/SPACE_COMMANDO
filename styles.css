@@ -346,9 +346,9 @@ while preserving the 16:9 aspect ratio without distortion. */
 @media (max-width: 768px) {
 #game-container {
 position: absolute;
-top: 0;
+top: 50%;
 left: 50%;
-transform: translateX(-50%);
+transform: translate(-50%, -50%);
 /* Set dimensions to maintain perfect 16:9 ratio */
 width: 100vw;
 height: auto;
