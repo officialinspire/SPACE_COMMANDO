@@ -54,6 +54,10 @@ html, body {
   gap: 8px;
   padding-bottom: calc(env(safe-area-inset-bottom) + 10px);
   border-top: 2px solid #e3c95b;
+  /* Prevent all touch gestures like scroll, zoom, pan */
+  touch-action: none;
+  -webkit-touch-callout: none;
+  overscroll-behavior: contain;
 }
 
 /* Base styling for control buttons */
@@ -64,21 +68,32 @@ html, body {
   padding: 6px 8px;
   margin: 0;
   font-size: 12px;
-  width: 76px;
-  height: 52px;
+  width: 80px;
+  height: 56px;
   text-align: center;
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
   outline: none;
   display: flex;
   align-items: center;
   justify-content: center;
   box-shadow: 0 2px 0 #6d5920, inset 0 2px 0 rgba(255,255,255,0.25);
+  /* Prevent browser touch interference */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  /* Smooth transitions for visual feedback */
+  transition: transform 60ms ease, box-shadow 60ms ease, filter 60ms ease, background 60ms ease;
 }
 
-/* Smaller arrow buttons */
-#mobile-controls .arrow-btn { width: 48px; height: 48px; padding: 4px; }
+/* Arrow buttons - increased size for better touch targets */
+#mobile-controls .arrow-btn {
+  width: 52px;
+  height: 52px;
+  padding: 4px;
+  font-size: 16px;
+}
 
 /* Wider menu button on desktop; on mobile rows we override width via flex */
 #mobile-controls .menu-btn { width: 86px; }
@@ -387,19 +402,18 @@ height: 100%;
 
 /* --- Responsive touch controls sizing --- */
 @media (max-height: 460px) {
-  #mobile-controls .control-btn { width: 68px; height: 46px; font-size: 11px; }
-  #mobile-controls .arrow-btn { width: 42px; height: 42px; }
-  #mobile-controls .menu-btn { width: 78px; }
+  #mobile-controls .control-btn { width: 70px; height: 48px; font-size: 11px; }
+  #mobile-controls .arrow-btn { width: 44px; height: 44px; font-size: 14px; }
+  #mobile-controls .menu-btn { width: 80px; }
+  #mobile-controls { padding: 8px 10px; gap: 6px; }
 }
 
 
 /* --- Tactile press feedback --- */
-#mobile-controls .control-btn {
-  transition: transform 60ms ease, box-shadow 60ms ease, filter 60ms ease;
-}
 #mobile-controls .control-btn:active,
 #mobile-controls .control-btn.pressed {
-  transform: translateY(2px);
-  box-shadow: 0 1px 0 #6d5920, inset 0 1px 0 rgba(0,0,0,0.2);
-  filter: brightness(0.95);
+  transform: translateY(3px);
+  box-shadow: 0 0 0 #6d5920, inset 0 2px 4px rgba(0,0,0,0.3);
+  filter: brightness(0.9);
+  background: #d4ba4c;
 }
