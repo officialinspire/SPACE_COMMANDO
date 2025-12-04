@@ -346,7 +346,8 @@ while preserving the 16:9 aspect ratio without distortion. */
 @media (max-width: 768px) {
 #game-container {
 position: absolute;
-top: 50%;
+/* Center in the space between top of screen and top of controls */
+top: calc((calc(var(--vh, 1vh) * 100) - var(--controls-height)) / 2);
 left: 50%;
 transform: translate(-50%, -50%);
 /* Set dimensions to maintain perfect 16:9 ratio */
