@@ -1952,27 +1952,27 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
         // extra) without truncation.  If the canvas is narrower than
         // 560px (unlikely on desktop), clamp the width to 90% of the
         // canvas width.
-        const panelW = Math.min(560, width * 0.9);
+        const panelW = Math.min(580, width * 0.9);
 
         // Base height allocated for the header, gold display and
         // instructions.  This is slightly reduced from the original
         // design to leave more room for the item list.
-        const baseHeight = 180;
+        const baseHeight = 200;
 
-        // Compute a reasonable row spacing.  Start with 32px spacing but
+        // Compute a reasonable row spacing.  Start with 36px spacing but
         // if the panel would exceed the available height, reduce the
         // spacing proportionally so that all entries fit.  Reserve
         // 40px padding at the top and bottom inside the panel to
         // accommodate the title and instructions.
-        let rowSpacing = 32;
+        let rowSpacing = 36;
         let panelH = baseHeight + SHOP_ITEMS.length * rowSpacing;
         const maxPanelHeight = height - 40;
         if (panelH > maxPanelHeight) {
           rowSpacing = Math.floor((maxPanelHeight - baseHeight) / SHOP_ITEMS.length);
-          // Never allow the row spacing to shrink below 20px for
+          // Never allow the row spacing to shrink below 24px for
           // legibility.  If this occurs the list may scroll off
           // screen, but is preferable to unreadable text.
-          if (rowSpacing < 20) rowSpacing = 20;
+          if (rowSpacing < 24) rowSpacing = 24;
           panelH = baseHeight + SHOP_ITEMS.length * rowSpacing;
         }
 
@@ -1986,24 +1986,27 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
         ctx.lineWidth = 2;
         ctx.strokeRect(panelX, panelY, panelW, panelH);
 
-        // Title
-        ctx.fillStyle = '#00ccff';
-        ctx.font = '26px "Orbitron", Arial';
+        // Title with glow effect
+        ctx.font = 'bold 32px "Orbitron", Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('SHOP', panelX + panelW / 2, panelY + 40);
+        ctx.shadowColor = '#00ccff';
+        ctx.shadowBlur = 20;
+        ctx.fillStyle = '#00ccff';
+        ctx.fillText('SHOP', panelX + panelW / 2, panelY + 48);
+        ctx.shadowBlur = 0;
 
         // Player gold top right
-        ctx.font = '12px "Press Start 2P", Arial';
+        ctx.font = '11px "Press Start 2P", Arial';
         ctx.fillStyle = '#88ccff';
         ctx.textAlign = 'right';
-        ctx.fillText(`GOLD: ${player.gold}`, panelX + panelW - 16, panelY + 24);
+        ctx.fillText(`GOLD: ${player.gold}`, panelX + panelW - 20, panelY + 28);
         ctx.textAlign = 'left';
 
         // Draw the list of items.  Start a bit lower to make room for
         // the title and gold display.  Use the computed rowSpacing
         // when positioning each entry.
-        ctx.font = '14px "Press Start 2P", Arial';
-        const listStartY = panelY + 80;
+        ctx.font = '16px "Orbitron", Arial';
+        const listStartY = panelY + 95;
         SHOP_ITEMS.forEach((item, i) => {
           const y = listStartY + i * rowSpacing;
           const selected = (i === menuSelection);
@@ -2018,29 +2021,32 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
             costText = `COST: ${item.cost}`;
             extraText = `QTY: ${item.qty}`;
           }
-          // Name column
-          ctx.fillStyle = selected ? '#ffdd55' : '#cccccc';
-          ctx.fillText(nameText, panelX + 20, y);
+          // Name column with glow on selected
+          if (selected) {
+            ctx.shadowColor = '#ffdd55';
+            ctx.shadowBlur = 12;
+            ctx.fillStyle = '#ffdd55';
+          } else {
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#aaaaaa';
+          }
+          ctx.fillText(nameText, panelX + 30, y);
           // Cost column
-          ctx.fillStyle = selected ? '#ffffaa' : '#8888aa';
-          ctx.fillText(costText, panelX + panelW * 0.53, y);
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = selected ? '#ffffaa' : '#888888';
+          ctx.fillText(costText, panelX + panelW * 0.55, y);
           // Extra column (magazine/qty)
-          ctx.fillStyle = selected ? '#ffffaa' : '#8888aa';
+          ctx.fillStyle = selected ? '#ffffaa' : '#888888';
           ctx.fillText(extraText, panelX + panelW * 0.82, y);
         });
+        ctx.shadowBlur = 0;
 
-        // Instructions at the bottom of the panel.  Align the text
-        // centre and use a top baseline so the line sits neatly above
-        // the panel edge.
+        // Instructions at the bottom of the panel
         ctx.font = '12px "Orbitron", Arial';
-        ctx.fillStyle = '#ffdd55';
+        ctx.fillStyle = '#88ccff';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        // The instruction string is kept short so that it comfortably fits
-        // within the panel.  On narrower panels the original longer
-        // instruction could be clipped.  Here we abbreviate the
-        // spacing to avoid overflow.
-        ctx.fillText('ENTER: BUY  P/ESC: CLOSE', panelX + panelW / 2, panelY + panelH - 40);
+        ctx.fillText('ENTER: BUY  P/ESC: CLOSE', panelX + panelW / 2, panelY + panelH - 42);
         ctx.textBaseline = 'alphabetic';
         ctx.textAlign = 'left';
       }
@@ -2066,7 +2072,7 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
         ctx.fillRect(0, 0, width, height);
         // Widen the panel for ample space and breathe vertically
         const panelW = 480;
-        const panelH = 260;
+        const panelH = 280;
         const panelX = (width - panelW) / 2;
         const panelY = (height - panelH) / 2;
         // Panel base and outline
@@ -2076,27 +2082,37 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
         ctx.lineWidth = 2;
         ctx.strokeRect(panelX, panelY, panelW, panelH);
         ctx.textAlign = 'center';
-        // Title
+        // Title with glow effect
+        ctx.font = 'bold 36px "Orbitron", Arial';
+        ctx.shadowColor = '#00ccff';
+        ctx.shadowBlur = 20;
         ctx.fillStyle = '#00ccff';
-        ctx.font = '32px "Orbitron", Arial';
-        ctx.fillText('SPACE COMMANDO', panelX + panelW / 2, panelY + 42);
+        ctx.fillText('SPACE COMMANDO', panelX + panelW / 2, panelY + 50);
+        ctx.shadowBlur = 0;
         // Options
         const startOptions = ['START GAME', 'GAME SETTINGS'];
-        ctx.font = '18px "Press Start 2P", Arial';
-        const optStartY = panelY + 100;
-        const optSpacing = 40;
+        ctx.font = '22px "Orbitron", Arial';
+        const optStartY = panelY + 120;
+        const optSpacing = 50;
         startOptions.forEach((opt, i) => {
           const y = optStartY + i * optSpacing;
-          ctx.fillStyle = (i === startMenuSelection ? '#ffdd55' : '#cccccc');
+          const selected = (i === startMenuSelection);
+          if (selected) {
+            ctx.shadowColor = '#ffdd55';
+            ctx.shadowBlur = 15;
+            ctx.fillStyle = '#ffdd55';
+          } else {
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#aaaaaa';
+          }
           ctx.fillText(opt, panelX + panelW / 2, y);
         });
-        // Instructions – split into two lines for better fit.  Use a top baseline
-        // so that lines do not overlap even on pixelated fonts.  After drawing
-        // restore the default text baseline.  Leave the text centred.
+        ctx.shadowBlur = 0;
+        // Instructions – split into two lines for better fit
         ctx.font = '12px "Orbitron", Arial';
-        ctx.fillStyle = '#ffdd55';
+        ctx.fillStyle = '#88ccff';
         ctx.textBaseline = 'top';
-        const instrY = panelY + panelH - 52;
+        const instrY = panelY + panelH - 55;
         ctx.fillText('ARROWS: NAVIGATE', panelX + panelW / 2, instrY);
         ctx.fillText('ENTER: SELECT', panelX + panelW / 2, instrY + 20);
         ctx.textBaseline = 'alphabetic';
@@ -2106,10 +2122,10 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
       if (gameState === 'menu') {
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
         ctx.fillRect(0, 0, width, height);
-        const panelW = 480;
+        const panelW = 500;
         const optionsCount = 3;
-        const rowSpacing = 40;
-        const panelH = 220 + optionsCount * rowSpacing;
+        const rowSpacing = 50;
+        const panelH = 240 + optionsCount * rowSpacing;
         const panelX = (width - panelW) / 2;
         const panelY = (height - panelH) / 2;
         // Draw panel
@@ -2119,26 +2135,36 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
         ctx.lineWidth = 2;
         ctx.strokeRect(panelX, panelY, panelW, panelH);
         ctx.textAlign = 'center';
-        // Header
+        // Header with glow effect
+        ctx.font = 'bold 34px "Orbitron", Arial';
+        ctx.shadowColor = '#00ccff';
+        ctx.shadowBlur = 20;
         ctx.fillStyle = '#00ccff';
-        ctx.font = '30px "Orbitron", Arial';
-        ctx.fillText('PAUSED', panelX + panelW / 2, panelY + 44);
+        ctx.fillText('PAUSED', panelX + panelW / 2, panelY + 50);
+        ctx.shadowBlur = 0;
         // Options
         const menuOptions = ['RETURN TO GAME', 'RESTART GAME', 'GAME SETTINGS'];
-        ctx.font = '18px "Press Start 2P", Arial';
-        const menuStartY = panelY + 100;
+        ctx.font = '20px "Orbitron", Arial';
+        const menuStartY = panelY + 120;
         menuOptions.forEach((opt, i) => {
           const y = menuStartY + i * rowSpacing;
-          ctx.fillStyle = (i === mainMenuSelection ? '#ffdd55' : '#cccccc');
+          const selected = (i === mainMenuSelection);
+          if (selected) {
+            ctx.shadowColor = '#ffdd55';
+            ctx.shadowBlur = 15;
+            ctx.fillStyle = '#ffdd55';
+          } else {
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#aaaaaa';
+          }
           ctx.fillText(opt, panelX + panelW / 2, y);
         });
-        // Instructions: break across two lines.  Use a top baseline to
-        // ensure proper line spacing with the retro font, then restore
-        // baseline afterwards.
+        ctx.shadowBlur = 0;
+        // Instructions: break across two lines
         ctx.font = '12px "Orbitron", Arial';
-        ctx.fillStyle = '#ffdd55';
+        ctx.fillStyle = '#88ccff';
         ctx.textBaseline = 'top';
-        const instrY = panelY + panelH - 52;
+        const instrY = panelY + panelH - 55;
         ctx.fillText('ARROWS: NAVIGATE', panelX + panelW / 2, instrY);
         ctx.fillText('ENTER: SELECT    ESC: BACK', panelX + panelW / 2, instrY + 20);
         ctx.textBaseline = 'alphabetic';
@@ -2150,9 +2176,9 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
         ctx.fillRect(0, 0, width, height);
         const settingKeys = ['difficulty', 'audio', 'particles'];
         // Panel sizing: wider and taller to comfortably fit labels and values
-        const panelW = 520;
-        const rowSpacing = 40;
-        const panelH = 220 + settingKeys.length * rowSpacing;
+        const panelW = 540;
+        const rowSpacing = 48;
+        const panelH = 240 + settingKeys.length * rowSpacing;
         const panelX = (width - panelW) / 2;
         const panelY = (height - panelH) / 2;
         // Panel base and border
@@ -2162,13 +2188,16 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
         ctx.lineWidth = 2;
         ctx.strokeRect(panelX, panelY, panelW, panelH);
         ctx.textAlign = 'center';
-        // Header
+        // Header with glow effect
+        ctx.font = 'bold 34px "Orbitron", Arial';
+        ctx.shadowColor = '#00ccff';
+        ctx.shadowBlur = 20;
         ctx.fillStyle = '#00ccff';
-        ctx.font = '30px "Orbitron", Arial';
-        ctx.fillText('SETTINGS', panelX + panelW / 2, panelY + 44);
+        ctx.fillText('SETTINGS', panelX + panelW / 2, panelY + 50);
+        ctx.shadowBlur = 0;
         // Draw each setting: align labels left and values right
-        ctx.font = '16px "Press Start 2P", Arial';
-        const settingsStartY = panelY + 100;
+        ctx.font = '18px "Orbitron", Arial';
+        const settingsStartY = panelY + 120;
         settingKeys.forEach((key, i) => {
           const y = settingsStartY + i * rowSpacing;
           const selected = (i === settingsSelection);
@@ -2184,23 +2213,31 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
             label = 'PARTICLES';
             value = SETTINGS.particles ? 'ON' : 'OFF';
           }
-          // Highlight selected line
-          ctx.fillStyle = selected ? '#ffdd55' : '#cccccc';
+          // Highlight selected line with glow
+          if (selected) {
+            ctx.shadowColor = '#ffdd55';
+            ctx.shadowBlur = 12;
+            ctx.fillStyle = '#ffdd55';
+          } else {
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#aaaaaa';
+          }
           ctx.textAlign = 'left';
-          // 60px padding from left edge for labels
-          ctx.fillText(label, panelX + 60, y);
+          // 70px padding from left edge for labels
+          ctx.fillText(label, panelX + 70, y);
+          ctx.shadowBlur = 0;
           ctx.textAlign = 'right';
-          // Align values 60px from right edge
-          ctx.fillStyle = selected ? '#ffffaa' : '#8888aa';
-          ctx.fillText(value, panelX + panelW - 60, y);
+          // Align values 70px from right edge
+          ctx.fillStyle = selected ? '#ffffaa' : '#888888';
+          ctx.fillText(value, panelX + panelW - 70, y);
         });
-        // Instructions: broken into two concise lines.  Set a top baseline
-        // for consistent spacing, then restore alignment.
+        ctx.shadowBlur = 0;
+        // Instructions: broken into two concise lines
         ctx.font = '12px "Orbitron", Arial';
-        ctx.fillStyle = '#ffdd55';
+        ctx.fillStyle = '#88ccff';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        const instrY = panelY + panelH - 56;
+        const instrY = panelY + panelH - 55;
         ctx.fillText('←/→/ENTER: CHANGE', panelX + panelW / 2, instrY);
         ctx.fillText('ARROWS: NAVIGATE    ESC: BACK', panelX + panelW / 2, instrY + 20);
         ctx.textBaseline = 'alphabetic';
