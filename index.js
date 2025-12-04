@@ -673,9 +673,11 @@ if (isMobile) {
 
       // Primary touch event handlers
       btn.addEventListener('touchstart', (event) => {
-        // Track the first touch only
-        if (event.touches.length === 1) {
-          activeTouch = event.touches[0].identifier;
+        // Allow multiple simultaneous touches - find a new touch on this button
+        if (activeTouch === null && event.touches.length > 0) {
+          // Get the touch that's actually on this button
+          const touch = event.touches[event.touches.length - 1];
+          activeTouch = touch.identifier;
           press(event);
         }
       }, { passive: false });
