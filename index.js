@@ -629,12 +629,26 @@ if (isMobile) {
 
     buttons.forEach(btn => {
       const keyName = btn.getAttribute('data-key');
+      let isPressed = false;
+      let activeTouch = null;
 
       const press = (event) => {
+        // Prevent duplicate presses
+        if (isPressed) return;
+
         event.preventDefault();
+        event.stopPropagation();
+
+        isPressed = true;
         btn.classList.add('pressed');
+
         // Set the key as pressed (for movement/jump/shoot etc.)
         keys[keyName] = true;
+
+        // Haptic feedback if available
+        if (navigator.vibrate) {
+          navigator.vibrate(10);
+        }
 
         // For menu-related keys, call the menu handler right away
         if (menuKeys.includes(keyName)) {
@@ -646,19 +660,75 @@ if (isMobile) {
       };
 
       const release = (event) => {
+        if (!isPressed) return;
+
         event.preventDefault();
+        event.stopPropagation();
+
+        isPressed = false;
+        activeTouch = null;
         btn.classList.remove('pressed');
         keys[keyName] = false;
       };
 
-      // Touch events
-      btn.addEventListener('touchstart', press, { passive: false });
-      btn.addEventListener('touchend', release, { passive: false });
+      // Primary touch event handlers
+      btn.addEventListener('touchstart', (event) => {
+        // Track the first touch only
+        if (event.touches.length === 1) {
+          activeTouch = event.touches[0].identifier;
+          press(event);
+        }
+      }, { passive: false });
+
+      btn.addEventListener('touchend', (event) => {
+        // Only release if this was the active touch
+        if (activeTouch !== null && event.changedTouches.length > 0) {
+          for (let i = 0; i < event.changedTouches.length; i++) {
+            if (event.changedTouches[i].identifier === activeTouch) {
+              release(event);
+              break;
+            }
+          }
+        }
+      }, { passive: false });
+
       btn.addEventListener('touchcancel', release, { passive: false });
-      // Pointer events (mouse or generic pointer)
-      btn.addEventListener('pointerdown', press);
-      btn.addEventListener('pointerup', release);
-      btn.addEventListener('pointerleave', release);
+
+      // Handle finger sliding off the button
+      btn.addEventListener('touchmove', (event) => {
+        if (activeTouch !== null && isPressed) {
+          const touch = Array.from(event.touches).find(t => t.identifier === activeTouch);
+          if (touch) {
+            const rect = btn.getBoundingClientRect();
+            const x = touch.clientX;
+            const y = touch.clientY;
+            // If finger moved outside button bounds, release
+            if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+              release(event);
+            }
+          }
+        }
+      }, { passive: false });
+
+      // Mouse/pointer events for desktop testing
+      // Only trigger if no touch is active to prevent conflicts
+      btn.addEventListener('mousedown', (event) => {
+        if (activeTouch === null) {
+          press(event);
+        }
+      });
+
+      btn.addEventListener('mouseup', (event) => {
+        if (activeTouch === null) {
+          release(event);
+        }
+      });
+
+      btn.addEventListener('mouseleave', (event) => {
+        if (activeTouch === null && isPressed) {
+          release(event);
+        }
+      });
     });
   }
 }
