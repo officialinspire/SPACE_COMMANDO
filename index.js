@@ -372,6 +372,9 @@
     }
     // Input state: track whether keys are pressed
     const keys = {};
+    // Edge-trigger bookkeeping for gameplay actions that should only
+    // fire once per press (jump/reload and semi-auto shooting).
+    let prevGameplayInput = { jump: false, shoot: false, reload: false };
 
     /**
      * Handle menu navigation and selection. When the shop is open,
@@ -391,9 +394,13 @@
           if (item.type === 'weapon') {
             const key = item.key;
             const w = WEAPONS[key];
-            // Only allow purchase if not already equipped and enough gold
-            if (player.weapon !== key && player.gold >= w.cost) {
+            const alreadyOwned = !!player.ownedWeapons[key];
+            // Enter on a weapon row buys+equips if not owned, otherwise just equips.
+            if (alreadyOwned) {
+              player.weapon = key;
+            } else if (player.gold >= w.cost) {
               player.gold -= w.cost;
+              player.ownedWeapons[key] = true;
               player.weapon = key;
               // refill clip and grant two extra magazines of reserve
               player.ammoInClip[key] = w.magazine;
@@ -581,7 +588,11 @@
       if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' ','Space','Spacebar'].includes(e.key)) {
         e.preventDefault();
       }
-      handleMenuInput(e);
+      // Ignore browser key-repeat for menu actions to avoid duplicate
+      // selections, purchases and sound effects from a long press.
+      if (!e.repeat) {
+        handleMenuInput(e);
+      }
     });
     document.addEventListener('keyup', (e) => {
       // Clear key state
@@ -616,14 +627,6 @@ if (isMobile) {
 
     const buttons = ctrlBar.querySelectorAll('.control-btn');
 
-    // Play the select sound when Enter is tapped
-    function ensureSelectSfxMobile() {
-      try {
-        selectSfx.currentTime = 0;
-        selectSfx.play();
-      } catch (e) {}
-    }
-
     // Keys that should trigger menu logic immediately
     const menuKeys = ['Enter', 'Escape', 'p', 'P', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 
@@ -631,6 +634,7 @@ if (isMobile) {
       const keyName = btn.getAttribute('data-key');
       let isPressed = false;
       let activeTouch = null;
+      let lastTouchAt = 0;
 
       const press = (event) => {
         // Prevent duplicate presses
@@ -653,9 +657,6 @@ if (isMobile) {
         // For menu-related keys, call the menu handler right away
         if (menuKeys.includes(keyName)) {
           handleMenuInput({ key: keyName });
-          if (keyName === 'Enter') {
-            ensureSelectSfxMobile();
-          }
         }
       };
 
@@ -678,6 +679,7 @@ if (isMobile) {
           // Get the touch that's actually on this button
           const touch = event.touches[event.touches.length - 1];
           activeTouch = touch.identifier;
+          lastTouchAt = performance.now();
           press(event);
         }
       }, { passive: false });
@@ -715,7 +717,9 @@ if (isMobile) {
       // Mouse/pointer events for desktop testing
       // Only trigger if no touch is active to prevent conflicts
       btn.addEventListener('mousedown', (event) => {
-        if (activeTouch === null) {
+        // Prevent synthetic mouse events right after touch from
+        // double-triggering menu actions and SFX on mobile browsers.
+        if (activeTouch === null && performance.now() - lastTouchAt > 500) {
           press(event);
         }
       });
@@ -834,6 +838,7 @@ if (isMobile) {
       reserveAmmo: { pistol: WEAPONS.pistol.magazine * 2, rifle: 0, shotgun: 0, laser: 0 },
       reloading: false,
       reloadTimer: 0,
+      reloadWeaponKey: null,
       shootCooldown: 0,
       facing: 1,
       animTime: 0
@@ -852,7 +857,13 @@ if (isMobile) {
        * restored when the player stands back up.
        */
       isDucking: false,
-      baseHeight: 32
+      baseHeight: 32,
+      // Owned weapons persist for the current run and prevent re-buying.
+      ownedWeapons: { pistol: true, rifle: false, shotgun: false, laser: false },
+      // Brief invulnerability window after taking damage.
+      invulnTimer: 0,
+      // Flash timer used for visible hit feedback.
+      hitFlashTimer: 0
     };
 
     // Initial environment creation.  This call populates the obstacles
@@ -865,31 +876,41 @@ if (isMobile) {
      * when restarting after game over.
      */
     function restart() {
+      elapsedTime = 0;
       bullets = [];
       enemyBullets = [];
       enemies = [];
       pickups = [];
+      particles = [];
       spawnCooldown = 0;
       gameState = 'play';
       player.x = 100;
+      player.height = player.baseHeight;
       player.y = groundY - player.height;
       player.vx = 0;
       player.vy = 0;
+      player.onGround = true;
       player.health = 100;
       player.gold = 0;
       player.weapon = 'pistol';
       player.ammoInClip = { pistol: WEAPONS.pistol.magazine, rifle: 0, shotgun: 0, laser: 0 };
       player.reserveAmmo = { pistol: WEAPONS.pistol.magazine * 2, rifle: 0, shotgun: 0, laser: 0 };
+      player.ownedWeapons = { pistol: true, rifle: false, shotgun: false, laser: false };
       player.reloading = false;
       player.reloadTimer = 0;
+      player.reloadWeaponKey = null;
       player.shootCooldown = 0;
       player.facing = 1;
       player.animTime = 0;
       player.onLadder = false;
       player.isClimbing = false;
       player.isDucking = false;
-      // restore standing height on restart
-      player.height = player.baseHeight;
+      player.invulnTimer = 0;
+      player.hitFlashTimer = 0;
+      prevGameplayInput = { jump: false, shoot: false, reload: false };
+      Object.keys(keys).forEach((k) => { keys[k] = false; });
+      menuSelection = 0;
+      mainMenuSelection = 0;
 
       // Regenerate the random obstacles and ladders on each restart so the
       // battlefield feels fresh.  This also clears any leftover
@@ -1088,6 +1109,22 @@ if (isMobile) {
       return (a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y);
     }
 
+    // Apply damage to the player while respecting invulnerability frames.
+    function damagePlayer(amount) {
+      if (player.invulnTimer > 0) return false;
+      player.health -= amount;
+      player.invulnTimer = 450;
+      player.hitFlashTimer = 180;
+      try {
+        playerDamageSfx.currentTime = 0;
+        playerDamageSfx.play();
+      } catch (err) {}
+      if (player.health <= 0) {
+        gameState = 'gameover';
+      }
+      return true;
+    }
+
     /**
      * Update the game simulation. Handles input, movement, shooting,
      * reloading, enemy AI, collisions and spawning. dt is elapsed
@@ -1099,6 +1136,15 @@ if (isMobile) {
       const wKey = player.weapon;
       const weapon = WEAPONS[wKey];
       player.animTime += dt;
+      player.invulnTimer = Math.max(0, player.invulnTimer - dt);
+      player.hitFlashTimer = Math.max(0, player.hitFlashTimer - dt);
+
+      const jumpPressed = keys[' '] || keys['Space'] || keys['Spacebar'];
+      const shootPressed = keys['z'] || keys['Z'];
+      const reloadPressed = keys['x'] || keys['X'];
+      const jumpJustPressed = jumpPressed && !prevGameplayInput.jump;
+      const shootJustPressed = shootPressed && !prevGameplayInput.shoot;
+      const reloadJustPressed = reloadPressed && !prevGameplayInput.reload;
 
       // Save the previous position for collision resolution.  Reset
       // onGround so collisions can set it appropriately.  These
@@ -1171,14 +1217,13 @@ if (isMobile) {
         // Jump
         // Detect spacebar across browsers: ' ' (space), 'Space', and
         // 'Spacebar'.  Only jump when onGround to prevent double jumps.
-        const spacePressed = keys[' '] || keys['Space'] || keys['Spacebar'];
-if (spacePressed && wasOnGround && !player.isClimbing) {
+if (jumpJustPressed && wasOnGround && !player.isClimbing) {
   player.vy = -8;
   player.onGround = false;
   try { jumpSfx.currentTime = 0; jumpSfx.play(); } catch (err) {}
 }
         // Shooting
-        const shootKey = (keys['z'] || keys['Z']);
+        const shootKey = weapon.auto ? shootPressed : shootJustPressed;
         if (shootKey && player.ammoInClip[wKey] > 0 && player.shootCooldown <= 0) {
           // Determine if the player is attempting to shoot upward.  When
           // the up arrow (or W) is held at the moment the shot is
@@ -1247,9 +1292,10 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
           }
         }
         // Reload
-        if ((keys['x'] || keys['X']) && !player.reloading && player.ammoInClip[wKey] < weapon.magazine && player.reserveAmmo[wKey] > 0) {
+        if (reloadJustPressed && !player.reloading && player.ammoInClip[wKey] < weapon.magazine && player.reserveAmmo[wKey] > 0) {
           player.reloading = true;
           player.reloadTimer = weapon.reloadTime;
+          player.reloadWeaponKey = wKey;
         }
         // Ladder climbing overrides horizontal and vertical movement.  When
         // climbing, horizontal movement is suppressed and vertical
@@ -1275,11 +1321,14 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
       if (player.reloading) {
         player.reloadTimer -= dt;
         if (player.reloadTimer <= 0) {
-          const needed = weapon.magazine - player.ammoInClip[wKey];
-          const ammoUsed = Math.min(needed, player.reserveAmmo[wKey]);
-          player.ammoInClip[wKey] += ammoUsed;
-          player.reserveAmmo[wKey] -= ammoUsed;
+          const reloadKey = player.reloadWeaponKey || wKey;
+          const reloadWeapon = WEAPONS[reloadKey];
+          const needed = reloadWeapon.magazine - player.ammoInClip[reloadKey];
+          const ammoUsed = Math.min(needed, player.reserveAmmo[reloadKey]);
+          player.ammoInClip[reloadKey] += ammoUsed;
+          player.reserveAmmo[reloadKey] -= ammoUsed;
           player.reloading = false;
+          player.reloadWeaponKey = null;
         }
       }
       // Gravity: if the player is climbing a ladder then gravity is
@@ -1569,16 +1618,8 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
       for (let i=enemyBullets.length-1; i>=0; i--) {
         const b = enemyBullets[i];
         if (rectIntersect(b, player)) {
-          player.health -= b.damage;
           enemyBullets.splice(i,1);
-          // Play damage sound when hit by a bullet
-          try {
-            playerDamageSfx.currentTime = 0;
-            playerDamageSfx.play();
-          } catch (err) {}
-          if (player.health <= 0) {
-            gameState = 'gameover';
-          }
+          damagePlayer(b.damage);
         }
       }
       // Enemies vs player contact
@@ -1588,20 +1629,16 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
           // When an enemy collides with the player it deals damage and knocks
           // the player slightly backwards.  Set the enemy into an attack
           // state so the attack animation can be shown in drawGame().
-          player.health -= 5;
-          if (player.x < e.x) player.x -= 10; else player.x += 10;
-          // Trigger attack animation for this enemy
-          e.attackTimer = 200;
-          // Play damage sound when enemy makes contact
-          try {
-            playerDamageSfx.currentTime = 0;
-            playerDamageSfx.play();
-          } catch (err) {}
-          if (player.health <= 0) {
-            gameState = 'gameover';
+          if (damagePlayer(5)) {
+            if (player.x < e.x) player.x -= 10; else player.x += 10;
+            // Trigger attack animation for this enemy only when damage lands.
+            e.attackTimer = 200;
           }
         }
       }
+      prevGameplayInput.jump = jumpPressed;
+      prevGameplayInput.shoot = shootPressed;
+      prevGameplayInput.reload = reloadPressed;
       // Pickups vs player
       for (let i=pickups.length-1; i>=0; i--) {
         const p = pickups[i];
@@ -1928,6 +1965,11 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
           ctx.drawImage(spriteSheet, f.sx, f.sy + cropOffsetY, 32, cropHeight, ppx, player.y, player.width, player.height);
         }
         ctx.restore();
+        if (player.hitFlashTimer > 0) {
+          const alpha = Math.min(0.55, (player.hitFlashTimer / 180) * 0.55);
+          ctx.fillStyle = `rgba(255,80,80,${alpha})`;
+          ctx.fillRect(ppx, player.y, player.width, player.height);
+        }
       } else {
         // fallback: simple rectangle when sprites are not loaded
         ctx.fillStyle = '#0077ff';
@@ -1992,7 +2034,8 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
         }
         // Reload bar: show below the player sprite when reloading
         if (player.reloading) {
-          const pct = 1 - player.reloadTimer / WEAPONS[player.weapon].reloadTime;
+          const reloadHudKey = player.reloadWeaponKey || player.weapon;
+          const pct = 1 - player.reloadTimer / WEAPONS[reloadHudKey].reloadTime;
           const rW = player.width;
           const rH = 4;
           const rx = ppx;
@@ -2086,8 +2129,9 @@ if (spacePressed && wasOnGround && !player.isClimbing) {
           if (item.type === 'weapon') {
             const w = WEAPONS[item.key];
             nameText = w.name.toUpperCase();
-            costText = `COST: ${w.cost}`;
-            extraText = `MAG: ${w.magazine}`;
+            const owned = !!player.ownedWeapons[item.key];
+            costText = owned ? 'OWNED' : `COST: ${w.cost}`;
+            extraText = player.weapon === item.key ? 'EQUIPPED' : `MAG: ${w.magazine}`;
           } else {
             nameText = item.name.toUpperCase();
             costText = `COST: ${item.cost}`;
