@@ -156,21 +156,21 @@
     // Pistol: starting weapon.  Fires a single bullet with low to medium
     // damage, reloads quickly and holds a dozen shots.  The ammoDrop
     // reflects a single bullet dropped by enemies.
-    pistol:  { name:'Pistol',  cost:0,   damage:2, magazine:12, reloadTime:600,  bulletSpeed:6, fireRate:300, auto:false, ammoDrop:1 },
+    pistol:  { name:'Pistol',  cost:0,   damage:3, magazine:12, reloadTime:550,  bulletSpeed:7, fireRate:220, auto:false, ammoDrop:1 },
     // Assault rifle: first purchase.  Fully automatic, fires rapidly and
     // holds fifty rounds.  Reloads quickly and deals similar damage to
     // the pistol.  Enemies drop ammo cartridges containing ten rounds.
-    rifle:   { name:'Rifle',   cost:75, damage:4, magazine:50, reloadTime:800,  bulletSpeed:8, fireRate:100, auto:true,  ammoDrop:10 },
+    rifle:   { name:'Rifle',   cost:75, damage:4, magazine:50, reloadTime:800,  bulletSpeed:8.5, fireRate:90, auto:true,  ammoDrop:10 },
     // Shotgun: second purchase.  Fires a high‑powered blast once per
     // trigger pull.  Holds five shells and takes longer to reload.  Each
     // pellet deals significant damage.  Enemies drop shells in packs of five.
-    shotgun: { name:'Shotgun', cost:150, damage:8, magazine:5,  reloadTime:2000, bulletSpeed:5, fireRate:500, auto:false, pellets:3, spread:0.3, ammoDrop:5 },
+    shotgun: { name:'Shotgun', cost:150, damage:8, magazine:5,  reloadTime:2100, bulletSpeed:6, fireRate:620, auto:false, pellets:5, spread:0.26, ammoDrop:5 },
     // Laser beam: third purchase.  Slow reload emphasises the need to
     // conserve shots.  The beam fires continuously while the trigger is
     // held until the magazine is depleted.  A reload time of four
     // seconds slows the pace relative to the other guns.  The high
     // damage per shot reflects the weapon's futuristic lethality.
-    laser:   { name:'Laser',   cost:200, damage:10, magazine:30, reloadTime:4000, bulletSpeed:10, fireRate:80, auto:true,  ammoDrop:1 }
+    laser:   { name:'Laser',   cost:200, damage:11, magazine:30, reloadTime:4000, bulletSpeed:13, fireRate:60, auto:true,  ammoDrop:1 }
   };
 
   // Weapon order used in the shop menu
@@ -194,7 +194,7 @@
     // balanced pricing: pistol bullets and shotgun shells are cheap,
     // rifle cartridges are mid‑priced and batteries (laser ammo) are
     // expensive.
-    { type: 'ammo', ammoType: 'pistol', name: 'PISTOL AMMO', cost: 1, qty: 1 },
+    { type: 'ammo', ammoType: 'pistol', name: 'PISTOL AMMO', cost: 5, qty: 1 },
     { type: 'ammo', ammoType: 'rifle', name: 'RIFLE AMMO', cost: 10, qty: 10 },
     { type: 'ammo', ammoType: 'shotgun', name: 'SHOTGUN SHELLS', cost: 5, qty: 5 },
     { type: 'ammo', ammoType: 'laser', name: 'BATTERY', cost: 10, qty: 1 }
@@ -759,6 +759,12 @@
     let enemyBullets = [];
     let enemies = [];
     let pickups = [];
+    // Visual feedback lists for combat readability and impact.
+    let floatingTexts = [];
+    let shotFlashes = [];
+    let screenShakeTimer = 0;
+    let screenShakeStrength = 0;
+    let damageOverlayTimer = 0;
     // Particle effects list. Each particle has x, y, vx, vy, life, maxLife
     // and a color string. Particles are spawned when enemies are destroyed
     // to create a simple explosion effect.
@@ -895,7 +901,12 @@
       enemyBullets = [];
       enemies = [];
       pickups = [];
+      floatingTexts = [];
+      shotFlashes = [];
       particles = [];
+      screenShakeTimer = 0;
+      screenShakeStrength = 0;
+      damageOverlayTimer = 0;
       spawnCooldown = 0;
       gameState = 'play';
       player.x = 100;
@@ -1123,12 +1134,28 @@
       return (a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y);
     }
 
+    function addFloatingText(x, y, text, color) {
+      floatingTexts.push({ x, y, text, color: color || '#ffffff', life: 700, maxLife: 700, vy: -0.35 });
+    }
+
+    function addShotFlash(x, y, dirX, dirY, kind) {
+      shotFlashes.push({
+        x, y, dirX, dirY,
+        kind: kind || 'default',
+        life: kind === 'shotgun' ? 90 : (kind === 'laser' ? 75 : 60),
+        maxLife: kind === 'shotgun' ? 90 : (kind === 'laser' ? 75 : 60)
+      });
+    }
+
     // Apply damage to the player while respecting invulnerability frames.
     function damagePlayer(amount) {
       if (player.invulnTimer > 0) return false;
       player.health -= amount;
       player.invulnTimer = 450;
       player.hitFlashTimer = 180;
+      damageOverlayTimer = 120;
+      screenShakeTimer = Math.max(screenShakeTimer, 130);
+      screenShakeStrength = Math.max(screenShakeStrength, 5);
       try {
         playerDamageSfx.currentTime = 0;
         playerDamageSfx.play();
@@ -1243,51 +1270,56 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
           // the up arrow (or W) is held at the moment the shot is
           // triggered we fire bullets vertically instead of horizontally.
           const shootUp = (keys['ArrowUp'] || keys['w'] || keys['W']);
+          let muzzleX = player.x + player.width / 2;
+          let muzzleY = player.y + player.height / 2;
           if (shootUp) {
+            muzzleX = player.x + player.width / 2;
+            muzzleY = player.y;
             if (wKey === 'shotgun') {
-              // Shotgun: fire multiple pellets vertically with slight horizontal spread
-              const pellets = weapon.pellets || 3;
-              for (let i = 0; i < pellets; i++) {
-                const horiz = (Math.random() - 0.5) * weapon.spread * weapon.bulletSpeed;
+              // Chunky shotgun cone uses consistent spread with slight random jitter.
+              const baseSpread = [-0.22, -0.1, 0, 0.1, 0.22];
+              for (let i = 0; i < baseSpread.length; i++) {
+                const horiz = (baseSpread[i] + (Math.random() - 0.5) * 0.03) * weapon.bulletSpeed;
                 const bxW = 4;
                 const bxH = 4;
                 const bx = player.x + player.width / 2 - bxW / 2;
                 const by = player.y - bxH;
-                bullets.push({ x: bx, y: by, vx: horiz, vy: -weapon.bulletSpeed, width: bxW, height: bxH, damage: weapon.damage, from: 'player' });
+                bullets.push({ x: bx, y: by, vx: horiz, vy: -weapon.bulletSpeed, width: bxW, height: bxH, damage: weapon.damage, from: 'player', weapon: wKey });
               }
             } else if (wKey === 'laser') {
-              // Vertical laser shot: tall thin beam
-              const bxW = 4;
-              const bxH = 12;
+              const bxW = 5;
+              const bxH = 18;
               const bx = player.x + player.width / 2 - bxW / 2;
               const by = player.y - bxH;
-              bullets.push({ x: bx, y: by, vx: 0, vy: -weapon.bulletSpeed, width: bxW, height: bxH, damage: weapon.damage, from: 'player' });
+              bullets.push({ x: bx, y: by, vx: 0, vy: -weapon.bulletSpeed, width: bxW, height: bxH, damage: weapon.damage, from: 'player', weapon: wKey, beam: true });
             } else {
-              // Pistol and rifle: single vertical bullet
               const bxW = 4;
               const bxH = 6;
               const bx = player.x + player.width / 2 - bxW / 2;
               const by = player.y - bxH;
-              bullets.push({ x: bx, y: by, vx: 0, vy: -weapon.bulletSpeed, width: bxW, height: bxH, damage: weapon.damage, from: 'player' });
+              bullets.push({ x: bx, y: by, vx: 0, vy: -weapon.bulletSpeed, width: bxW, height: bxH, damage: weapon.damage, from: 'player', weapon: wKey });
             }
           } else {
-            // Horizontal shooting logic
+            muzzleX = player.x + (player.facing > 0 ? player.width : 0);
+            muzzleY = player.y + player.height / 2;
             if (wKey === 'shotgun') {
-              // shotgun fires multiple pellets with slight spread
-              const pellets = weapon.pellets || 3;
-              for (let i = 0; i < pellets; i++) {
-                const angle = (Math.random() - 0.5) * weapon.spread;
+              const baseSpread = [-0.24, -0.12, 0, 0.12, 0.24];
+              for (let i = 0; i < baseSpread.length; i++) {
+                const angle = baseSpread[i] + (Math.random() - 0.5) * 0.04;
                 const vx = weapon.bulletSpeed * player.facing;
                 const vy = weapon.bulletSpeed * angle;
-                bullets.push({ x: player.x + (player.facing > 0 ? player.width : -6), y: player.y + player.height / 2 - 1, vx: vx, vy: vy, width: 4, height: 4, damage: weapon.damage, from: 'player' });
+                bullets.push({ x: player.x + (player.facing > 0 ? player.width : -6), y: player.y + player.height / 2 - 1, vx: vx, vy: vy, width: 4, height: 4, damage: weapon.damage, from: 'player', weapon: wKey });
               }
             } else if (wKey === 'laser') {
-              // laser bullet is longer and does less damage but fires very fast
-              bullets.push({ x: player.x + (player.facing > 0 ? player.width : -12), y: player.y + player.height / 2 - 2, vx: weapon.bulletSpeed * player.facing, vy: 0, width: 12, height: 4, damage: weapon.damage, from: 'player' });
+              bullets.push({ x: player.x + (player.facing > 0 ? player.width : -18), y: player.y + player.height / 2 - 2, vx: weapon.bulletSpeed * player.facing, vy: 0, width: 18, height: 4, damage: weapon.damage, from: 'player', weapon: wKey, beam: true });
             } else {
-              // pistol and rifle fire single bullet horizontally
-              bullets.push({ x: player.x + (player.facing > 0 ? player.width : -6), y: player.y + player.height / 2 - 2, vx: weapon.bulletSpeed * player.facing, vy: 0, width: 6, height: 3, damage: weapon.damage, from: 'player' });
+              bullets.push({ x: player.x + (player.facing > 0 ? player.width : -6), y: player.y + player.height / 2 - 2, vx: weapon.bulletSpeed * player.facing, vy: 0, width: 6, height: 3, damage: weapon.damage, from: 'player', weapon: wKey });
             }
+          }
+          addShotFlash(muzzleX, muzzleY, shootUp ? 0 : player.facing, shootUp ? -1 : 0, wKey === 'shotgun' ? 'shotgun' : (wKey === 'laser' ? 'laser' : 'default'));
+          if (wKey === 'shotgun') {
+            screenShakeTimer = Math.max(screenShakeTimer, 90);
+            screenShakeStrength = Math.max(screenShakeStrength, 3.4);
           }
           // After firing bullets decrement ammo and set cooldown
           player.ammoInClip[wKey]--;
@@ -1300,7 +1332,11 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
           else if (wKey === 'laser') sfxToPlay = laserSfx;
           if (sfxToPlay) {
             try {
-              sfxToPlay.currentTime = 0;
+              if (wKey === 'laser') {
+                if (sfxToPlay.paused || sfxToPlay.currentTime > 0.08) sfxToPlay.currentTime = 0;
+              } else {
+                sfxToPlay.currentTime = 0;
+              }
               sfxToPlay.play();
             } catch (err) {}
           }
@@ -1584,12 +1620,23 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
           if (rectIntersect(b,e)) {
             // Reduce health and mark hit. Flash red for 150ms.
             e.health -= b.damage;
-            e.hitTimer = 150;
+            e.hitTimer = 170;
+            const kx = (b.vx === 0 ? (player.x < e.x ? 1 : -1) : Math.sign(b.vx));
+            const impactForce = b.weapon === 'shotgun' ? 4.2 : (b.weapon === 'laser' ? 2.8 : 1.8);
+            e.x += kx * impactForce;
+            if (e.type !== 'ghost') {
+              e.vx = (e.vx || 0) + kx * 0.15;
+            }
+            if (b.weapon === 'shotgun') {
+              screenShakeTimer = Math.max(screenShakeTimer, 55);
+              screenShakeStrength = Math.max(screenShakeStrength, 2.2);
+            }
             // Remove bullet
             bullets.splice(bi,1);
             // If enemy dies, spawn particle explosion and pickups, then
             // remove it from the list
             if (e.health <= 0) {
+              addFloatingText(e.x + e.width / 2, e.y - 8, '+DROP', '#ffd66b');
               spawnParticles(e);
               spawnPickups(e);
               // Play enemy death sound effect
@@ -1659,16 +1706,36 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
         if (rectIntersect(p, player)) {
           if (p.type === 'gold') {
             player.gold += p.value;
+            addFloatingText(player.x + player.width / 2, player.y - 6, `+${p.value} GOLD`, '#ffd700');
           } else if (p.type === 'ammo') {
             const key = p.ammoType;
             player.reserveAmmo[key] += p.value;
+            addFloatingText(player.x + player.width / 2, player.y - 6, `+${p.value} ${key.toUpperCase()}`, '#77ddff');
           } else if (p.type === 'health') {
             // Health packs restore a small amount of HP but cannot exceed the maximum
             player.health = Math.min(player.health + (p.value || 5), 100);
+            addFloatingText(player.x + player.width / 2, player.y - 6, `+${p.value || 5} HP`, '#8dff8d');
           }
+          screenShakeTimer = Math.max(screenShakeTimer, 30);
+          screenShakeStrength = Math.max(screenShakeStrength, 1.4);
           pickups.splice(i,1);
         }
       }
+      // Update short-lived shot flashes and floating pickup/combat text.
+      for (let i = shotFlashes.length - 1; i >= 0; i--) {
+        const f = shotFlashes[i];
+        f.life -= dt;
+        if (f.life <= 0) shotFlashes.splice(i, 1);
+      }
+      for (let i = floatingTexts.length - 1; i >= 0; i--) {
+        const t = floatingTexts[i];
+        t.life -= dt;
+        t.y += t.vy;
+        if (t.life <= 0) floatingTexts.splice(i, 1);
+      }
+      screenShakeTimer = Math.max(0, screenShakeTimer - dt);
+      damageOverlayTimer = Math.max(0, damageOverlayTimer - dt);
+
       // Spawn new enemies periodically
       spawnCooldown -= dt;
       if (spawnCooldown <= 0 && gameState === 'play') {
@@ -1694,7 +1761,8 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
      * ground, pickups, enemies, bullets, player, HUD and overlays.
      */
     function drawGame() {
-      const cameraX = Math.max(0, Math.min(worldWidth - width, player.x - 150));
+      const shakeX = screenShakeTimer > 0 ? (Math.random() * 2 - 1) * screenShakeStrength : 0;
+      const cameraX = Math.max(0, Math.min(worldWidth - width, player.x - 150 + shakeX));
       // Draw parallax background
       if (bgLoaded) {
         const scale = height / backgroundImg.height;
@@ -1725,47 +1793,57 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
       ctx.fillRect(0, groundY, width, height - groundY);
       // Draw pickups
       pickups.forEach(p => {
-        const px = p.x - cameraX;
+        const pulse = 1 + Math.sin((elapsedTime + p.x * 0.4) * 0.01) * 0.08;
+        const drawW = p.width * pulse;
+        const drawH = p.height * pulse;
+        const px = p.x - cameraX - (drawW - p.width) / 2;
+        const py = p.y - (drawH - p.height) / 2;
         // Draw each pickup based on its type.  Use sprite sheet frames for
         // coins and ammo; health packs are drawn manually so they work even
         // without a pre‑made asset.
         if (sheetLoaded) {
           if (p.type === 'gold') {
             const f = ANIMATIONS.coin;
-            ctx.drawImage(spriteSheet, f.sx, f.sy, 32, 32, px, p.y, p.width, p.height);
+            ctx.drawImage(spriteSheet, f.sx, f.sy, 32, 32, px, py, drawW, drawH);
           } else if (p.type === 'ammo') {
             let f;
             if (p.ammoType === 'pistol') f = ANIMATIONS.ammoPistol;
             else if (p.ammoType === 'rifle') f = ANIMATIONS.ammoRifle;
             else if (p.ammoType === 'shotgun') f = ANIMATIONS.ammoShotgun;
             else f = ANIMATIONS.ammoLaser;
-            ctx.drawImage(spriteSheet, f.sx, f.sy, 32, 32, px, p.y, p.width, p.height);
+            ctx.drawImage(spriteSheet, f.sx, f.sy, 32, 32, px, py, drawW, drawH);
           } else if (p.type === 'health') {
             // Draw a simple white box with a red cross to represent a health pack
             ctx.fillStyle = '#ffffff';
-            ctx.fillRect(px, p.y, p.width, p.height);
+            ctx.fillRect(px, py, drawW, drawH);
             ctx.fillStyle = '#ff4444';
             // Horizontal bar of cross
-            ctx.fillRect(px + p.width * 0.2, p.y + p.height * 0.45, p.width * 0.6, p.height * 0.1);
+            ctx.fillRect(px + drawW * 0.2, py + drawH * 0.45, drawW * 0.6, drawH * 0.1);
             // Vertical bar of cross
-            ctx.fillRect(px + p.width * 0.45, p.y + p.height * 0.2, p.width * 0.1, p.height * 0.6);
+            ctx.fillRect(px + drawW * 0.45, py + drawH * 0.2, drawW * 0.1, drawH * 0.6);
           }
         } else {
           // Fallback colours when the sprite sheet isn't available
           if (p.type === 'gold') {
             ctx.fillStyle = '#ffd700';
-            ctx.fillRect(px, p.y, p.width, p.height);
+            ctx.fillRect(px, py, drawW, drawH);
           } else if (p.type === 'ammo') {
             ctx.fillStyle = '#00ff00';
-            ctx.fillRect(px, p.y, p.width, p.height);
+            ctx.fillRect(px, py, drawW, drawH);
           } else if (p.type === 'health') {
             ctx.fillStyle = '#ffffff';
-            ctx.fillRect(px, p.y, p.width, p.height);
+            ctx.fillRect(px, py, drawW, drawH);
             ctx.fillStyle = '#ff4444';
-            ctx.fillRect(px + p.width * 0.2, p.y + p.height * 0.45, p.width * 0.6, p.height * 0.1);
-            ctx.fillRect(px + p.width * 0.45, p.y + p.height * 0.2, p.width * 0.1, p.height * 0.6);
+            ctx.fillRect(px + drawW * 0.2, py + drawH * 0.45, drawW * 0.6, drawH * 0.1);
+            ctx.fillRect(px + drawW * 0.45, py + drawH * 0.2, drawW * 0.1, drawH * 0.6);
           }
         }
+        ctx.globalAlpha = 0.22;
+        ctx.fillStyle = p.type === 'gold' ? '#ffd700' : (p.type === 'health' ? '#88ff88' : '#55ddff');
+        ctx.beginPath();
+        ctx.arc(px + drawW / 2, py + drawH / 2, Math.max(drawW, drawH), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
       });
 
       // Draw obstacles and ladders.  Platforms are dark metallic beams, crates
@@ -1912,8 +1990,34 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
       // Draw player bullets
       bullets.forEach(b => {
         const px = b.x - cameraX;
-        ctx.fillStyle = '#ffff00';
-        ctx.fillRect(px, b.y, b.width, b.height);
+        if (b.weapon === 'laser') {
+          const trail = 22;
+          const tx = px - (b.vx > 0 ? trail : 0);
+          ctx.fillStyle = 'rgba(120,255,255,0.25)';
+          ctx.fillRect(tx, b.y - 2, Math.abs(b.vx) > 0 ? trail + b.width : b.width, b.height + 4);
+          ctx.fillStyle = '#9dffff';
+          ctx.fillRect(px, b.y, b.width, b.height);
+        } else if (b.weapon === 'shotgun') {
+          ctx.fillStyle = '#ffd27a';
+          ctx.fillRect(px, b.y, b.width, b.height);
+        } else {
+          ctx.fillStyle = '#ffff00';
+          ctx.fillRect(px, b.y, b.width, b.height);
+        }
+      });
+      // Draw muzzle/shot flashes
+      shotFlashes.forEach(f => {
+        const t = f.life / f.maxLife;
+        const px = f.x - cameraX;
+        const len = f.kind === 'laser' ? 20 : (f.kind === 'shotgun' ? 15 : 10);
+        ctx.globalAlpha = Math.max(0, t * 0.9);
+        ctx.strokeStyle = f.kind === 'laser' ? '#99ffff' : '#ffdd88';
+        ctx.lineWidth = f.kind === 'shotgun' ? 4 : 2;
+        ctx.beginPath();
+        ctx.moveTo(px, f.y);
+        ctx.lineTo(px + f.dirX * len, f.y + f.dirY * len);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
       });
       // Draw enemy bullets
       enemyBullets.forEach(b => {
@@ -1989,6 +2093,18 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
         ctx.fillStyle = '#0077ff';
         ctx.fillRect(ppx, player.y, player.width, player.height);
       }
+      // Floating combat/pickup feedback text
+      floatingTexts.forEach(t => {
+        const alpha = Math.max(0, t.life / t.maxLife);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = t.color;
+        ctx.font = '11px "Press Start 2P", Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(t.text, t.x - cameraX, t.y);
+        ctx.textAlign = 'left';
+        ctx.globalAlpha = 1;
+      });
+
       // HUD: draw health bar, reload bar and ammo/weapon info using retro sci‑fi fonts.
       // These elements should only appear during gameplay and shop screens.  Hide
       // them on the start, pause and settings menus to avoid clutter behind the
@@ -2180,6 +2296,12 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
         ctx.textBaseline = 'alphabetic';
         ctx.textAlign = 'left';
       }
+      if (damageOverlayTimer > 0) {
+        const alpha = Math.min(0.22, (damageOverlayTimer / 120) * 0.22);
+        ctx.fillStyle = `rgba(255,30,30,${alpha})`;
+        ctx.fillRect(0, 0, width, height);
+      }
+
       // Game over overlay
       if (gameState === 'gameover') {
         ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
