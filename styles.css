@@ -14,6 +14,10 @@ html, body {
      pixelated retro feel for UI elements. */
   font-family: 'Orbitron', 'Press Start 2P', monospace;
   color: #fff;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
 }
 
 /* Define shared CSS custom properties.  The controls bar height is
@@ -42,34 +46,35 @@ html, body {
   left: 0;
   bottom: 0;
   width: 100%;
-  /* Height is measured in JS and exposed via --controls-height */
-  background: #000;
-  display: none; /* shown on mobile via JS */
+  background: linear-gradient(180deg, rgba(10,10,10,0.96) 0%, rgba(0,0,0,0.98) 100%);
+  display: none;
   z-index: 500;
   padding: 10px 12px;
   box-sizing: border-box;
   font-family: 'Press Start 2P', monospace;
-  /* Stack the rows vertically with consistent spacing */
   flex-direction: column;
-  gap: 8px;
-  padding-bottom: calc(env(safe-area-inset-bottom) + 10px);
-  border-top: 2px solid #e3c95b;
-  /* Prevent all touch gestures like scroll, zoom, pan */
+  gap: 10px;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 12px);
+  border-top: 2px solid rgba(227, 201, 91, 0.95);
+  box-shadow: 0 -8px 18px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.08);
   touch-action: none;
   -webkit-touch-callout: none;
   overscroll-behavior: contain;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* Base styling for control buttons */
 #mobile-controls .control-btn {
-  background: #e3c95b;
-  border: 3px solid #a58b2e;
+  background: linear-gradient(180deg, #f2da78 0%, #d5b84a 100%);
+  border: 3px solid #9f8228;
   color: #111;
   padding: 6px 8px;
   margin: 0;
   font-size: 12px;
-  width: 80px;
-  height: 56px;
+  width: 84px;
+  min-width: 84px;
+  height: 58px;
   text-align: center;
   cursor: pointer;
   user-select: none;
@@ -79,25 +84,34 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 0 #6d5920, inset 0 2px 0 rgba(255,255,255,0.3);
-  /* Prevent browser touch interference */
-  touch-action: manipulation;
+  border-radius: 10px;
+  box-shadow: 0 5px 0 #69541d, inset 0 1px 0 rgba(255,255,255,0.5), 0 0 10px rgba(227, 201, 91, 0.2);
+  touch-action: none;
   -webkit-tap-highlight-color: transparent;
-  /* Smooth transitions for tactile visual feedback */
-  transition: transform 80ms cubic-bezier(0.34, 1.56, 0.64, 1),
-              box-shadow 80ms ease,
-              filter 80ms ease,
-              background 80ms ease,
-              border-color 80ms ease;
+  transition: transform 90ms cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 90ms ease,
+              filter 90ms ease,
+              background 90ms ease,
+              border-color 90ms ease;
   position: relative;
-  /* Add subtle glow effect */
-  filter: drop-shadow(0 0 2px rgba(227, 201, 91, 0.4));
+  filter: drop-shadow(0 0 4px rgba(227, 201, 91, 0.35));
+}
+
+
+#mobile-controls .control-btn::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 7px;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.15);
 }
 
 /* Arrow buttons - increased size for better touch targets */
 #mobile-controls .arrow-btn {
-  width: 52px;
-  height: 52px;
+  width: 56px;
+  min-width: 56px;
+  height: 56px;
   padding: 4px;
   font-size: 16px;
 }
@@ -111,19 +125,19 @@ html, body {
   width: 100%;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
 }
 
 /* Dual button group (shoot/reload) */
 #mobile-controls .dual-buttons {
   display: flex;
-  gap: 8px;
+  gap: 10px;
 }
 
 /* Arrow cluster containing left/down/right */
 #mobile-controls .arrow-cluster {
   display: flex;
-  gap: 8px;
+  gap: 10px;
 }
 
 /* Wrapper that stacks the up arrow above the horizontal arrow cluster */
@@ -131,7 +145,7 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 /* Make the jump button expand to fill remaining space */
@@ -414,9 +428,15 @@ background: #000;
 
 
 /* --- Responsive touch controls sizing --- */
+@media (max-width: 430px) {
+  #mobile-controls .control-btn { width: 88px; min-width: 88px; height: 62px; font-size: 11px; }
+  #mobile-controls .arrow-btn { width: 60px; min-width: 60px; height: 60px; font-size: 17px; }
+  #mobile-controls { padding: 10px 12px; gap: 10px; }
+}
+
 @media (max-height: 460px) {
-  #mobile-controls .control-btn { width: 70px; height: 48px; font-size: 11px; }
-  #mobile-controls .arrow-btn { width: 44px; height: 44px; font-size: 14px; }
+  #mobile-controls .control-btn { width: 76px; min-width: 76px; height: 50px; font-size: 10px; }
+  #mobile-controls .arrow-btn { width: 46px; min-width: 46px; height: 46px; font-size: 14px; }
   #mobile-controls .menu-btn { width: 80px; }
   #mobile-controls { padding: 8px 10px; gap: 6px; }
 }
@@ -425,21 +445,21 @@ background: #000;
 /* --- Tactile hover/touch feedback --- */
 /* Simulate hover on touch start for initial feedback */
 #mobile-controls .control-btn:hover {
-  background: #efd56f;
+  background: linear-gradient(180deg, #f8e28a 0%, #ddc057 100%);
   border-color: #b89a35;
-  filter: drop-shadow(0 0 6px rgba(227, 201, 91, 0.6)) brightness(1.05);
+  filter: drop-shadow(0 0 8px rgba(227, 201, 91, 0.7)) brightness(1.05);
   transform: translateY(-1px);
-  box-shadow: 0 5px 0 #6d5920, inset 0 2px 0 rgba(255,255,255,0.4);
+  box-shadow: 0 6px 0 #6d5920, inset 0 2px 0 rgba(255,255,255,0.45), 0 0 16px rgba(227, 201, 91, 0.2);
 }
 
 /* --- Tactile press feedback --- */
 #mobile-controls .control-btn:active,
 #mobile-controls .control-btn.pressed {
-  transform: translateY(4px) scale(0.98);
-  box-shadow: 0 0 0 #6d5920, inset 0 3px 6px rgba(0,0,0,0.4);
-  filter: drop-shadow(0 0 8px rgba(227, 201, 91, 0.8)) brightness(0.85);
-  background: #d4ba4c;
-  border-color: #9a7d28;
+  transform: translateY(4px) scale(0.97);
+  box-shadow: 0 0 0 #6d5920, inset 0 3px 10px rgba(0,0,0,0.5), 0 0 16px rgba(227, 201, 91, 0.25);
+  filter: drop-shadow(0 0 10px rgba(227, 201, 91, 0.9)) brightness(0.84);
+  background: linear-gradient(180deg, #d3b447 0%, #c19f2f 100%);
+  border-color: #8f7222;
 }
 
 /* Add a subtle pulse effect when button is being pressed */
