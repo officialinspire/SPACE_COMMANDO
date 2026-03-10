@@ -2368,33 +2368,29 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
         ctx.fillRect(0, 0, width, height);
 
-        // Panel width stays generous to allow three columns (name, cost,
-        // extra) without truncation.  If the canvas is narrower than
-        // 560px (unlikely on desktop), clamp the width to 90% of the
-        // canvas width.
-        const panelW = Math.min(580, width * 0.9);
+        const panelPaddingX = Math.max(12, Math.floor(width * 0.03));
+        const panelPaddingY = Math.max(12, Math.floor(height * 0.03));
+        const panelW = Math.min(620, width - panelPaddingX * 2);
+        const compactLayout = panelW < 510;
 
-        // Base height allocated for the header, gold display and
-        // instructions.  This is slightly reduced from the original
-        // design to leave more room for the item list.
-        const baseHeight = 200;
+        const titleFontSize = compactLayout ? 24 : 32;
+        const rowMainFontSize = compactLayout ? 13 : 16;
+        const rowExtraFontSize = compactLayout ? 10 : 12;
+        const hintFontSize = compactLayout ? 10 : 12;
+        const goldFontSize = compactLayout ? 9 : 11;
 
-        // Compute a reasonable row spacing.  Start with 36px spacing but
-        // if the panel would exceed the available height, reduce the
-        // spacing proportionally so that all entries fit.  Reserve
-        // 40px padding at the top and bottom inside the panel to
-        // accommodate the title and instructions.
-        let rowSpacing = 36;
-        let panelH = baseHeight + SHOP_ITEMS.length * rowSpacing;
-        const maxPanelHeight = height - 40;
+        const headerH = compactLayout ? 66 : 86;
+        const footerH = compactLayout ? 50 : 60;
+        const preferredRowSpacing = compactLayout ? 40 : 34;
+        const minRowSpacing = compactLayout ? 30 : 24;
+        const maxPanelHeight = height - panelPaddingY * 2;
+        let rowSpacing = preferredRowSpacing;
+        let panelH = headerH + footerH + SHOP_ITEMS.length * rowSpacing + 8;
         if (panelH > maxPanelHeight) {
-          rowSpacing = Math.floor((maxPanelHeight - baseHeight) / SHOP_ITEMS.length);
-          // Never allow the row spacing to shrink below 24px for
-          // legibility.  If this occurs the list may scroll off
-          // screen, but is preferable to unreadable text.
-          if (rowSpacing < 24) rowSpacing = 24;
-          panelH = baseHeight + SHOP_ITEMS.length * rowSpacing;
+          rowSpacing = Math.max(minRowSpacing, Math.floor((maxPanelHeight - headerH - footerH - 8) / SHOP_ITEMS.length));
+          panelH = headerH + footerH + SHOP_ITEMS.length * rowSpacing + 8;
         }
+        panelH = Math.min(panelH, maxPanelHeight);
 
         const panelX = (width - panelW) / 2;
         const panelY = (height - panelH) / 2;
@@ -2407,28 +2403,32 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
         ctx.strokeRect(panelX, panelY, panelW, panelH);
 
         // Title with glow effect
-        ctx.font = 'bold 32px "Orbitron", Arial';
+        ctx.font = `bold ${titleFontSize}px "Orbitron", Arial`;
         ctx.textAlign = 'center';
         ctx.shadowColor = '#00ccff';
         ctx.shadowBlur = 20;
         ctx.fillStyle = '#00ccff';
-        ctx.fillText('SHOP', panelX + panelW / 2, panelY + 48);
+        ctx.fillText('SHOP', panelX + panelW / 2, panelY + (compactLayout ? 36 : 48));
         ctx.shadowBlur = 0;
 
         // Player gold top right
-        ctx.font = '11px "Press Start 2P", Arial';
+        ctx.font = `${goldFontSize}px "Press Start 2P", Arial`;
         ctx.fillStyle = '#88ccff';
         ctx.textAlign = 'right';
-        ctx.fillText(`GOLD: ${player.gold}`, panelX + panelW - 20, panelY + 28);
+        ctx.fillText(`GOLD: ${player.gold}`, panelX + panelW - 14, panelY + 24);
         ctx.textAlign = 'left';
 
         // Draw the list of items.  Start a bit lower to make room for
         // the title and gold display.  Use the computed rowSpacing
         // when positioning each entry.
-        ctx.font = '16px "Orbitron", Arial';
-        const listStartY = panelY + 95;
+        const listStartY = panelY + headerH;
+        const rowInset = compactLayout ? 10 : 16;
+        const nameX = panelX + rowInset + 6;
+        const costX = panelX + panelW * (compactLayout ? 0.63 : 0.57);
+        const extraX = panelX + panelW - rowInset - 8;
         SHOP_ITEMS.forEach((item, i) => {
-          const y = listStartY + i * rowSpacing;
+          const rowY = listStartY + i * rowSpacing;
+          const y = rowY + (compactLayout ? 16 : 14);
           const selected = (i === menuSelection);
           let nameText, costText, extraText;
           if (item.type === 'weapon') {
@@ -2454,12 +2454,13 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
           }
           if (selected) {
             ctx.fillStyle = `rgba(32, 72, 102, ${0.58 + uiPulse * 0.2})`;
-            ctx.fillRect(panelX + 16, y - 17, panelW - 32, 26);
+            ctx.fillRect(panelX + rowInset, rowY + 2, panelW - rowInset * 2, rowSpacing - 4);
             ctx.strokeStyle = 'rgba(255, 221, 120, 0.85)';
             ctx.lineWidth = 2;
-            ctx.strokeRect(panelX + 16, y - 17, panelW - 32, 26);
+            ctx.strokeRect(panelX + rowInset, rowY + 2, panelW - rowInset * 2, rowSpacing - 4);
           }
           // Name column with glow on selected
+          ctx.font = `700 ${rowMainFontSize}px "Orbitron", Arial`;
           if (selected) {
             ctx.shadowColor = '#ffdd55';
             ctx.shadowBlur = 12;
@@ -2468,27 +2469,31 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
             ctx.shadowBlur = 0;
             ctx.fillStyle = '#aaaaaa';
           }
-          ctx.fillText(nameText, panelX + 30, y);
+          ctx.fillText(nameText, nameX, y);
           // Cost column
           ctx.shadowBlur = 0;
           if (costText === 'LOCKED') ctx.fillStyle = '#ff7676';
           else if (costText.startsWith('BUY')) ctx.fillStyle = selected ? '#a6ffd2' : '#79eeb8';
           else ctx.fillStyle = selected ? '#ffffaa' : '#888888';
+          ctx.font = `700 ${rowMainFontSize}px "Orbitron", Arial`;
           ctx.strokeStyle = 'rgba(0,0,0,0.72)';
           ctx.lineWidth = 2;
-          ctx.strokeText(costText, panelX + panelW * 0.55, y);
-          ctx.fillText(costText, panelX + panelW * 0.55, y);
+          ctx.strokeText(costText, costX, y);
+          ctx.fillText(costText, costX, y);
           // Extra column (magazine/qty)
+          ctx.font = `${rowExtraFontSize}px "Press Start 2P", Arial`;
           ctx.fillStyle = selected ? '#fff7bd' : '#a3adb8';
           ctx.strokeStyle = 'rgba(0,0,0,0.72)';
           ctx.lineWidth = 2;
-          ctx.strokeText(extraText, panelX + panelW * 0.82, y);
-          ctx.fillText(extraText, panelX + panelW * 0.82, y);
+          ctx.textAlign = 'right';
+          ctx.strokeText(extraText, extraX, compactLayout ? y + 14 : y);
+          ctx.fillText(extraText, extraX, compactLayout ? y + 14 : y);
+          ctx.textAlign = 'left';
         });
         ctx.shadowBlur = 0;
 
         // Instructions at the bottom of the panel
-        ctx.font = '12px "Orbitron", Arial';
+        ctx.font = `${hintFontSize}px "Orbitron", Arial`;
         ctx.fillStyle = '#88ccff';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
@@ -2497,7 +2502,7 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
         if (selectedItem && selectedItem.type === 'weapon' && player.ownedWeapons[selectedItem.key]) {
           actionHint = player.weapon === selectedItem.key ? 'ENTER: EQUIPPED' : 'ENTER: EQUIP';
         }
-        ctx.fillText(`${actionHint}  P/ESC: CLOSE`, panelX + panelW / 2, panelY + panelH - 42);
+        ctx.fillText(`${actionHint}  P/ESC: CLOSE`, panelX + panelW / 2, panelY + panelH - (compactLayout ? 34 : 40));
         ctx.textBaseline = 'alphabetic';
         ctx.textAlign = 'left';
       }
