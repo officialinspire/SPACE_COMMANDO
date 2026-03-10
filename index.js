@@ -173,9 +173,6 @@
     laser:   { name:'Laser',   cost:200, damage:11, magazine:30, reloadTime:4000, bulletSpeed:13, fireRate:60, auto:true,  ammoDrop:1 }
   };
 
-  // Weapon order used in the shop menu
-  const WEAPON_ORDER = ['pistol','rifle','shotgun','laser'];
-
   const ENEMY_DROP_TABLES = {
     zombie: [
       { item: 'pistol', weight: 0.6 },
@@ -1269,6 +1266,10 @@
       } catch (err) {}
       if (player.health <= 0) {
         gameState = 'gameover';
+        // Transition to menu track on death so gameover/start screens
+        // always use the same music context.
+        fadeOut(gameMusic);
+        fadeIn(menuMusic);
       }
       return true;
     }

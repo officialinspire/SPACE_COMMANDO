@@ -36,19 +36,6 @@
   </div>
 
   <!--
-    On touch‑enabled devices a custom control bar appears beneath the
-    game.  These controls mirror the keyboard inputs (movement,
-    jump, shoot, reload, store, select and menu) so that the
-    touchscreen can be used for gameplay.  Each button carries a
-    data‑key attribute corresponding to the key it triggers.
-
-    The layout loosely follows the provided mock‑up (mobile_uxui_controls.png):
-    shoot/reload on the far left, a central cluster for store, jump
-    and select, a directional pad to the right, and a menu button
-    anchored on the far right.  The container is hidden on desktop
-    and only shown on mobile via JavaScript.
-  -->
-  <!--
     Mobile controls are arranged into rows to better mirror the provided
     mock‑up (see fixthismobile02.jpg).  The first row contains the
     shoot/reload pair on the left and the up arrow on the right.  The
@@ -175,8 +162,6 @@
           e.preventDefault();
         }
 
-        console.log('Game starting...');
-
         // Hide TAP TO START screen
         tapToStart.style.display = 'none';
 
@@ -186,10 +171,8 @@
             .then(() => {
               // Successfully started playing, now unmute
               introVideo.muted = false;
-              console.log('Intro video started');
             })
             .catch((err) => {
-              console.warn('Video playback failed:', err);
               // If video fails to play, hide it and start menu music directly
               introVideo.style.display = 'none';
               setTimeout(() => {
@@ -209,7 +192,6 @@
       }, { passive: true });
 
       tapToStart.addEventListener('pointerup', (e) => {
-        console.log('Pointer up on TAP TO START');
         if (gameStarted) return;
         e.preventDefault();
         startGame(e);
@@ -219,13 +201,11 @@
       tapToStart.addEventListener('click', (e) => {
         if (gameStarted) return;
         if (lastPointerType === 'touch' || lastPointerType === 'pen') return;
-        console.log('Click on TAP TO START');
         startGame(e);
       });
 
       // Handle keyboard
       document.addEventListener('keydown', (e) => {
-        console.log('Key pressed on TAP TO START');
         if (!gameStarted) {
           startGame(e);
         }
