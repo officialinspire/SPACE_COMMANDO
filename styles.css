@@ -207,16 +207,19 @@ html, body {
 }
 
 /* Game container positions the game and intro video.  On desktop it
-   centres the content with a fixed internal resolution scaled via a
-   transform.  On mobile it occupies the full viewport width and
+   scales to use the full viewport while preserving the 16:9 gameplay
+   aspect ratio.  On mobile a dedicated media query below still
    reserves space for the control bar. */
 #game-container {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 800px;
-  height: 450px;
+  width: min(100vw, calc(100vh * 16 / 9));
+  height: min(100vh, calc(100vw * 9 / 16));
+  max-width: 100vw;
+  max-height: 100vh;
+  aspect-ratio: 16 / 9;
   image-rendering: pixelated;
 }
 
@@ -228,6 +231,7 @@ html, body {
   left: 0;
   width: 100%;
   height: 100%;
+  display: block;
 }
 
 /* TAP TO START screen appears above everything else */
