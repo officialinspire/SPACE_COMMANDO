@@ -2279,8 +2279,8 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
       if (gameState === 'play' || gameState === 'shop') {
         const panelX = 14;
         const panelY = 12;
-        const panelW = Math.min(360, width * 0.48);
-        const panelH = 146;
+        const panelW = Math.min(378, width * 0.5);
+        const panelH = 156;
         const wInfo = WEAPONS[player.weapon];
         const hpPct = Math.max(0, Math.min(1, player.health / 100));
         const clip = player.ammoInClip[player.weapon];
@@ -2292,24 +2292,27 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
         ctx.lineWidth = 2;
         ctx.strokeRect(panelX, panelY, panelW, panelH);
 
-        ctx.fillStyle = '#d9f6ff';
-        ctx.font = '700 13px "Orbitron", Arial';
+        ctx.fillStyle = '#e8f8ff';
+        ctx.font = '700 14px "Orbitron", Arial';
+        ctx.strokeStyle = 'rgba(0,0,0,0.82)';
+        ctx.lineWidth = 2;
+        ctx.strokeText('COMBAT STATUS', panelX + 12, panelY + 20);
         ctx.fillText('COMBAT STATUS', panelX + 12, panelY + 20);
 
         const barW = panelW - 24;
         const hpY = panelY + 36;
         ctx.fillStyle = 'rgba(0,0,0,0.62)';
-        ctx.fillRect(panelX + 12, hpY, barW, 18);
+        ctx.fillRect(panelX + 12, hpY, barW, 20);
         ctx.fillStyle = hpPct > 0.5 ? '#39ff83' : (hpPct > 0.25 ? '#ffd960' : '#ff6767');
-        ctx.fillRect(panelX + 12, hpY, barW * hpPct, 18);
+        ctx.fillRect(panelX + 12, hpY, barW * hpPct, 20);
         ctx.strokeStyle = 'rgba(210, 240, 255, 0.65)';
-        ctx.strokeRect(panelX + 12, hpY, barW, 18);
+        ctx.strokeRect(panelX + 12, hpY, barW, 20);
         ctx.fillStyle = '#ffffff';
         ctx.font = '10px "Press Start 2P", Arial';
         ctx.strokeStyle = 'rgba(0,0,0,0.75)';
         ctx.lineWidth = 2;
-        ctx.strokeText(`HEALTH ${Math.max(0, Math.floor(player.health))}%`, panelX + 16, hpY + 13);
-        ctx.fillText(`HEALTH ${Math.max(0, Math.floor(player.health))}%`, panelX + 16, hpY + 13);
+        ctx.strokeText(`HEALTH ${Math.max(0, Math.floor(player.health))}%`, panelX + 16, hpY + 14);
+        ctx.fillText(`HEALTH ${Math.max(0, Math.floor(player.health))}%`, panelX + 16, hpY + 14);
 
         const infoRows = [
           ['GOLD', `${player.gold}`],
@@ -2318,7 +2321,7 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
         ];
         ctx.font = '700 13px "Orbitron", Arial';
         infoRows.forEach((row, i) => {
-          const rowY = hpY + 40 + i * 24;
+          const rowY = hpY + 44 + i * 24;
           const isAmmoRow = row[0] === 'AMMO';
           if (isAmmoRow && clip <= Math.max(1, Math.floor(wInfo.magazine * 0.25))) {
             ctx.fillStyle = `rgba(255, 184, 89, ${0.33 + uiPulse * 0.2})`;
@@ -2533,7 +2536,7 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
         ctx.fillRect(0, 0, width, height);
         // Widen the panel for ample space and breathe vertically
-        const panelW = 480;
+        const panelW = 500;
         const panelH = 280;
         const panelX = (width - panelW) / 2;
         const panelY = (height - panelH) / 2;
@@ -2565,6 +2568,9 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
           if (selected) {
             ctx.fillStyle = `rgba(36, 80, 112, ${0.56 + uiPulse * 0.2})`;
             ctx.fillRect(panelX + 34, y - 24, panelW - 68, 34);
+            ctx.strokeStyle = 'rgba(255, 221, 120, 0.88)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(panelX + 34, y - 24, panelW - 68, 34);
           }
           if (selected) {
             ctx.shadowColor = '#ffdd55';
@@ -2591,7 +2597,7 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
       if (gameState === 'menu') {
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
         ctx.fillRect(0, 0, width, height);
-        const panelW = 500;
+        const panelW = 520;
         const optionsCount = 3;
         const rowSpacing = 50;
         const panelH = 240 + optionsCount * rowSpacing;
@@ -2624,6 +2630,9 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
           if (selected) {
             ctx.fillStyle = `rgba(36, 80, 112, ${0.56 + uiPulse * 0.2})`;
             ctx.fillRect(panelX + 34, y - 24, panelW - 68, 34);
+            ctx.strokeStyle = 'rgba(255, 221, 120, 0.88)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(panelX + 34, y - 24, panelW - 68, 34);
           }
           if (selected) {
             ctx.shadowColor = '#ffdd55';
@@ -2695,6 +2704,9 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
           if (selected) {
             ctx.fillStyle = `rgba(36, 80, 112, ${0.56 + uiPulse * 0.2})`;
             ctx.fillRect(panelX + 34, y - 24, panelW - 68, 34);
+            ctx.strokeStyle = 'rgba(255, 221, 120, 0.88)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(panelX + 34, y - 24, panelW - 68, 34);
           }
           // Highlight selected line with glow
           if (selected) {
