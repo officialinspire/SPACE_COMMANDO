@@ -68,7 +68,6 @@ html, body {
   user-select: none;
   -webkit-user-select: none;
   animation: softHudGlow 3s ease-in-out infinite;
-  position: absolute;
 }
 
 
@@ -90,15 +89,8 @@ html, body {
 }
 
 #mobile-controls::after {
-  content: 'MOBILE CONTROLS';
-  position: absolute;
-  top: 6px;
-  right: 12px;
-  font-size: 9px;
-  letter-spacing: 1px;
-  color: rgba(145, 220, 255, 0.8);
-  text-shadow: 0 0 8px rgba(80, 190, 255, 0.55);
-  pointer-events: none;
+  content: '';
+  display: none;
 }
 
 @keyframes softHudGlow {
@@ -230,10 +222,10 @@ html, body {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: min(100vw, calc(100vh * 16 / 9));
-  height: min(100vh, calc(100vw * 9 / 16));
+  width: min(100vw, calc(100dvh * 16 / 9));
+  height: min(100dvh, calc(100vw * 9 / 16));
   max-width: 100vw;
-  max-height: 100vh;
+  max-height: 100dvh;
   aspect-ratio: 16 / 9;
   image-rendering: pixelated;
   box-shadow: 0 0 0 2px rgba(72, 178, 232, 0.35), 0 16px 40px rgba(0,0,0,0.5);

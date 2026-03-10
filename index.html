@@ -103,7 +103,7 @@
       // Try to enter fullscreen and lock landscape on first user interaction.
       async function goFullscreen() {
         try {
-          const el = document.getElementById('game-container');
+          const el = isTouch ? document.getElementById('game-container') : document.documentElement;
           if (el && document.fullscreenElement == null) {
             if (el.requestFullscreen) await el.requestFullscreen();
           }
@@ -123,11 +123,29 @@
         window.removeEventListener('touchstart', firstInteract);
         window.removeEventListener('keydown', firstInteract);
       };
+      // Expose for other handlers (e.g. TAP TO START) and desktop shortcuts.
+      window.requestGameFullscreen = goFullscreen;
+
       if (isTouch) {
         window.addEventListener('click', firstInteract, { once: true });
         window.addEventListener('touchstart', firstInteract, { once: true });
         window.addEventListener('keydown', firstInteract, { once: true });
       }
+
+      // Desktop convenience: double-click game area or press "F" to toggle fullscreen.
+      const gameContainer = document.getElementById('game-container');
+      if (gameContainer) {
+        gameContainer.addEventListener('dblclick', () => {
+          if (!document.fullscreenElement) {
+            goFullscreen();
+          }
+        });
+      }
+      window.addEventListener('keydown', (e) => {
+        if ((e.key === 'f' || e.key === 'F') && !document.fullscreenElement) {
+          goFullscreen();
+        }
+      });
     })();
   </script>
 
@@ -164,6 +182,11 @@
 
         // Hide TAP TO START screen
         tapToStart.style.display = 'none';
+
+        // Request fullscreen on the initial start interaction when possible.
+        if (window.requestGameFullscreen) {
+          window.requestGameFullscreen();
+        }
 
         // Start the intro video (starts muted, then unmute after playback begins)
         if (introVideo.paused) {
