@@ -421,6 +421,22 @@ background: #000;
 }
 
 
+@media (prefers-reduced-motion: reduce) {
+  #mobile-controls,
+  .tap-to-start-content,
+  .tap-prompt,
+  .tap-to-start-screen::before,
+  .tap-to-start-screen::after,
+  #mobile-controls .control-btn.pressed {
+    animation: none !important;
+  }
+
+  #mobile-controls .control-btn {
+    transition: none;
+  }
+}
+
+
 /* Heads‑up display (HUD) elements */
 .hud {
   position: absolute;
