@@ -2277,71 +2277,57 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
       // overlays.  This conditional prevents the old text panels showing up
       // behind menus as seen in earlier builds.
       if (gameState === 'play' || gameState === 'shop') {
-        const panelX = 12;
-        const panelY = 10;
-        const panelW = Math.min(320, width * 0.45);
-        const panelH = 128;
+        const panelX = 14;
+        const panelY = 12;
+        const panelW = Math.min(360, width * 0.48);
+        const panelH = 136;
         const wInfo = WEAPONS[player.weapon];
         const hpPct = Math.max(0, Math.min(1, player.health / 100));
         const clip = player.ammoInClip[player.weapon];
         const reserve = player.reserveAmmo[player.weapon];
 
-        ctx.fillStyle = 'rgba(8, 15, 30, 0.84)';
+        ctx.fillStyle = 'rgba(4, 10, 22, 0.9)';
         ctx.fillRect(panelX, panelY, panelW, panelH);
-        ctx.strokeStyle = `rgba(60, 200, 255, ${0.6 + uiPulse * 0.25})`;
+        ctx.strokeStyle = `rgba(110, 215, 255, ${0.72 + uiPulse * 0.2})`;
         ctx.lineWidth = 2;
         ctx.strokeRect(panelX, panelY, panelW, panelH);
 
-        ctx.fillStyle = '#9edfff';
-        ctx.font = '11px "Orbitron", Arial';
-        ctx.fillText('COMBAT STATUS', panelX + 10, panelY + 16);
+        ctx.fillStyle = '#c8f0ff';
+        ctx.font = '700 12px "Orbitron", Arial';
+        ctx.fillText('COMBAT STATUS', panelX + 12, panelY + 18);
 
-        const barW = panelW - 22;
-        const hpY = panelY + 28;
-        ctx.fillStyle = 'rgba(0,0,0,0.45)';
-        ctx.fillRect(panelX + 10, hpY, barW, 16);
-        ctx.fillStyle = hpPct > 0.5 ? '#3eff84' : (hpPct > 0.25 ? '#f5d35a' : '#ff5b5b');
-        ctx.fillRect(panelX + 10, hpY, barW * hpPct, 16);
-        ctx.strokeStyle = 'rgba(180, 235, 255, 0.45)';
-        ctx.strokeRect(panelX + 10, hpY, barW, 16);
+        const barW = panelW - 24;
+        const hpY = panelY + 32;
+        ctx.fillStyle = 'rgba(0,0,0,0.62)';
+        ctx.fillRect(panelX + 12, hpY, barW, 18);
+        ctx.fillStyle = hpPct > 0.5 ? '#39ff83' : (hpPct > 0.25 ? '#ffd960' : '#ff6767');
+        ctx.fillRect(panelX + 12, hpY, barW * hpPct, 18);
+        ctx.strokeStyle = 'rgba(210, 240, 255, 0.65)';
+        ctx.strokeRect(panelX + 12, hpY, barW, 18);
         ctx.fillStyle = '#ffffff';
         ctx.font = '10px "Press Start 2P", Arial';
-        ctx.fillText(`HEALTH ${Math.max(0, Math.floor(player.health))}%`, panelX + 14, hpY + 12);
+        ctx.fillText(`HEALTH ${Math.max(0, Math.floor(player.health))}%`, panelX + 16, hpY + 13);
 
         const infoRows = [
           ['GOLD', `${player.gold}`],
           ['WEAPON', wInfo.name.toUpperCase()],
           ['AMMO', `${clip} / ${reserve}`]
         ];
-        ctx.font = '12px "Orbitron", Arial';
+        ctx.font = '700 13px "Orbitron", Arial';
         infoRows.forEach((row, i) => {
-          const rowY = hpY + 32 + i * 24;
+          const rowY = hpY + 36 + i * 24;
           const isAmmoRow = row[0] === 'AMMO';
           if (isAmmoRow && clip <= Math.max(1, Math.floor(wInfo.magazine * 0.25))) {
-            ctx.fillStyle = `rgba(255, 184, 89, ${0.25 + uiPulse * 0.2})`;
-            ctx.fillRect(panelX + 10, rowY - 13, barW, 18);
+            ctx.fillStyle = `rgba(255, 184, 89, ${0.33 + uiPulse * 0.2})`;
+            ctx.fillRect(panelX + 12, rowY - 14, barW, 19);
           }
-          ctx.fillStyle = '#8db3d6';
-          ctx.fillText(row[0], panelX + 12, rowY);
+          ctx.fillStyle = '#9fc5e3';
+          ctx.fillText(row[0], panelX + 14, rowY);
           ctx.fillStyle = '#f5fbff';
           ctx.textAlign = 'right';
-          ctx.fillText(row[1], panelX + panelW - 14, rowY);
+          ctx.fillText(row[1], panelX + panelW - 16, rowY);
           ctx.textAlign = 'left';
         });
-
-        if (isMobile) {
-          const badgeW = 126;
-          const badgeH = 16;
-          const bx = panelX + panelW - badgeW - 10;
-          const by = panelY + panelH - badgeH - 8;
-          ctx.fillStyle = `rgba(70, 140, 255, ${0.22 + uiPulse * 0.12})`;
-          ctx.fillRect(bx, by, badgeW, badgeH);
-          ctx.strokeStyle = 'rgba(140,190,255,0.8)';
-          ctx.strokeRect(bx, by, badgeW, badgeH);
-          ctx.fillStyle = '#dbefff';
-          ctx.font = '8px "Press Start 2P", Arial';
-          ctx.fillText('MOBILE CTRL ACTIVE', bx + 5, by + 11);
-        }
 
         if (player.reloading) {
           const reloadHudKey = player.reloadWeaponKey || player.weapon;
