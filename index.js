@@ -386,7 +386,15 @@
     // if the background image fails to load or simply to add sparkle.
     const stars = [];
     for (let i=0; i<600; i++) {
-      stars.push({ x: Math.random()*worldWidth, y: Math.random()*height*0.8, size: Math.random()*2+1, alpha: Math.random()*0.5+0.3 });
+      const layer = Math.random() < 0.35 ? 0 : (Math.random() < 0.7 ? 1 : 2);
+      stars.push({
+        x: Math.random() * worldWidth,
+        y: Math.random() * height * 0.82,
+        size: (layer === 0 ? 0.7 : (layer === 1 ? 1.2 : 1.8)) + Math.random() * 1.1,
+        alpha: 0.22 + Math.random() * 0.55,
+        layer,
+        twinkle: Math.random() * Math.PI * 2
+      });
     }
     // Input state: track whether keys are pressed
     const keys = {};
@@ -792,6 +800,8 @@
     let shotFlashes = [];
     let screenShakeTimer = 0;
     let screenShakeStrength = 0;
+    let cameraShakeX = 0;
+    let cameraShakeY = 0;
     let damageOverlayTimer = 0;
     // Particle effects list. Each particle has x, y, vx, vy, life, maxLife
     // and a color string. Particles are spawned when enemies are destroyed
@@ -934,6 +944,8 @@
       particles = [];
       screenShakeTimer = 0;
       screenShakeStrength = 0;
+      cameraShakeX = 0;
+      cameraShakeY = 0;
       damageOverlayTimer = 0;
       spawnCooldown = 0;
       gameState = 'play';
@@ -1033,7 +1045,8 @@
         // direction.  A random initial value is used so enemies do not
         // synchronise their turns.
         changeDirTimer: 1200 + Math.random() * 1600,
-        pathRecalcTimer: 0
+        pathRecalcTimer: 0,
+        animVariance: 0.85 + Math.random() * 0.35
       };
       // Track whether the enemy is on the ground/platform.  Only used for
       // non‑floating enemies; ghosts float so this flag is ignored.
@@ -1122,25 +1135,103 @@
       if (!SETTINGS.particles) return;
       const colours = {
         zombie: '#55aa55',
-        ghost:  '#aaaaff',
-        robot:  '#888888',
-        alien:  '#55ff55'
+        ghost:  '#a6c0ff',
+        robot:  '#b7c7dc',
+        alien:  '#72ff88'
       };
       const col = colours[enemy.type] || '#ffaa55';
-      const count = 6 + Math.floor(Math.random()*4);
-      for (let i=0; i<count; i++) {
+      const count = 11 + Math.floor(Math.random() * 7);
+      for (let i = 0; i < count; i++) {
         const angle = Math.random() * Math.PI * 2;
-        const speed = 1 + Math.random() * 2;
+        const speed = 1.2 + Math.random() * 3.4;
+        const life = 300 + Math.random() * 260;
         particles.push({
-          x: enemy.x + enemy.width/2,
-          y: enemy.y + enemy.height/2,
+          x: enemy.x + enemy.width / 2,
+          y: enemy.y + enemy.height / 2,
           vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed,
-          life: 400 + Math.random()*200,
-          maxLife: 400 + Math.random()*200,
-          color: col
+          vy: Math.sin(angle) * speed - 0.7,
+          drag: 0.972,
+          gravity: 0.068,
+          life,
+          maxLife: life,
+          color: col,
+          kind: 'death',
+          size: 1.8 + Math.random() * 2.2,
+          glow: 0.45 + Math.random() * 0.35
         });
       }
+    }
+
+    function spawnHitSparks(x, y, weapon) {
+      if (!SETTINGS.particles) return;
+      const tint = weapon === 'laser' ? '#9dfdff' : (weapon === 'shotgun' ? '#ffd8a0' : '#fff59a');
+      const count = weapon === 'shotgun' ? 8 : 5;
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 1 + Math.random() * (weapon === 'shotgun' ? 3.8 : 2.6);
+        const life = 120 + Math.random() * 90;
+        particles.push({
+          x,
+          y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed - 0.35,
+          drag: 0.94,
+          gravity: 0.055,
+          life,
+          maxLife: life,
+          color: tint,
+          kind: 'spark',
+          size: 1.4 + Math.random() * 1.4,
+          glow: 0.35
+        });
+      }
+    }
+
+    function spawnMuzzleParticles(x, y, dirX, dirY, kind) {
+      if (!SETTINGS.particles) return;
+      const count = kind === 'shotgun' ? 10 : (kind === 'laser' ? 7 : 5);
+      const color = kind === 'laser' ? '#8cf6ff' : '#ffdca8';
+      for (let i = 0; i < count; i++) {
+        const spread = (Math.random() - 0.5) * (kind === 'shotgun' ? 1.1 : 0.55);
+        const speed = 1 + Math.random() * (kind === 'shotgun' ? 4 : 2.6);
+        const vx = dirX * speed + spread;
+        const vy = dirY * speed + spread * 0.45 - 0.25;
+        const life = 80 + Math.random() * 60;
+        particles.push({
+          x,
+          y,
+          vx,
+          vy,
+          drag: 0.92,
+          gravity: 0.035,
+          life,
+          maxLife: life,
+          color,
+          kind: 'muzzle',
+          size: 1.1 + Math.random() * 1.4,
+          glow: 0.42
+        });
+      }
+    }
+
+    function spawnPickupSparkle(pickup) {
+      if (!SETTINGS.particles) return;
+      const col = pickup.type === 'gold' ? '#ffe589' : (pickup.type === 'health' ? '#9bff9f' : '#8ddfff');
+      const life = 220 + Math.random() * 160;
+      particles.push({
+        x: pickup.x + pickup.width * 0.5,
+        y: pickup.y + pickup.height * 0.45,
+        vx: (Math.random() - 0.5) * 0.55,
+        vy: -0.15 - Math.random() * 0.35,
+        drag: 0.965,
+        gravity: -0.002,
+        life,
+        maxLife: life,
+        color: col,
+        kind: 'pickup',
+        size: 0.9 + Math.random() * 1.2,
+        glow: 0.3
+      });
     }
 
     /**
@@ -1265,12 +1356,21 @@
 
       // Movement
       let moveSpeed = 2.5;
-      // slow movement while crouched
       if (player.isDucking) moveSpeed = 1.5;
-      player.vx = 0;
+      const moveLeft = keys['ArrowLeft'] || keys['a'] || keys['A'];
+      const moveRight = keys['ArrowRight'] || keys['d'] || keys['D'];
+      let desiredVX = 0;
       if (!player.reloading && gameState === 'play') {
-        if (keys['ArrowLeft'] || keys['a'] || keys['A']) { player.vx = -moveSpeed; player.facing = -1; }
-        if (keys['ArrowRight'] || keys['d'] || keys['D']) { player.vx = moveSpeed; player.facing = 1; }
+        if (moveLeft) { desiredVX = -moveSpeed; player.facing = -1; }
+        if (moveRight) { desiredVX = moveSpeed; player.facing = 1; }
+        const accel = (player.onGround ? 0.34 : 0.18) * (dt / 16.67);
+        const friction = (player.onGround ? 0.78 : 0.9);
+        if (Math.abs(desiredVX) > 0.01) {
+          player.vx += (desiredVX - player.vx) * Math.min(1, accel);
+        } else {
+          player.vx *= Math.pow(friction, dt / 16.67);
+          if (Math.abs(player.vx) < 0.03) player.vx = 0;
+        }
         // Jump
         // Detect spacebar across browsers: ' ' (space), 'Space', and
         // 'Spacebar'.  Only jump when onGround to prevent double jumps.
@@ -1332,7 +1432,9 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
               bullets.push({ x: player.x + (player.facing > 0 ? player.width : -6), y: player.y + player.height / 2 - 2, vx: weapon.bulletSpeed * player.facing, vy: 0, width: 6, height: 3, damage: weapon.damage, from: 'player', weapon: wKey });
             }
           }
-          addShotFlash(muzzleX, muzzleY, shootUp ? 0 : player.facing, shootUp ? -1 : 0, wKey === 'shotgun' ? 'shotgun' : (wKey === 'laser' ? 'laser' : 'default'));
+          const flashKind = wKey === 'shotgun' ? 'shotgun' : (wKey === 'laser' ? 'laser' : 'default');
+          addShotFlash(muzzleX, muzzleY, shootUp ? 0 : player.facing, shootUp ? -1 : 0, flashKind);
+          spawnMuzzleParticles(muzzleX, muzzleY, shootUp ? 0 : player.facing, shootUp ? -1 : 0, flashKind);
           if (wKey === 'shotgun') {
             screenShakeTimer = Math.max(screenShakeTimer, 90);
             screenShakeStrength = Math.max(screenShakeStrength, 3.4);
@@ -1640,6 +1742,7 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
             // Reduce health and mark hit. Flash red for 150ms.
             e.health -= b.damage;
             e.hitTimer = 170;
+            spawnHitSparks(b.x + b.width * 0.5, b.y + b.height * 0.5, b.weapon);
             const kx = (b.vx === 0 ? (player.x < e.x ? 1 : -1) : Math.sign(b.vx));
             const impactForce = b.weapon === 'shotgun' ? 4.2 : (b.weapon === 'laser' ? 2.8 : 1.8);
             e.x += kx * impactForce;
@@ -1682,12 +1785,11 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
       } else {
         for (let i = particles.length - 1; i >= 0; i--) {
           const p = particles[i];
-          // integrate velocity (approximate dt in seconds for better physics)
-          const sec = dt / 1000;
-          p.x += p.vx;
-          p.y += p.vy;
-          // apply gravity
-          p.vy += 0.05;
+          const sec = Math.min(0.033, dt / 1000);
+          p.x += p.vx * (sec * 60);
+          p.y += p.vy * (sec * 60);
+          p.vx *= p.drag || 0.97;
+          p.vy = p.vy * (p.drag || 0.97) + (p.gravity || 0.05);
           p.life -= dt;
           if (p.life <= 0) {
             particles.splice(i, 1);
@@ -1754,7 +1856,22 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
         t.y += t.vy;
         if (t.life <= 0) floatingTexts.splice(i, 1);
       }
+      if (SETTINGS.particles && pickups.length) {
+        const spawnChance = Math.min(0.3, (dt / 16.67) * 0.08);
+        for (let i = 0; i < pickups.length; i++) {
+          if (Math.random() < spawnChance) spawnPickupSparkle(pickups[i]);
+        }
+      }
       screenShakeTimer = Math.max(0, screenShakeTimer - dt);
+      screenShakeStrength = Math.max(0.35, screenShakeStrength * Math.pow(0.94, dt / 16.67));
+      const shakeFalloff = Math.max(0, Math.min(1, screenShakeTimer / 150));
+      if (screenShakeTimer > 0.01) {
+        cameraShakeX = (Math.random() * 2 - 1) * screenShakeStrength * shakeFalloff;
+        cameraShakeY = (Math.random() * 2 - 1) * screenShakeStrength * 0.55 * shakeFalloff;
+      } else {
+        cameraShakeX *= 0.7;
+        cameraShakeY *= 0.7;
+      }
       damageOverlayTimer = Math.max(0, damageOverlayTimer - dt);
 
       // Spawn new enemies periodically with a smoother ramp and cap to avoid
@@ -1780,8 +1897,7 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
      */
     function drawGame() {
       const uiPulse = 0.5 + 0.5 * Math.sin(performance.now() * 0.004);
-      const shakeX = screenShakeTimer > 0 ? (Math.random() * 2 - 1) * screenShakeStrength : 0;
-      const cameraX = Math.max(0, Math.min(worldWidth - width, player.x - 150 + shakeX));
+      const cameraX = Math.max(0, Math.min(worldWidth - width, player.x - 150 + cameraShakeX));
       // Draw parallax background
       if (bgLoaded) {
         const scale = height / backgroundImg.height;
@@ -1799,12 +1915,14 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
         ctx.fillStyle = '#000010';
         ctx.fillRect(0,0,width,height);
       }
-      // Draw starfield on top of background
+      // Draw layered starfield on top of background
       stars.forEach(s => {
-        if (s.x >= cameraX - width && s.x <= cameraX + width*2) {
-          const px = s.x - cameraX;
-          ctx.fillStyle = `rgba(255,255,255,${s.alpha})`;
-          ctx.fillRect(px, s.y, s.size, s.size);
+        if (s.x >= cameraX - width && s.x <= cameraX + width * 2) {
+          const parallax = s.layer === 0 ? 0.18 : (s.layer === 1 ? 0.34 : 0.56);
+          const twinkle = 0.72 + Math.sin(performance.now() * (0.0018 + s.layer * 0.0013) + s.twinkle) * 0.28;
+          const px = s.x - cameraX * parallax;
+          ctx.fillStyle = `rgba(205,230,255,${Math.max(0.08, s.alpha * twinkle)})`;
+          ctx.fillRect(px, s.y + s.layer * 5, s.size, s.size);
         }
       });
       // Draw ground (semi‑transparent dark strip)
@@ -1812,18 +1930,23 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
       ctx.fillRect(0, groundY, width, height - groundY);
       // Draw pickups
       pickups.forEach(p => {
-        const pulse = 1 + Math.sin((elapsedTime + p.x * 0.4) * 0.01) * 0.08;
+        const wave = (elapsedTime * 0.006) + p.x * 0.02;
+        const bob = Math.sin(wave) * 2.4;
+        const pulse = 1 + Math.sin(wave * 0.8) * 0.12;
         const drawW = p.width * pulse;
         const drawH = p.height * pulse;
         const px = p.x - cameraX - (drawW - p.width) / 2;
-        const py = p.y - (drawH - p.height) / 2;
-        // Draw each pickup based on its type.  Use sprite sheet frames for
-        // coins and ammo; health packs are drawn manually so they work even
-        // without a pre‑made asset.
+        const py = p.y + bob - (drawH - p.height) / 2;
         if (sheetLoaded) {
           if (p.type === 'gold') {
             const f = ANIMATIONS.coin;
             ctx.drawImage(spriteSheet, f.sx, f.sy, 32, 32, px, py, drawW, drawH);
+            ctx.strokeStyle = `rgba(255,244,140,${0.55 + 0.3 * Math.sin(wave * 1.8)})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(px - 1, py + drawH * 0.2);
+            ctx.lineTo(px + drawW + 2, py + drawH * 0.85);
+            ctx.stroke();
           } else if (p.type === 'ammo') {
             let f;
             if (p.ammoType === 'pistol') f = ANIMATIONS.ammoPistol;
@@ -1832,38 +1955,32 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
             else f = ANIMATIONS.ammoLaser;
             ctx.drawImage(spriteSheet, f.sx, f.sy, 32, 32, px, py, drawW, drawH);
           } else if (p.type === 'health') {
-            // Draw a simple white box with a red cross to represent a health pack
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(px, py, drawW, drawH);
+            ctx.strokeStyle = '#8eff95';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(px - 1, py - 1, drawW + 2, drawH + 2);
             ctx.fillStyle = '#ff4444';
-            // Horizontal bar of cross
             ctx.fillRect(px + drawW * 0.2, py + drawH * 0.45, drawW * 0.6, drawH * 0.1);
-            // Vertical bar of cross
             ctx.fillRect(px + drawW * 0.45, py + drawH * 0.2, drawW * 0.1, drawH * 0.6);
           }
         } else {
-          // Fallback colours when the sprite sheet isn't available
-          if (p.type === 'gold') {
-            ctx.fillStyle = '#ffd700';
-            ctx.fillRect(px, py, drawW, drawH);
-          } else if (p.type === 'ammo') {
-            ctx.fillStyle = '#00ff00';
-            ctx.fillRect(px, py, drawW, drawH);
-          } else if (p.type === 'health') {
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(px, py, drawW, drawH);
-            ctx.fillStyle = '#ff4444';
-            ctx.fillRect(px + drawW * 0.2, py + drawH * 0.45, drawW * 0.6, drawH * 0.1);
-            ctx.fillRect(px + drawW * 0.45, py + drawH * 0.2, drawW * 0.1, drawH * 0.6);
-          }
+          ctx.fillStyle = p.type === 'gold' ? '#ffd700' : (p.type === 'health' ? '#ffffff' : '#55ddff');
+          ctx.fillRect(px, py, drawW, drawH);
         }
-        ctx.globalAlpha = 0.22;
+        ctx.globalAlpha = 0.2;
         ctx.fillStyle = p.type === 'gold' ? '#ffd700' : (p.type === 'health' ? '#88ff88' : '#55ddff');
         ctx.beginPath();
-        ctx.arc(px + drawW / 2, py + drawH / 2, Math.max(drawW, drawH), 0, Math.PI * 2);
+        ctx.ellipse(px + drawW / 2, py + drawH / 2, drawW * 1.2, drawH * 1.05, 0, 0, Math.PI * 2);
         ctx.fill();
+        if (p.type === 'ammo') {
+          ctx.globalAlpha = 0.35;
+          ctx.fillStyle = '#8ddfff';
+          ctx.fillRect(px - 1, py + drawH + 1, drawW + 2, 1.5);
+        }
         ctx.globalAlpha = 1;
       });
+
 
       // Draw obstacles and ladders.  Platforms are dark metallic beams, crates
       // are brown boxes, shields glow blue and barricades are grey.  Ladders
@@ -1989,7 +2106,9 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
         }
 
         if (sheetLoaded && frames) {
-          const idx = Math.floor(e.animTime / 150) % frames.length;
+          const baseAnimStep = e.type === 'ghost' ? 130 : (e.type === 'zombie' ? 170 : (e.type === 'robot' ? 145 : 125));
+          const animStep = baseAnimStep * (e.animVariance || 1);
+          const idx = Math.floor(e.animTime / animStep) % frames.length;
           const f = frames[idx];
           ctx.drawImage(spriteSheet, f.sx, f.sy, 32, 32, px, e.y, e.width, e.height);
           // If hit recently, overlay a semi‑transparent red flash
@@ -2011,11 +2130,15 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
       if (SETTINGS.particles) {
         particles.forEach(p => {
           const px = p.x - cameraX;
-          // Fade based on remaining life
           const alpha = Math.max(0, p.life / p.maxLife);
+          const size = p.size || 2.2;
+          ctx.globalAlpha = alpha * (p.glow ? 0.38 + p.glow : 0.5);
           ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(px, p.y, size * 1.7, 0, Math.PI * 2);
+          ctx.fill();
           ctx.globalAlpha = alpha;
-          ctx.fillRect(px, p.y, 4, 4);
+          ctx.fillRect(px - size * 0.5, p.y - size * 0.5, size, size);
           ctx.globalAlpha = 1;
         });
       }
@@ -2023,18 +2146,24 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
       bullets.forEach(b => {
         const px = b.x - cameraX;
         if (b.weapon === 'laser') {
-          const trail = 22;
-          const tx = px - (b.vx > 0 ? trail : 0);
-          ctx.fillStyle = 'rgba(120,255,255,0.25)';
-          ctx.fillRect(tx, b.y - 2, Math.abs(b.vx) > 0 ? trail + b.width : b.width, b.height + 4);
-          ctx.fillStyle = '#9dffff';
+          const horizontal = Math.abs(b.vx) > Math.abs(b.vy);
+          const trail = horizontal ? 24 : 18;
+          const tx = horizontal ? (px - (b.vx > 0 ? trail : 0)) : (px - 2);
+          const ty = horizontal ? (b.y - 2) : (b.y - (b.vy < 0 ? trail : 0));
+          ctx.fillStyle = 'rgba(90,245,255,0.25)';
+          ctx.fillRect(tx, ty, horizontal ? trail + b.width : b.width + 4, horizontal ? b.height + 4 : trail + b.height);
+          ctx.fillStyle = '#baffff';
           ctx.fillRect(px, b.y, b.width, b.height);
         } else if (b.weapon === 'shotgun') {
-          ctx.fillStyle = '#ffd27a';
-          ctx.fillRect(px, b.y, b.width, b.height);
+          ctx.fillStyle = '#ffe0a6';
+          ctx.fillRect(px - 0.5, b.y - 0.5, b.width + 1, b.height + 1);
+          ctx.fillStyle = '#fff8db';
+          ctx.fillRect(px, b.y, Math.max(1, b.width - 1), Math.max(1, b.height - 1));
         } else {
-          ctx.fillStyle = '#ffff00';
-          ctx.fillRect(px, b.y, b.width, b.height);
+          ctx.fillStyle = '#ffe86d';
+          ctx.fillRect(px - 0.5, b.y - 0.5, b.width + 1, b.height + 1);
+          ctx.fillStyle = '#fffce3';
+          ctx.fillRect(px, b.y, Math.max(1, b.width - 1), Math.max(1, b.height - 1));
         }
       });
       // Draw muzzle/shot flashes
@@ -2054,7 +2183,9 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
       // Draw enemy bullets
       enemyBullets.forEach(b => {
         const px = b.x - cameraX;
-        ctx.fillStyle = '#ff4444';
+        ctx.fillStyle = 'rgba(255,92,92,0.35)';
+        ctx.fillRect(px - 1, b.y - 1, b.width + 2, b.height + 2);
+        ctx.fillStyle = '#ff6060';
         ctx.fillRect(px, b.y, b.width, b.height);
       });
       // Draw player
@@ -2067,11 +2198,12 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
         // crouched uses the shoot frames; moving while crouched uses
         // running frames; otherwise the idle frame is used.
         let frames;
+        const weapon = WEAPONS[player.weapon];
         // Determine if the player is currently shooting.  We rely on
         // shootCooldown > 0 to indicate a shot has been fired this
         // frame, which syncs the animation to actual firing rather than
         // key presses alone.
-        const isShooting = (keys['z'] || keys['Z']) && player.shootCooldown > 0;
+        const isShooting = player.shootCooldown > Math.max(35, weapon.fireRate * 0.45);
         if (!player.onGround) {
           // In mid‑air use the jump animation regardless of crouch.
           frames = ANIMATIONS.playerJump;
@@ -2099,7 +2231,8 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
             frames = ANIMATIONS.playerIdle;
           }
         }
-        const idx = Math.floor(player.animTime / 150) % frames.length;
+        const playerAnimStep = !player.onGround ? 120 : (player.isDucking ? (Math.abs(player.vx) > 0.1 ? 95 : 180) : (Math.abs(player.vx) > 0.1 ? 92 : 210));
+        const idx = Math.floor(player.animTime / playerAnimStep) % frames.length;
         const f = frames[idx];
         ctx.save();
         // Calculate cropping for crouch: when ducking we draw only the
