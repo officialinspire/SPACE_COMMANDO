@@ -5,7 +5,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="theme-color" content="#000000">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 
   <title>SPACE COMMANDO – Side‑Scrolling Shooter</title>
   <!-- Link the stylesheet for basic page and HUD styling -->
@@ -201,28 +201,26 @@
         }
       };
 
-      // Handle touch events - use touchend for better mobile UX
-      let touchStarted = false;
-      tapToStart.addEventListener('touchstart', (e) => {
-        touchStarted = true;
-        console.log('Touch started on TAP TO START');
+      // Use pointerup as the canonical tap/click handler to avoid
+      // double-firing on touch devices that synthesize click events.
+      let lastPointerType = null;
+      tapToStart.addEventListener('pointerdown', (e) => {
+        lastPointerType = e.pointerType;
       }, { passive: true });
 
-      tapToStart.addEventListener('touchend', (e) => {
-        console.log('Touch ended on TAP TO START');
-        if (touchStarted && !gameStarted) {
-          e.preventDefault(); // Prevent ghost click
-          startGame(e);
-        }
-        touchStarted = false;
-      });
+      tapToStart.addEventListener('pointerup', (e) => {
+        console.log('Pointer up on TAP TO START');
+        if (gameStarted) return;
+        e.preventDefault();
+        startGame(e);
+      }, { passive: false });
 
-      // Handle mouse click for desktop
+      // Desktop fallback for older browsers with no Pointer Events.
       tapToStart.addEventListener('click', (e) => {
+        if (gameStarted) return;
+        if (lastPointerType === 'touch' || lastPointerType === 'pen') return;
         console.log('Click on TAP TO START');
-        if (!touchStarted) { // Only handle click if it's not from a touch
-          startGame(e);
-        }
+        startGame(e);
       });
 
       // Handle keyboard

@@ -255,18 +255,6 @@
   // types so that the game becomes more challenging the longer it is
   // played.
   let elapsedTime = 0;
-    // Prevent double-tap to zoom on buttons (mobile)
-    let doubleTapBlockerAdded = false;
-    function addTapBlocker() {
-      if (doubleTapBlockerAdded) return;
-      doubleTapBlockerAdded = true;
-      const ctrl = document.getElementById('mobile-controls');
-      if (ctrl) {
-        ctrl.addEventListener('touchend', function(e){ e.preventDefault(); }, { passive: false });
-      }
-    }
-    
-
   /**
    * Fade an audio track in over time.  Cancels any previous fade on
    * that track before starting.  The track begins playing at zero
@@ -327,8 +315,10 @@
   function updateControlsHeight() {
       const ctrl = document.getElementById('mobile-controls');
       if (!ctrl) return;
-      const h = ctrl.offsetHeight || 0;
-      document.documentElement.style.setProperty('--controls-height', h + 'px');
+      window.requestAnimationFrame(() => {
+        const h = Math.ceil(ctrl.getBoundingClientRect().height) || 0;
+        document.documentElement.style.setProperty('--controls-height', h + 'px');
+      });
     }
 
     function init() {
@@ -602,143 +592,167 @@
         e.preventDefault();
       }
     });
-
     // ---------------------------------------------------------------------
-// Mobile controls
-// Detect whether we are on a touch-capable mobile device.  If so,
-// reveal the custom on-screen controller and wire up each button to
-// simulate keyboard presses.  Using both touch and pointer events
-// ensures compatibility across browsers.  The data-key attribute on
-// each button specifies which key should be set in the keys object
-// when pressed.  Menu navigation triggers handleMenuInput() immediately
-// on press so the purchase and settings menus respond without delay.
-const isMobile =
-  /Mobi|Android|iPhone|iPad|iPod|Tablet/i.test(navigator.userAgent) ||
-  (navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
+    // Mobile controls
+    const isMobile =
+      /Mobi|Android|iPhone|iPad|iPod|Tablet/i.test(navigator.userAgent) ||
+      (navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
 
-if (isMobile) {
-  addTapBlocker();
-  const ctrlBar = document.getElementById('mobile-controls');
-  if (ctrlBar) {
-    ctrlBar.style.display = 'flex';
-    updateControlsHeight();
-    window.addEventListener('resize', updateControlsHeight);
-    window.addEventListener('orientationchange', updateControlsHeight);
-
-    const buttons = ctrlBar.querySelectorAll('.control-btn');
-
-    // Keys that should trigger menu logic immediately
-    const menuKeys = ['Enter', 'Escape', 'p', 'P', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
-
-    buttons.forEach(btn => {
-      const keyName = btn.getAttribute('data-key');
-      let isPressed = false;
-      let activeTouch = null;
-      let lastTouchAt = 0;
-
-      const press = (event) => {
-        // Prevent duplicate presses
-        if (isPressed) return;
-
-        event.preventDefault();
-        event.stopPropagation();
-
-        isPressed = true;
-        btn.classList.add('pressed');
-
-        // Set the key as pressed (for movement/jump/shoot etc.)
-        keys[keyName] = true;
-
-        // Haptic feedback if available
-        if (navigator.vibrate) {
-          navigator.vibrate(10);
+    if (isMobile) {
+      const ctrlBar = document.getElementById('mobile-controls');
+      if (ctrlBar) {
+        ctrlBar.style.display = 'flex';
+        updateControlsHeight();
+        window.addEventListener('resize', updateControlsHeight);
+        window.addEventListener('orientationchange', () => setTimeout(updateControlsHeight, 60));
+        if (window.visualViewport) {
+          window.visualViewport.addEventListener('resize', updateControlsHeight);
         }
 
-        // For menu-related keys, call the menu handler right away
-        if (menuKeys.includes(keyName)) {
-          handleMenuInput({ key: keyName });
-        }
-      };
+        const buttons = Array.from(ctrlBar.querySelectorAll('.control-btn'));
+        const menuKeys = new Set(['Enter', 'Escape', 'p', 'P', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+        const pointerToButton = new Map();
+        const activePointersByButton = new Map();
+        const activeCountByKey = new Map();
+        let lastTouchInteractionAt = 0;
 
-      const release = (event) => {
-        if (!isPressed) return;
-
-        event.preventDefault();
-        event.stopPropagation();
-
-        isPressed = false;
-        activeTouch = null;
-        btn.classList.remove('pressed');
-        keys[keyName] = false;
-      };
-
-      // Primary touch event handlers
-      btn.addEventListener('touchstart', (event) => {
-        // Allow multiple simultaneous touches - find a new touch on this button
-        if (activeTouch === null && event.touches.length > 0) {
-          // Get the touch that's actually on this button
-          const touch = event.touches[event.touches.length - 1];
-          activeTouch = touch.identifier;
-          lastTouchAt = performance.now();
-          press(event);
-        }
-      }, { passive: false });
-
-      btn.addEventListener('touchend', (event) => {
-        // Only release if this was the active touch
-        if (activeTouch !== null && event.changedTouches.length > 0) {
-          for (let i = 0; i < event.changedTouches.length; i++) {
-            if (event.changedTouches[i].identifier === activeTouch) {
-              release(event);
-              break;
-            }
+        const setKeyState = (keyName, pressed) => {
+          if (pressed) {
+            const next = (activeCountByKey.get(keyName) || 0) + 1;
+            activeCountByKey.set(keyName, next);
+            keys[keyName] = true;
+            return;
           }
-        }
-      }, { passive: false });
-
-      btn.addEventListener('touchcancel', release, { passive: false });
-
-      // Handle finger sliding off the button
-      btn.addEventListener('touchmove', (event) => {
-        if (activeTouch !== null && isPressed) {
-          const touch = Array.from(event.touches).find(t => t.identifier === activeTouch);
-          if (touch) {
-            const rect = btn.getBoundingClientRect();
-            const x = touch.clientX;
-            const y = touch.clientY;
-            // If finger moved outside button bounds, release
-            if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
-              release(event);
-            }
+          const next = Math.max((activeCountByKey.get(keyName) || 0) - 1, 0);
+          if (next === 0) {
+            activeCountByKey.delete(keyName);
+            keys[keyName] = false;
+          } else {
+            activeCountByKey.set(keyName, next);
+            keys[keyName] = true;
           }
-        }
-      }, { passive: false });
+        };
 
-      // Mouse/pointer events for desktop testing
-      // Only trigger if no touch is active to prevent conflicts
-      btn.addEventListener('mousedown', (event) => {
-        // Prevent synthetic mouse events right after touch from
-        // double-triggering menu actions and SFX on mobile browsers.
-        if (activeTouch === null && performance.now() - lastTouchAt > 500) {
-          press(event);
-        }
-      });
+        const pressButton = (btn, keyName, pointerId, event, pointerType) => {
+          if (event.cancelable) event.preventDefault();
+          event.stopPropagation();
 
-      btn.addEventListener('mouseup', (event) => {
-        if (activeTouch === null) {
-          release(event);
-        }
-      });
+          const setForButton = activePointersByButton.get(btn) || new Set();
+          if (setForButton.has(pointerId)) return;
 
-      btn.addEventListener('mouseleave', (event) => {
-        if (activeTouch === null && isPressed) {
-          release(event);
-        }
-      });
-    });
-  }
-}
+          setForButton.add(pointerId);
+          activePointersByButton.set(btn, setForButton);
+          pointerToButton.set(pointerId, btn);
+          if (setForButton.size === 1) btn.classList.add('pressed');
+          setKeyState(keyName, true);
 
+          if (pointerType === 'touch' || pointerType === 'pen') {
+            lastTouchInteractionAt = performance.now();
+            if (navigator.vibrate) navigator.vibrate(10);
+          }
+
+          if (menuKeys.has(keyName) && setForButton.size === 1) {
+            handleMenuInput({ key: keyName, repeat: false });
+          }
+        };
+
+        const releaseButton = (btn, keyName, pointerId, event) => {
+          const setForButton = activePointersByButton.get(btn);
+          if (!setForButton || !setForButton.has(pointerId)) return;
+
+          if (event && event.cancelable) event.preventDefault();
+          if (event) event.stopPropagation();
+
+          setForButton.delete(pointerId);
+          pointerToButton.delete(pointerId);
+          setKeyState(keyName, false);
+
+          if (setForButton.size === 0) {
+            activePointersByButton.delete(btn);
+            btn.classList.remove('pressed');
+          }
+        };
+
+        const clearAllMobileInputs = () => {
+          pointerToButton.forEach((btn, pointerId) => {
+            const keyName = btn.getAttribute('data-key');
+            releaseButton(btn, keyName, pointerId);
+          });
+          activeCountByKey.forEach((_, keyName) => {
+            keys[keyName] = false;
+          });
+          activeCountByKey.clear();
+          activePointersByButton.clear();
+          pointerToButton.clear();
+          buttons.forEach((btn) => btn.classList.remove('pressed'));
+        };
+
+        buttons.forEach((btn) => {
+          const keyName = btn.getAttribute('data-key');
+
+          btn.addEventListener('pointerdown', (event) => {
+            pressButton(btn, keyName, event.pointerId, event, event.pointerType);
+            if (btn.setPointerCapture) {
+              try { btn.setPointerCapture(event.pointerId); } catch (err) {}
+            }
+          }, { passive: false });
+
+          btn.addEventListener('pointerup', (event) => {
+            releaseButton(btn, keyName, event.pointerId, event);
+          }, { passive: false });
+
+          btn.addEventListener('pointercancel', (event) => {
+            releaseButton(btn, keyName, event.pointerId, event);
+          }, { passive: false });
+
+          btn.addEventListener('lostpointercapture', (event) => {
+            releaseButton(btn, keyName, event.pointerId, event);
+          }, { passive: false });
+
+          btn.addEventListener('pointerleave', (event) => {
+            if (event.pointerType === 'mouse') {
+              releaseButton(btn, keyName, event.pointerId, event);
+            }
+          }, { passive: false });
+
+          btn.addEventListener('touchcancel', () => {
+            const setForButton = activePointersByButton.get(btn);
+            if (!setForButton) return;
+            Array.from(setForButton).forEach((pointerId) => {
+              releaseButton(btn, keyName, pointerId);
+            });
+          }, { passive: true });
+
+          btn.addEventListener('contextmenu', (event) => event.preventDefault());
+          btn.addEventListener('dragstart', (event) => event.preventDefault());
+          btn.addEventListener('selectstart', (event) => event.preventDefault());
+        });
+
+        ctrlBar.addEventListener('pointermove', (event) => {
+          if (event.pointerType === 'mouse') return;
+          const btn = pointerToButton.get(event.pointerId);
+          if (!btn) return;
+          const rect = btn.getBoundingClientRect();
+          const inside = event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
+          if (!inside) {
+            const keyName = btn.getAttribute('data-key');
+            releaseButton(btn, keyName, event.pointerId, event);
+          }
+        }, { passive: false });
+
+        window.addEventListener('blur', clearAllMobileInputs);
+        document.addEventListener('visibilitychange', () => {
+          if (document.hidden) clearAllMobileInputs();
+        });
+
+        ctrlBar.addEventListener('click', (event) => {
+          if (performance.now() - lastTouchInteractionAt < 450) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        }, true);
+      }
+    }
 
     // Collections for dynamic entities
     let bullets = [];
