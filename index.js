@@ -2280,24 +2280,24 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
         const panelX = 14;
         const panelY = 12;
         const panelW = Math.min(360, width * 0.48);
-        const panelH = 136;
+        const panelH = 146;
         const wInfo = WEAPONS[player.weapon];
         const hpPct = Math.max(0, Math.min(1, player.health / 100));
         const clip = player.ammoInClip[player.weapon];
         const reserve = player.reserveAmmo[player.weapon];
 
-        ctx.fillStyle = 'rgba(4, 10, 22, 0.9)';
+        ctx.fillStyle = 'rgba(4, 10, 22, 0.93)';
         ctx.fillRect(panelX, panelY, panelW, panelH);
-        ctx.strokeStyle = `rgba(110, 215, 255, ${0.72 + uiPulse * 0.2})`;
+        ctx.strokeStyle = `rgba(110, 215, 255, ${0.74 + uiPulse * 0.2})`;
         ctx.lineWidth = 2;
         ctx.strokeRect(panelX, panelY, panelW, panelH);
 
-        ctx.fillStyle = '#c8f0ff';
-        ctx.font = '700 12px "Orbitron", Arial';
-        ctx.fillText('COMBAT STATUS', panelX + 12, panelY + 18);
+        ctx.fillStyle = '#d9f6ff';
+        ctx.font = '700 13px "Orbitron", Arial';
+        ctx.fillText('COMBAT STATUS', panelX + 12, panelY + 20);
 
         const barW = panelW - 24;
-        const hpY = panelY + 32;
+        const hpY = panelY + 36;
         ctx.fillStyle = 'rgba(0,0,0,0.62)';
         ctx.fillRect(panelX + 12, hpY, barW, 18);
         ctx.fillStyle = hpPct > 0.5 ? '#39ff83' : (hpPct > 0.25 ? '#ffd960' : '#ff6767');
@@ -2306,6 +2306,9 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
         ctx.strokeRect(panelX + 12, hpY, barW, 18);
         ctx.fillStyle = '#ffffff';
         ctx.font = '10px "Press Start 2P", Arial';
+        ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+        ctx.lineWidth = 2;
+        ctx.strokeText(`HEALTH ${Math.max(0, Math.floor(player.health))}%`, panelX + 16, hpY + 13);
         ctx.fillText(`HEALTH ${Math.max(0, Math.floor(player.health))}%`, panelX + 16, hpY + 13);
 
         const infoRows = [
@@ -2315,16 +2318,19 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
         ];
         ctx.font = '700 13px "Orbitron", Arial';
         infoRows.forEach((row, i) => {
-          const rowY = hpY + 36 + i * 24;
+          const rowY = hpY + 40 + i * 24;
           const isAmmoRow = row[0] === 'AMMO';
           if (isAmmoRow && clip <= Math.max(1, Math.floor(wInfo.magazine * 0.25))) {
             ctx.fillStyle = `rgba(255, 184, 89, ${0.33 + uiPulse * 0.2})`;
             ctx.fillRect(panelX + 12, rowY - 14, barW, 19);
           }
-          ctx.fillStyle = '#9fc5e3';
+          ctx.fillStyle = '#a9d4f0';
           ctx.fillText(row[0], panelX + 14, rowY);
-          ctx.fillStyle = '#f5fbff';
+          ctx.fillStyle = '#ffffff';
           ctx.textAlign = 'right';
+          ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+          ctx.lineWidth = 2;
+          ctx.strokeText(row[1], panelX + panelW - 16, rowY);
           ctx.fillText(row[1], panelX + panelW - 16, rowY);
           ctx.textAlign = 'left';
         });
@@ -2337,10 +2343,13 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
           ctx.fillRect(panelX, rY, panelW, 16);
           ctx.fillStyle = '#223249';
           ctx.fillRect(panelX + 2, rY + 2, panelW - 4, 12);
-          ctx.fillStyle = '#44ccff';
+          ctx.fillStyle = '#5dd8ff';
           ctx.fillRect(panelX + 2, rY + 2, (panelW - 4) * pct, 12);
           ctx.fillStyle = '#eefbff';
           ctx.font = '8px "Press Start 2P", Arial';
+          ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+          ctx.lineWidth = 2;
+          ctx.strokeText('RELOADING...', panelX + 6, rY + 11);
           ctx.fillText('RELOADING...', panelX + 6, rY + 11);
         }
       }
@@ -2444,8 +2453,11 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
             extraText = `QTY: ${item.qty}`;
           }
           if (selected) {
-            ctx.fillStyle = `rgba(26, 56, 78, ${0.45 + uiPulse * 0.22})`;
-            ctx.fillRect(panelX + 18, y - 16, panelW - 36, 24);
+            ctx.fillStyle = `rgba(32, 72, 102, ${0.58 + uiPulse * 0.2})`;
+            ctx.fillRect(panelX + 16, y - 17, panelW - 32, 26);
+            ctx.strokeStyle = 'rgba(255, 221, 120, 0.85)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(panelX + 16, y - 17, panelW - 32, 26);
           }
           // Name column with glow on selected
           if (selected) {
@@ -2462,9 +2474,15 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
           if (costText === 'LOCKED') ctx.fillStyle = '#ff7676';
           else if (costText.startsWith('BUY')) ctx.fillStyle = selected ? '#a6ffd2' : '#79eeb8';
           else ctx.fillStyle = selected ? '#ffffaa' : '#888888';
+          ctx.strokeStyle = 'rgba(0,0,0,0.72)';
+          ctx.lineWidth = 2;
+          ctx.strokeText(costText, panelX + panelW * 0.55, y);
           ctx.fillText(costText, panelX + panelW * 0.55, y);
           // Extra column (magazine/qty)
-          ctx.fillStyle = selected ? '#ffffaa' : '#888888';
+          ctx.fillStyle = selected ? '#fff7bd' : '#a3adb8';
+          ctx.strokeStyle = 'rgba(0,0,0,0.72)';
+          ctx.lineWidth = 2;
+          ctx.strokeText(extraText, panelX + panelW * 0.82, y);
           ctx.fillText(extraText, panelX + panelW * 0.82, y);
         });
         ctx.shadowBlur = 0;
@@ -2526,6 +2544,9 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
         ctx.shadowColor = '#00ccff';
         ctx.shadowBlur = 20;
         ctx.fillStyle = '#00ccff';
+        ctx.strokeStyle = 'rgba(0,0,0,0.72)';
+        ctx.lineWidth = 3;
+        ctx.strokeText('SPACE COMMANDO', panelX + panelW / 2, panelY + 50);
         ctx.fillText('SPACE COMMANDO', panelX + panelW / 2, panelY + 50);
         ctx.shadowBlur = 0;
         // Options
@@ -2537,7 +2558,7 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
           const y = optStartY + i * optSpacing;
           const selected = (i === startMenuSelection);
           if (selected) {
-            ctx.fillStyle = `rgba(26, 56, 78, ${0.42 + uiPulse * 0.2})`;
+            ctx.fillStyle = `rgba(36, 80, 112, ${0.56 + uiPulse * 0.2})`;
             ctx.fillRect(panelX + 34, y - 24, panelW - 68, 34);
           }
           if (selected) {
@@ -2583,6 +2604,9 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
         ctx.shadowColor = '#00ccff';
         ctx.shadowBlur = 20;
         ctx.fillStyle = '#00ccff';
+        ctx.strokeStyle = 'rgba(0,0,0,0.72)';
+        ctx.lineWidth = 3;
+        ctx.strokeText('PAUSED', panelX + panelW / 2, panelY + 50);
         ctx.fillText('PAUSED', panelX + panelW / 2, panelY + 50);
         ctx.shadowBlur = 0;
         // Options
@@ -2593,7 +2617,7 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
           const y = menuStartY + i * rowSpacing;
           const selected = (i === mainMenuSelection);
           if (selected) {
-            ctx.fillStyle = `rgba(26, 56, 78, ${0.42 + uiPulse * 0.2})`;
+            ctx.fillStyle = `rgba(36, 80, 112, ${0.56 + uiPulse * 0.2})`;
             ctx.fillRect(panelX + 34, y - 24, panelW - 68, 34);
           }
           if (selected) {
@@ -2640,6 +2664,9 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
         ctx.shadowColor = '#00ccff';
         ctx.shadowBlur = 20;
         ctx.fillStyle = '#00ccff';
+        ctx.strokeStyle = 'rgba(0,0,0,0.72)';
+        ctx.lineWidth = 3;
+        ctx.strokeText('SETTINGS', panelX + panelW / 2, panelY + 50);
         ctx.fillText('SETTINGS', panelX + panelW / 2, panelY + 50);
         ctx.shadowBlur = 0;
         // Draw each setting: align labels left and values right
@@ -2661,7 +2688,7 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
             value = SETTINGS.particles ? 'ON' : 'OFF';
           }
           if (selected) {
-            ctx.fillStyle = `rgba(26, 56, 78, ${0.42 + uiPulse * 0.2})`;
+            ctx.fillStyle = `rgba(36, 80, 112, ${0.56 + uiPulse * 0.2})`;
             ctx.fillRect(panelX + 34, y - 24, panelW - 68, 34);
           }
           // Highlight selected line with glow
