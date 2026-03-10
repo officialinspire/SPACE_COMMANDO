@@ -28,6 +28,9 @@ html, body {
   --vh: 1vh; /* dynamic vh set from JS for mobile URL-bar safe sizing */
   --ui-panel-bg: rgba(4, 10, 22, 0.9);
   --ui-panel-border: rgba(110, 215, 255, 0.78);
+  --ui-text-main: #eef8ff;
+  --ui-text-muted: #a9d4f0;
+  --ui-text-accent: #ffde68;
 }
 
 /* -------------------------------------------------------------------
@@ -65,6 +68,7 @@ html, body {
   user-select: none;
   -webkit-user-select: none;
   animation: softHudGlow 3s ease-in-out infinite;
+  position: absolute;
 }
 
 
@@ -106,11 +110,12 @@ html, body {
 #mobile-controls .control-btn {
   background: linear-gradient(180deg, #f7e395 0%, #d8ba52 100%);
   border: 3px solid #8e7323;
-  color: #111;
+  color: #16120a;
   padding: 6px 8px;
   margin: 0;
   font-size: 12px;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.55px;
+  font-weight: 700;
   text-shadow: 0 1px 0 rgba(255,255,255,0.45);
   width: 84px;
   min-width: 84px;
@@ -125,7 +130,7 @@ html, body {
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  box-shadow: 0 5px 0 #61501c, inset 0 1px 0 rgba(255,255,255,0.55), 0 0 12px rgba(227, 201, 91, 0.28);
+  box-shadow: 0 5px 0 #61501c, inset 0 1px 0 rgba(255,255,255,0.55), 0 0 12px rgba(227, 201, 91, 0.28), 0 2px 10px rgba(0,0,0,0.45);
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
   transition: transform 90ms cubic-bezier(0.34, 1.56, 0.64, 1),
@@ -158,7 +163,8 @@ html, body {
   min-width: 56px;
   height: 56px;
   padding: 4px;
-  font-size: 16px;
+  font-size: 18px;
+  font-weight: 700;
 }
 
 /* Wider menu button on desktop; on mobile rows we override width via flex */
@@ -230,6 +236,7 @@ html, body {
   max-height: 100vh;
   aspect-ratio: 16 / 9;
   image-rendering: pixelated;
+  box-shadow: 0 0 0 2px rgba(72, 178, 232, 0.35), 0 16px 40px rgba(0,0,0,0.5);
 }
 
 /* Canvas fills the container.  It no longer has its own transform
@@ -241,6 +248,7 @@ html, body {
   width: 100%;
   height: 100%;
   display: block;
+  background: #000;
 }
 
 /* TAP TO START screen appears above everything else */
@@ -323,6 +331,11 @@ html, body {
   animation: fadeInPulse 2s ease-in-out infinite;
   position: relative;
   z-index: 1;
+  background: rgba(2, 8, 18, 0.52);
+  border: 1px solid rgba(110, 215, 255, 0.35);
+  border-radius: 14px;
+  padding: 24px 28px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.45);
 }
 
 .game-title {
@@ -346,7 +359,8 @@ html, body {
   font-family: 'Press Start 2P', monospace;
   font-size: 24px;
   color: #fff;
-  text-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+  text-shadow: 0 2px 0 rgba(0,0,0,0.75), 0 0 10px rgba(255, 255, 255, 0.8);
+  letter-spacing: 1.2px;
   animation: pulse 1.5s ease-in-out infinite;
 }
 
@@ -514,7 +528,7 @@ background: #000;
   border-color: #c19f39;
   filter: drop-shadow(0 0 8px rgba(227, 201, 91, 0.7)) brightness(1.05);
   transform: translateY(-1px);
-  box-shadow: 0 6px 0 #6d5920, inset 0 2px 0 rgba(255,255,255,0.45), 0 0 16px rgba(227, 201, 91, 0.2);
+  box-shadow: 0 6px 0 #6d5920, inset 0 2px 0 rgba(255,255,255,0.45), 0 0 16px rgba(227, 201, 91, 0.2), 0 4px 14px rgba(0,0,0,0.5);
 }
 
 /* --- Tactile press feedback --- */
@@ -525,6 +539,13 @@ background: #000;
   filter: drop-shadow(0 0 10px rgba(227, 201, 91, 0.9)) brightness(0.84);
   background: linear-gradient(180deg, #d3b447 0%, #c19f2f 100%);
   border-color: #8f7222;
+}
+
+#mobile-controls .control-btn[data-key="Enter"],
+#mobile-controls .control-btn[data-key="p"],
+#mobile-controls .control-btn[data-key="Escape"] {
+  color: #0b0f16;
+  background: linear-gradient(180deg, #f9ebb1 0%, #e5cb63 100%);
 }
 
 #mobile-controls .control-btn.pressed::after {
