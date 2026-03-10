@@ -176,6 +176,34 @@
   // Weapon order used in the shop menu
   const WEAPON_ORDER = ['pistol','rifle','shotgun','laser'];
 
+  const ENEMY_DROP_TABLES = {
+    zombie: [
+      { item: 'pistol', weight: 0.6 },
+      { item: 'rifle', weight: 0.4 }
+    ],
+    robot: [
+      { item: 'rifle', weight: 0.65 },
+      { item: 'laser', weight: 0.35 }
+    ],
+    alien: [
+      { item: 'shotgun', weight: 0.6 },
+      { item: 'laser', weight: 0.4 }
+    ]
+  };
+
+  function weightedChoice(entries) {
+    if (!entries || !entries.length) return null;
+    let total = 0;
+    for (let i = 0; i < entries.length; i++) total += entries[i].weight;
+    if (total <= 0) return null;
+    let roll = Math.random() * total;
+    for (let i = 0; i < entries.length; i++) {
+      roll -= entries[i].weight;
+      if (roll <= 0) return entries[i].item;
+    }
+    return entries[entries.length - 1].item;
+  }
+
   /**
    * Shop items definition.  Extends the weapon list with purchasable
    * ammunition.  Each entry contains a type (weapon or ammo),
@@ -951,41 +979,28 @@
      * attack behaviour.
      */
     function spawnEnemy() {
-      // Choose the enemy type based on weighted probabilities that evolve
-      // over time.  Early on the game favours zombies and ghosts.  As
-      // elapsed play time increases, the weights shift toward robots and
-      // aliens for a greater challenge.  After two minutes zombies and
-      // ghosts become relatively rare.
+      // Choose enemy type from a smooth, time-based distribution so difficulty
+      // ramps up steadily instead of jumping between hard thresholds.
       const minutes = elapsedTime / 60000;
-      let zombieWeight = 0.4;
-      let ghostWeight  = 0.25;
-      let robotWeight  = 0.2;
-      let alienWeight  = 0.15;
-      if (minutes > 2) {
-        zombieWeight = 0.25;
-        ghostWeight  = 0.20;
-        robotWeight  = 0.30;
-        alienWeight  = 0.25;
-      } else if (minutes > 1) {
-        zombieWeight = 0.30;
-        ghostWeight  = 0.23;
-        robotWeight  = 0.27;
-        alienWeight  = 0.20;
-      }
-      const r = Math.random();
-      let type;
-      if (r < zombieWeight) {
-        type = 'zombie';
-      } else if (r < zombieWeight + ghostWeight) {
-        type = 'ghost';
-      } else if (r < zombieWeight + ghostWeight + robotWeight) {
-        type = 'robot';
-      } else {
-        type = 'alien';
-      }
+      const progress = Math.min(1, minutes / 3);
+      const typeWeights = {
+        zombie: 0.45 - progress * 0.23,
+        ghost: 0.27 - progress * 0.12,
+        robot: 0.17 + progress * 0.18,
+        alien: 0.11 + progress * 0.17
+      };
+      const type = weightedChoice([
+        { item: 'zombie', weight: typeWeights.zombie },
+        { item: 'ghost', weight: typeWeights.ghost },
+        { item: 'robot', weight: typeWeights.robot },
+        { item: 'alien', weight: typeWeights.alien }
+      ]) || 'zombie';
+      const spawnDir = Math.random() < 0.65 ? 1 : -1;
+      const spawnOffset = width + 140 + Math.random() * 280;
+      const spawnX = spawnDir > 0 ? (player.x + spawnOffset) : (player.x - spawnOffset);
       const e = {
         type: type,
-        x: player.x + width + 200 + Math.random() * 400,
+        x: Math.max(32, Math.min(worldWidth - 64, spawnX)),
         y: 0,
         vx: 0,
         vy: 0,
@@ -1003,6 +1018,11 @@
         // the player.
         attackTimer: 0,
         shootTimer: 0,
+        windupTimer: 0,
+        queuedShot: false,
+        targetDir: -1,
+        contactDamageTimer: 0,
+        preferredRange: 120,
         baseY: 0,
         phase: Math.random() * Math.PI * 2,
         // Horizontal direction: -1 moves left, 1 moves right.  All
@@ -1012,7 +1032,8 @@
         // Timer controlling when the enemy will randomly change
         // direction.  A random initial value is used so enemies do not
         // synchronise their turns.
-        changeDirTimer: 1000 + Math.random() * 2000
+        changeDirTimer: 1200 + Math.random() * 1600,
+        pathRecalcTimer: 0
       };
       // Track whether the enemy is on the ground/platform.  Only used for
       // non‑floating enemies; ghosts float so this flag is ignored.
@@ -1021,28 +1042,31 @@
         e.y = groundY - e.height;
         e.health = 3;
         e.maxHealth = 3;
-        // Base speed magnitude.  Direction is controlled separately via e.dir.
-        e.speed = 1 + Math.random() * 0.4;
+        e.speed = 1.05 + Math.random() * 0.28;
+        e.preferredRange = 28;
       } else if (type === 'ghost') {
-        // Ghosts float above the ground.  Store a baseline y and phase
-        // for sinusoidal hovering.
-        e.baseY = groundY - e.height - 80 - Math.random()*150;
+        // Ghosts float above the ground and bob while weaving around the player.
+        e.baseY = groundY - e.height - 90 - Math.random() * 140;
         e.y = e.baseY;
         e.health = 2;
         e.maxHealth = 2;
-        e.speed = 1.2;
+        e.speed = 0.95 + Math.random() * 0.2;
+        e.preferredRange = 90;
+        e.changeDirTimer = 900 + Math.random() * 900;
       } else if (type === 'robot') {
         e.y = groundY - e.height;
         e.health = 4;
         e.maxHealth = 4;
-        e.speed = 0.8;
-        e.shootTimer = 2000 + Math.random()*1000;
+        e.speed = 0.85;
+        e.preferredRange = 240;
+        e.shootTimer = 1200 + Math.random() * 700;
       } else if (type === 'alien') {
         e.y = groundY - e.height;
         e.health = 3;
         e.maxHealth = 3;
-        e.speed = 1.5;
-        e.shootTimer = 2500 + Math.random()*1000;
+        e.speed = 1.2;
+        e.preferredRange = 190;
+        e.shootTimer = 1000 + Math.random() * 700;
       }
       // Modify enemy health based on difficulty settings.  On easy
       // difficulty reduce hit points by one (minimum 1).  On hard
@@ -1063,35 +1087,27 @@
      * gold and randomly drops an ammo crate for a random weapon type.
      */
     function spawnPickups(enemy) {
-      const goldCount = Math.floor(Math.random()*5)+4; // 4–8 gold
+      const goldByType = { zombie: [4, 7], ghost: [6, 10], robot: [5, 8], alien: [5, 9] };
+      const [goldMin, goldMax] = goldByType[enemy.type] || [4, 7];
+      const goldCount = goldMin + Math.floor(Math.random() * (goldMax - goldMin + 1));
       pickups.push({ x: enemy.x, y: groundY - 20, width:12, height:12, type:'gold', value: goldCount });
-      // 60% chance to drop ammo.  The ammo type depends on the enemy
-      // defeated so that certain foes tend to drop relevant resources.
-      // Robots drop rifle magazines and batteries; zombies drop pistol
-      // bullets and rifle magazines; ghosts drop no ammo (only gold);
-      // aliens drop shotgun shells and batteries.  Choose randomly from
-      // the allowed types for the enemy.
-      if (Math.random() < 0.6) {
-        let allowed = [];
-        if (enemy.type === 'robot') {
-          allowed = ['rifle','laser'];
-        } else if (enemy.type === 'zombie') {
-          allowed = ['pistol','rifle'];
-        } else if (enemy.type === 'ghost') {
-          allowed = []; // ghosts only drop gold
-        } else if (enemy.type === 'alien') {
-          allowed = ['shotgun','laser'];
-        } else {
-          allowed = WEAPON_ORDER.slice();
-        }
-        if (allowed.length > 0) {
-          const key = allowed[Math.floor(Math.random()*allowed.length)];
-          pickups.push({ x: enemy.x+16, y: groundY - 20, width:12, height:12, type:'ammo', ammoType:key, value: WEAPONS[key].ammoDrop });
+
+      const ammoDropChance = {
+        easy:   { zombie: 0.7, ghost: 0.0, robot: 0.8, alien: 0.75 },
+        normal: { zombie: 0.62, ghost: 0.0, robot: 0.72, alien: 0.66 },
+        hard:   { zombie: 0.54, ghost: 0.0, robot: 0.64, alien: 0.58 }
+      };
+      const difficultyTable = ammoDropChance[SETTINGS.difficulty] || ammoDropChance.normal;
+      if (Math.random() < (difficultyTable[enemy.type] ?? 0.6)) {
+        const table = ENEMY_DROP_TABLES[enemy.type];
+        const key = weightedChoice(table);
+        if (key && WEAPONS[key]) {
+          pickups.push({ x: enemy.x + 16, y: groundY - 20, width:12, height:12, type:'ammo', ammoType:key, value: WEAPONS[key].ammoDrop });
         }
       }
-      // Occasionally drop a health pack (about 20% chance).  Health packs
-      // provide a modest heal to the player and are deliberately rare.
-      if (Math.random() < 0.2) {
+
+      const healthDropChance = SETTINGS.difficulty === 'easy' ? 0.22 : (SETTINGS.difficulty === 'hard' ? 0.1 : 0.16);
+      if (Math.random() < healthDropChance) {
         pickups.push({ x: enemy.x + 8, y: groundY - 20, width:12, height:12, type:'health', value: 5 });
       }
     }
@@ -1151,7 +1167,7 @@
     function damagePlayer(amount) {
       if (player.invulnTimer > 0) return false;
       player.health -= amount;
-      player.invulnTimer = 450;
+      player.invulnTimer = 520;
       player.hitFlashTimer = 180;
       damageOverlayTimer = 120;
       screenShakeTimer = Math.max(screenShakeTimer, 130);
@@ -1490,123 +1506,126 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
       for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
         e.animTime += dt;
-        // Decrease attack timer if currently attacking
         if (e.attackTimer > 0) e.attackTimer = Math.max(0, e.attackTimer - dt);
-        // Randomly change horizontal direction on a timer to make roaming behaviour
-        e.changeDirTimer -= dt;
-        if (e.changeDirTimer <= 0) {
-          e.dir = (Math.random() < 0.5 ? -1 : 1);
-          e.changeDirTimer = 1000 + Math.random() * 2000;
-        }
-        // Save previous positions for collision resolution
+        if (e.contactDamageTimer > 0) e.contactDamageTimer = Math.max(0, e.contactDamageTimer - dt);
+
         const prevX = e.x;
         const prevY = e.y;
-        // Horizontal movement will be overridden if climbing a ladder
-        e.x += e.speed * e.dir;
-        // Handle movement and gravity for non‑floating enemies
-        if (e.type !== 'ghost') {
+        const playerMidY = player.y + player.height / 2;
+        const enemyMidY = e.y + e.height / 2;
+        const dx = player.x - e.x;
+        const absDx = Math.abs(dx);
+
+        e.changeDirTimer -= dt;
+        e.pathRecalcTimer -= dt;
+
+        if (e.type === 'ghost') {
+          if (e.pathRecalcTimer <= 0) {
+            const comfort = e.preferredRange;
+            if (absDx > comfort + 20) e.dir = dx < 0 ? -1 : 1;
+            else if (absDx < comfort - 20) e.dir = dx < 0 ? 1 : -1;
+            else if (Math.random() < 0.15) e.dir *= -1;
+            e.pathRecalcTimer = 220 + Math.random() * 220;
+          }
+          e.phase += dt * 0.0017;
+          const bob = Math.sin(e.phase * 4) * 22;
+          const chaseYOffset = Math.max(-40, Math.min(45, (playerMidY - enemyMidY) * 0.16));
+          e.baseY += ((groundY - e.height - 120 + chaseYOffset) - e.baseY) * 0.04;
+          e.x += e.speed * e.dir;
+          e.y = e.baseY + bob;
+          if (e.y > groundY - e.height - 12) e.y = groundY - e.height - 12;
+        } else {
+          if (e.pathRecalcTimer <= 0) {
+            if (e.type === 'zombie') {
+              e.dir = dx < 0 ? -1 : 1;
+            } else {
+              const prefer = e.preferredRange;
+              if (absDx > prefer + 24) e.dir = dx < 0 ? -1 : 1;
+              else if (absDx < prefer - 24) e.dir = dx < 0 ? 1 : -1;
+              else if (Math.random() < 0.18) e.dir *= -1;
+            }
+            e.pathRecalcTimer = 180 + Math.random() * 180;
+          }
+          if (e.changeDirTimer <= 0 && Math.random() < 0.25) {
+            e.dir *= -1;
+            e.changeDirTimer = 1000 + Math.random() * 1000;
+          }
+
+          e.x += e.speed * e.dir;
+
           let climbing = false;
-          // Only certain enemy types can climb ladders.  Robots and
-          // aliens will attempt to climb toward the player's vertical
-          // position when intersecting a ladder.  Zombies are limited to
-          // walking and jumping and cannot climb.
           if (e.type === 'robot' || e.type === 'alien') {
             for (let li = 0; li < ladders.length; li++) {
               const lad = ladders[li];
-              // simple AABB overlap check
-              if (e.x + e.width > lad.x && e.x < lad.x + lad.width &&
-                  e.y + e.height > lad.y && e.y < lad.y + lad.height) {
-                // If the player is above the enemy's centre, climb up; if below, climb down
-                const enemyMidY = e.y + e.height / 2;
-                const playerMidY = player.y + player.height / 2;
-                const climbSpeed = 1.5;
-                // align horizontally to the ladder centre to avoid falling off
+              const closeToLadder = Math.abs((e.x + e.width / 2) - (lad.x + lad.width / 2)) < 18;
+              const inVerticalSpan = e.y + e.height > lad.y && e.y < lad.y + lad.height;
+              const wantVertical = Math.abs(playerMidY - enemyMidY) > 30;
+              if (closeToLadder && inVerticalSpan && wantVertical) {
                 e.x = lad.x + lad.width / 2 - e.width / 2;
-                // Determine climb direction
-                if (playerMidY < enemyMidY - 8) {
-                  e.vy = -climbSpeed;
-                  climbing = true;
-                } else if (playerMidY > enemyMidY + 8) {
-                  e.vy = climbSpeed;
-                  climbing = true;
-                }
+                const climbSpeed = e.type === 'alien' ? 1.7 : 1.35;
+                e.vy = playerMidY < enemyMidY ? -climbSpeed : climbSpeed;
+                climbing = true;
                 break;
               }
             }
           }
-          // If not climbing, apply gravity and horizontal motion
-          if (!climbing) {
-            // Apply gravity
-            e.vy += 0.25;
-          }
-          // Apply vertical velocity
+
+          if (!climbing) e.vy += 0.25;
           e.y += e.vy;
           e.onGround = false;
-          // Resolve collisions with obstacles for landing and side collisions
+
           for (let oi = 0; oi < obstacles.length; oi++) {
             const ob = obstacles[oi];
-            // Vertical landing
-            if (prevY + e.height <= ob.y && e.y + e.height >= ob.y &&
-                e.x + e.width > ob.x && e.x < ob.x + ob.width) {
+            if (prevY + e.height <= ob.y && e.y + e.height >= ob.y && e.x + e.width > ob.x && e.x < ob.x + ob.width) {
               e.y = ob.y - e.height;
               e.vy = 0;
               e.onGround = true;
             }
-            // Horizontal collision: if intersecting after movement
             if (rectIntersect(e, ob)) {
               if (prevX + e.width <= ob.x) {
-                // Came from left, push left
                 e.x = ob.x - e.width;
-                // Try to jump over the obstacle with some probability; otherwise reverse direction
-                if (Math.random() < 0.5) {
-                  e.vy = -6;
-                } else {
-                  e.dir *= -1;
-                }
+                if (e.onGround && (e.type === 'zombie' || e.type === 'alien')) e.vy = -5.6;
+                else e.dir = -1;
               } else if (prevX >= ob.x + ob.width) {
-                // Came from right
                 e.x = ob.x + ob.width;
-                if (Math.random() < 0.5) {
-                  e.vy = -6;
-                } else {
-                  e.dir *= -1;
-                }
+                if (e.onGround && (e.type === 'zombie' || e.type === 'alien')) e.vy = -5.6;
+                else e.dir = 1;
               }
             }
           }
-          // Land on ground if falling below ground level
+
           if (!e.onGround && e.y + e.height >= groundY) {
             e.y = groundY - e.height;
             e.vy = 0;
             e.onGround = true;
           }
-        } else {
-          // Ghosts float up and down while moving horizontally
-          e.phase += dt * 0.002;
-          e.y = e.baseY + Math.sin(e.phase * 2) * 30;
         }
-        // Shooting logic for armed enemies
+
         if (e.type === 'robot' || e.type === 'alien') {
-          e.shootTimer -= dt;
-          if (e.shootTimer <= 0) {
-            const dir = player.x < e.x ? -1 : 1;
-            // Determine bullet speed and damage based on enemy type
-            let bulletSpeed = 4;
-            let dmg = 6;
-            if (e.type === 'robot') { bulletSpeed = 4; dmg = 8; }
-            if (e.type === 'alien') { bulletSpeed = 5; dmg = 6; }
-            // Adjust bullet damage based on difficulty
-            if (SETTINGS.difficulty === 'easy') dmg = Math.max(1, dmg - 2);
-            else if (SETTINGS.difficulty === 'hard') dmg += 2;
-            enemyBullets.push({ x: e.x + (dir < 0 ? -8 : e.width), y: e.y + e.height / 2 - 2, vx: dir * bulletSpeed, vy: 0, width: 8, height: 4, damage: dmg, from: 'enemy' });
-            // Set an attack timer so that drawing can show an attack frame
-            e.attackTimer = 200;
-            // Reset the shoot timer with different cadence for each type
-            if (e.type === 'robot') e.shootTimer = 2000 + Math.random() * 1000;
-            else e.shootTimer = 2500 + Math.random() * 1000;
+          if (!e.queuedShot) {
+            e.shootTimer -= dt;
+            if (e.shootTimer <= 0) {
+              e.targetDir = dx < 0 ? -1 : 1;
+              e.queuedShot = true;
+              e.windupTimer = e.type === 'robot' ? 420 : 300;
+              e.attackTimer = e.windupTimer;
+            }
+          } else {
+            e.windupTimer -= dt;
+            if (e.windupTimer <= 0) {
+              let bulletSpeed = e.type === 'robot' ? 4.1 : 5.1;
+              let dmg = e.type === 'robot' ? 8 : 6;
+              if (SETTINGS.difficulty === 'easy') dmg = Math.max(1, dmg - 2);
+              else if (SETTINGS.difficulty === 'hard') dmg += 2;
+              enemyBullets.push({ x: e.x + (e.targetDir < 0 ? -8 : e.width), y: e.y + e.height / 2 - 2, vx: e.targetDir * bulletSpeed, vy: 0, width: 8, height: 4, damage: dmg, from: 'enemy' });
+              e.queuedShot = false;
+              e.attackTimer = 140;
+              if (e.type === 'robot') e.shootTimer = 1900 + Math.random() * 900;
+              else e.shootTimer = 2200 + Math.random() * 900;
+            }
           }
         }
-        // Remove enemies too far behind or ahead of the camera view
+
         if (e.x + e.width < player.x - width * 2 || e.x > player.x + width * 3) {
           enemies.splice(i, 1);
           continue;
@@ -1683,17 +1702,19 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
           damagePlayer(b.damage);
         }
       }
-      // Enemies vs player contact
+      // Enemies vs player contact with per-enemy contact cooldown so overlap
+      // does not rapidly drain HP.
       for (let i=enemies.length-1; i>=0; i--) {
         const e = enemies[i];
         if (rectIntersect(e, player)) {
-          // When an enemy collides with the player it deals damage and knocks
-          // the player slightly backwards.  Set the enemy into an attack
-          // state so the attack animation can be shown in drawGame().
-          if (damagePlayer(5)) {
-            if (player.x < e.x) player.x -= 10; else player.x += 10;
-            // Trigger attack animation for this enemy only when damage lands.
-            e.attackTimer = 200;
+          if (e.contactDamageTimer <= 0) {
+            const baseDamage = e.type === 'zombie' ? 5 : (e.type === 'ghost' ? 4 : (e.type === 'robot' ? 6 : 5));
+            if (damagePlayer(baseDamage)) {
+              const push = e.type === 'robot' ? 12 : 9;
+              if (player.x < e.x) player.x -= push; else player.x += push;
+              e.attackTimer = 200;
+              e.contactDamageTimer = e.type === 'ghost' ? 920 : 780;
+            }
           }
         }
       }
@@ -1736,23 +1757,20 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
       screenShakeTimer = Math.max(0, screenShakeTimer - dt);
       damageOverlayTimer = Math.max(0, damageOverlayTimer - dt);
 
-      // Spawn new enemies periodically
+      // Spawn new enemies periodically with a smoother ramp and cap to avoid
+      // sudden overcrowding.
       spawnCooldown -= dt;
       if (spawnCooldown <= 0 && gameState === 'play') {
-        spawnEnemy();
-        // Base spawn cooldown in milliseconds.  As the game progresses the
-        // interval between spawns decreases to ramp up the pressure.  The
-        // reduction factor scales linearly over two minutes down to a
-        // minimum of 40% of the base interval.  Difficulty still scales
-        // the base value before the time factor is applied.
-        let baseCooldown = 1200 + Math.random() * 1200;
-        // Adjust spawn rate by difficulty: easy spawns slower, hard spawns faster
-        if (SETTINGS.difficulty === 'easy') baseCooldown *= 1.4;
-        else if (SETTINGS.difficulty === 'hard') baseCooldown *= 0.7;
-        // Apply time‑based factor.  After two minutes the factor bottoms out
-        // at 0.4.  Prior to that it linearly decreases from 1 to 0.4.
-        const timeFactor = Math.max(0.4, 1 - (elapsedTime / 120000));
-        spawnCooldown = baseCooldown * timeFactor;
+        const maxEnemies = SETTINGS.difficulty === 'easy' ? 8 : (SETTINGS.difficulty === 'hard' ? 14 : 11);
+        if (enemies.length < maxEnemies) {
+          spawnEnemy();
+        }
+        const difficultyScale = SETTINGS.difficulty === 'easy' ? 1.22 : (SETTINGS.difficulty === 'hard' ? 0.82 : 1);
+        const progress = Math.min(1, elapsedTime / 180000);
+        const minCooldown = 650;
+        const maxCooldown = 1650;
+        const cooldown = maxCooldown - (maxCooldown - minCooldown) * progress;
+        spawnCooldown = (cooldown + Math.random() * 300) * difficultyScale;
       }
     }
 
@@ -1956,6 +1974,19 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
             else if (e.type === 'alien') frames = ANIMATIONS.alienWalk;
           }
         }
+        if (e.queuedShot && e.windupTimer > 0) {
+          const chargePct = Math.max(0, Math.min(1, 1 - (e.windupTimer / (e.type === 'robot' ? 420 : 300))));
+          const aimDir = e.targetDir || (player.x < e.x ? -1 : 1);
+          const eyeX = px + (aimDir < 0 ? 2 : e.width - 2);
+          const eyeY = e.y + e.height / 2;
+          ctx.strokeStyle = e.type === 'robot' ? `rgba(255,170,90,${0.25 + chargePct * 0.55})` : `rgba(130,255,130,${0.2 + chargePct * 0.5})`;
+          ctx.lineWidth = e.type === 'robot' ? 2 : 1.5;
+          ctx.beginPath();
+          ctx.moveTo(eyeX, eyeY);
+          ctx.lineTo(eyeX + aimDir * (28 + chargePct * 20), eyeY);
+          ctx.stroke();
+        }
+
         if (sheetLoaded && frames) {
           const idx = Math.floor(e.animTime / 150) % frames.length;
           const f = frames[idx];
