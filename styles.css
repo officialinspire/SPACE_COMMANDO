@@ -26,6 +26,8 @@ html, body {
 :root {
   --controls-height: 120px;
   --vh: 1vh; /* dynamic vh set from JS for mobile URL-bar safe sizing */
+  --ui-panel-bg: rgba(4, 10, 22, 0.9);
+  --ui-panel-border: rgba(110, 215, 255, 0.78);
 }
 
 /* -------------------------------------------------------------------
@@ -102,12 +104,14 @@ html, body {
 
 /* Base styling for control buttons */
 #mobile-controls .control-btn {
-  background: linear-gradient(180deg, #f2da78 0%, #d5b84a 100%);
-  border: 3px solid #9f8228;
+  background: linear-gradient(180deg, #f7e395 0%, #d8ba52 100%);
+  border: 3px solid #8e7323;
   color: #111;
   padding: 6px 8px;
   margin: 0;
   font-size: 12px;
+  letter-spacing: 0.4px;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.45);
   width: 84px;
   min-width: 84px;
   height: 58px;
@@ -121,7 +125,7 @@ html, body {
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  box-shadow: 0 5px 0 #69541d, inset 0 1px 0 rgba(255,255,255,0.5), 0 0 10px rgba(227, 201, 91, 0.2);
+  box-shadow: 0 5px 0 #61501c, inset 0 1px 0 rgba(255,255,255,0.55), 0 0 12px rgba(227, 201, 91, 0.28);
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
   transition: transform 90ms cubic-bezier(0.34, 1.56, 0.64, 1),
@@ -131,6 +135,11 @@ html, body {
               border-color 90ms ease;
   position: relative;
   filter: drop-shadow(0 0 4px rgba(227, 201, 91, 0.35));
+}
+
+#mobile-controls .control-btn:focus-visible {
+  outline: 3px solid rgba(130, 220, 255, 0.95);
+  outline-offset: 2px;
 }
 
 
@@ -501,8 +510,8 @@ background: #000;
 /* --- Tactile hover/touch feedback --- */
 /* Simulate hover on touch start for initial feedback */
 #mobile-controls .control-btn:hover {
-  background: linear-gradient(180deg, #f8e28a 0%, #ddc057 100%);
-  border-color: #b89a35;
+  background: linear-gradient(180deg, #fae9ab 0%, #e4c45c 100%);
+  border-color: #c19f39;
   filter: drop-shadow(0 0 8px rgba(227, 201, 91, 0.7)) brightness(1.05);
   transform: translateY(-1px);
   box-shadow: 0 6px 0 #6d5920, inset 0 2px 0 rgba(255,255,255,0.45), 0 0 16px rgba(227, 201, 91, 0.2);
@@ -516,6 +525,34 @@ background: #000;
   filter: drop-shadow(0 0 10px rgba(227, 201, 91, 0.9)) brightness(0.84);
   background: linear-gradient(180deg, #d3b447 0%, #c19f2f 100%);
   border-color: #8f7222;
+}
+
+#mobile-controls .control-btn.pressed::after {
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.3), inset 0 0 10px rgba(0,0,0,0.35);
+}
+
+/* Generic panel classes used by HTML overlays (future-proofing for readable text blocks) */
+.hud,
+.menu-overlay {
+  text-shadow: 0 2px 3px rgba(0,0,0,0.75);
+}
+
+.menu-overlay {
+  backdrop-filter: blur(2px);
+}
+
+.menu-overlay .option {
+  min-width: 220px;
+  text-align: center;
+  border: 1px solid rgba(120, 200, 255, 0.25);
+  border-radius: 6px;
+  background: rgba(4, 10, 22, 0.55);
+}
+
+.menu-overlay .selected {
+  background: rgba(36, 78, 108, 0.7);
+  border-color: rgba(255, 217, 96, 0.8);
+  color: #fff3b4;
 }
 
 /* Add a subtle pulse effect when button is being pressed */
