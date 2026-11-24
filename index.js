@@ -104,26 +104,10 @@
   const ANIMATIONS = {
     // Player running frames (row 0, cols 0–3)
     playerRun: [ {sx:0, sy:0}, {sx:32, sy:0}, {sx:64, sy:0}, {sx:96, sy:0} ],
-    // Player shooting frames (row 0, cols 4–6). These show muzzle flash.
-    playerShoot: [ {sx:128, sy:0}, {sx:160, sy:0}, {sx:192, sy:0} ],
-    // Player idle frame (use first run frame)
     playerIdle: [ {sx:0, sy:0} ],
-    // Player jumping frames (row 1, cols 0–1). These show the commando in mid‑air.
     playerJump: [ {sx:0, sy:32}, {sx:32, sy:32} ],
-    // Player crouching frames.  Because the sprite sheet does not
-    // include dedicated crouch poses, reuse the idle frame for a
-    // simple crouch.  When drawing these frames while ducking the
-    // renderer will crop off the top portion of the sprite based on
-    // player.height.  This array remains separate for clarity and
-    // future extensibility.
+    // The current atlas reuses standing frames with a crop for crouching.
     playerCrouch: [ {sx:0, sy:0} ],
-    // Player crouch shooting frames.  Reuse the standing shoot frames.
-    // These frames include muzzle flash.  When ducking the draw
-    // function crops the top portion so the commando appears crouched.
-    playerCrouchShoot: [ {sx:128, sy:0}, {sx:160, sy:0}, {sx:192, sy:0} ],
-    // Player crouch walking frames.  Use the running frames to imply
-    // movement while crouched.  As with other crouch animations the
-    // draw routine crops the top based on player.height.
     playerCrouchWalk: [ {sx:0, sy:0}, {sx:32, sy:0}, {sx:64, sy:0}, {sx:96, sy:0} ],
     // Robot walking frames (row 2, cols 0–3)
     robotWalk: [ {sx:0, sy:64}, {sx:32, sy:64}, {sx:64, sy:64}, {sx:96, sy:64} ],
@@ -171,6 +155,23 @@
     // seconds slows the pace relative to the other guns.  The high
     // damage per shot reflects the weapon's futuristic lethality.
     laser:   { name:'Laser',   cost:200, damage:11, magazine:30, reloadTime:4000, bulletSpeed:13, fireRate:60, auto:true,  ammoDrop:1 }
+  };
+
+  // Velocities and acceleration are expressed per simulation tick.
+  const STEP_MS = 1000 / 60;
+  const MAX_FRAME_MS = 5 * STEP_MS;
+  const MOVEMENT = {
+    runSpeed: 3.35, crouchSpeed: 1.65, climbSpeed: 2.5,
+    groundAccel: 0.9, groundBrake: 1.15,
+    airAccel: 0.46, airBrake: 0.18,
+    jumpSpeed: 8, gravity: 0.35,
+    jumpBufferMs: 110, coyoteMs: 85
+  };
+  const SHOT_FEEDBACK = {
+    pistol:  { recoil: 1.4, duration: 85,  trail: 9 },
+    rifle:   { recoil: 1.8, duration: 70,  trail: 13 },
+    shotgun: { recoil: 3.2, duration: 125, trail: 6 },
+    laser:   { recoil: 0.65, duration: 48, trail: 24 }
   };
 
   const ENEMY_DROP_TABLES = {
@@ -274,6 +275,27 @@
       a.volume = 0.6;
     }
   });
+
+  // Automatic weapons rotate through a fixed number of overlapping voices.
+  const shotVoices = {
+    pistol: [pistolSfx],
+    rifle: [rifleSfx, ...Array.from({ length: 3 }, () => rifleSfx.cloneNode())],
+    shotgun: [shotgunSfx],
+    laser: [laserSfx, ...Array.from({ length: 3 }, () => laserSfx.cloneNode())]
+  };
+  const nextShotVoice = { pistol: 0, rifle: 0, shotgun: 0, laser: 0 };
+  for (const key of ['rifle', 'laser']) {
+    shotVoices[key].forEach(voice => { voice.volume = key === 'rifle' ? 0.28 : 0.22; });
+  }
+
+  function playShot(key) {
+    const voices = shotVoices[key];
+    const index = nextShotVoice[key];
+    const voice = voices[index];
+    nextShotVoice[key] = (index + 1) % voices.length;
+    voice.currentTime = 0;
+    voice.play().catch(() => {});
+  }
 
   // Track total elapsed play time in milliseconds.  This value is incremented
   // during gameplay and used to scale enemy spawn rates and mix of enemy
@@ -393,11 +415,48 @@
         twinkle: Math.random() * Math.PI * 2
       });
     }
-    // Input state: track whether keys are pressed
-    const keys = {};
-    // Edge-trigger bookkeeping for gameplay actions that should only
-    // fire once per press (jump/reload and semi-auto shooting).
-    let prevGameplayInput = { jump: false, shoot: false, reload: false };
+    // Track keyboard and touch independently so releasing either input
+    // source cannot cancel a key still held by the other.
+    const keyboardKeys = new Map();
+    const touchKeys = new Map();
+    const pressedKeys = new Set();
+    let clearTouchInputs = () => {};
+    let jumpBuffer = 0;
+    let coyoteTime = 0;
+    let accumulator = 0;
+    let lastTime = null;
+
+    function gameplayKey(key) {
+      if (key === ' ' || key === 'Spacebar') return 'Space';
+      return key.length === 1 ? key.toLowerCase() : key;
+    }
+
+    function held(key) {
+      return keyboardKeys.has(key) || touchKeys.has(key);
+    }
+
+    function pressGameplayKey(source, key) {
+      const wasHeld = held(key);
+      source.set(key, (source.get(key) || 0) + 1);
+      if (!wasHeld && gameState === 'play') pressedKeys.add(key);
+    }
+
+    function releaseGameplayKey(source, key) {
+      const count = source.get(key) || 0;
+      if (count <= 1) source.delete(key);
+      else source.set(key, count - 1);
+    }
+
+    function resetGameplayInput() {
+      keyboardKeys.clear();
+      clearTouchInputs();
+      pressedKeys.clear();
+      jumpBuffer = 0;
+      coyoteTime = 0;
+      accumulator = 0;
+      lastTime = null;
+      Object.values(shotVoices).forEach(voices => voices.forEach(voice => voice.pause()));
+    }
 
     /**
      * Handle menu navigation and selection. When the shop is open,
@@ -405,7 +464,7 @@
      * weapon if the player has enough gold. P toggles the shop.
      */
     function handleMenuInput(e) {
-      // Handle input based on the current game state
+      const previousState = gameState;
       if (gameState === 'shop') {
         // Purchase menu navigation for both weapons and ammo items
         if (e.key === 'ArrowUp') {
@@ -418,6 +477,7 @@
             const key = item.key;
             const w = WEAPONS[key];
             const alreadyOwned = !!player.ownedWeapons[key];
+            const previousWeapon = player.weapon;
             // Enter on a weapon row buys+equips if not owned, otherwise just equips.
             if (alreadyOwned) {
               player.weapon = key;
@@ -428,6 +488,13 @@
               // refill clip and grant two extra magazines of reserve
               player.ammoInClip[key] = w.magazine;
               player.reserveAmmo[key] += w.magazine * 2;
+            }
+            if (previousWeapon !== player.weapon) player.recoilTimer = 0;
+            if (player.reloading && player.reloadWeaponKey !== player.weapon) {
+              // Switching away cancels the pending reload without spending reserve.
+              player.reloading = false;
+              player.reloadTimer = 0;
+              player.reloadWeaponKey = null;
             }
           } else if (item.type === 'ammo') {
             // purchase ammunition
@@ -601,30 +668,26 @@
           } catch (err) {}
         }
       }
+      if (gameState !== previousState && (previousState === 'play' || gameState === 'play')) {
+        resetGameplayInput();
+      }
     }
 
-    document.addEventListener('keydown', (e) => {
-      keys[e.key] = true;
-      // Prevent default scrolling on arrow keys and space.  Include both
-      // space representations (' ', 'Space', 'Spacebar') to ensure the
-      // browser never scrolls when jumping.
-      if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' ','Space','Spacebar'].includes(e.key)) {
-        e.preventDefault();
-      }
-      // Ignore browser key-repeat for menu actions to avoid duplicate
-      // selections, purchases and sound effects from a long press.
-      if (!e.repeat) {
-        handleMenuInput(e);
-      }
+    const scrollKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'];
+    document.addEventListener('keydown', e => {
+      const key = gameplayKey(e.key);
+      if (scrollKeys.includes(key)) e.preventDefault();
+      if (e.repeat || keyboardKeys.has(key)) return;
+      if (gameState === 'play') pressGameplayKey(keyboardKeys, key);
+      handleMenuInput(e);
     });
-    document.addEventListener('keyup', (e) => {
-      // Clear key state
-      keys[e.key] = false;
-      // Also prevent default on release of movement keys to avoid scroll
-      if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' ','Space','Spacebar'].includes(e.key)) {
-        e.preventDefault();
-      }
+    document.addEventListener('keyup', e => {
+      const key = gameplayKey(e.key);
+      releaseGameplayKey(keyboardKeys, key);
+      if (scrollKeys.includes(key)) e.preventDefault();
     });
+    window.addEventListener('blur', resetGameplayInput);
+    document.addEventListener('visibilitychange', resetGameplayInput);
     // ---------------------------------------------------------------------
     // Mobile controls
     const isMobile =
@@ -637,7 +700,10 @@
         ctrlBar.style.display = 'flex';
         updateControlsHeight();
         window.addEventListener('resize', updateControlsHeight);
-        window.addEventListener('orientationchange', () => setTimeout(updateControlsHeight, 60));
+        window.addEventListener('orientationchange', () => {
+          resetGameplayInput();
+          setTimeout(updateControlsHeight, 60);
+        });
         if (window.visualViewport) {
           window.visualViewport.addEventListener('resize', updateControlsHeight);
         }
@@ -646,25 +712,7 @@
         const menuKeys = new Set(['Enter', 'Escape', 'p', 'P', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
         const pointerToButton = new Map();
         const activePointersByButton = new Map();
-        const activeCountByKey = new Map();
         let lastTouchInteractionAt = 0;
-
-        const setKeyState = (keyName, pressed) => {
-          if (pressed) {
-            const next = (activeCountByKey.get(keyName) || 0) + 1;
-            activeCountByKey.set(keyName, next);
-            keys[keyName] = true;
-            return;
-          }
-          const next = Math.max((activeCountByKey.get(keyName) || 0) - 1, 0);
-          if (next === 0) {
-            activeCountByKey.delete(keyName);
-            keys[keyName] = false;
-          } else {
-            activeCountByKey.set(keyName, next);
-            keys[keyName] = true;
-          }
-        };
 
         const pressButton = (btn, keyName, pointerId, event, pointerType) => {
           if (event.cancelable) event.preventDefault();
@@ -677,7 +725,7 @@
           activePointersByButton.set(btn, setForButton);
           pointerToButton.set(pointerId, btn);
           if (setForButton.size === 1) btn.classList.add('pressed');
-          setKeyState(keyName, true);
+          pressGameplayKey(touchKeys, keyName);
 
           if (pointerType === 'touch' || pointerType === 'pen') {
             lastTouchInteractionAt = performance.now();
@@ -698,7 +746,7 @@
 
           setForButton.delete(pointerId);
           pointerToButton.delete(pointerId);
-          setKeyState(keyName, false);
+          releaseGameplayKey(touchKeys, keyName);
 
           if (setForButton.size === 0) {
             activePointersByButton.delete(btn);
@@ -706,15 +754,12 @@
           }
         };
 
-        const clearAllMobileInputs = () => {
+        clearTouchInputs = () => {
           pointerToButton.forEach((btn, pointerId) => {
             const keyName = btn.getAttribute('data-key');
             releaseButton(btn, keyName, pointerId);
           });
-          activeCountByKey.forEach((_, keyName) => {
-            keys[keyName] = false;
-          });
-          activeCountByKey.clear();
+          touchKeys.clear();
           activePointersByButton.clear();
           pointerToButton.clear();
           buttons.forEach((btn) => btn.classList.remove('pressed'));
@@ -772,11 +817,6 @@
             releaseButton(btn, keyName, event.pointerId, event);
           }
         }, { passive: false });
-
-        window.addEventListener('blur', clearAllMobileInputs);
-        document.addEventListener('visibilitychange', () => {
-          if (document.hidden) clearAllMobileInputs();
-        });
 
         ctrlBar.addEventListener('click', (event) => {
           if (performance.now() - lastTouchInteractionAt < 450) {
@@ -895,6 +935,9 @@
       reloadTimer: 0,
       reloadWeaponKey: null,
       shootCooldown: 0,
+      recoilTimer: 0,
+      recoilUp: false,
+      recoilFacing: 1,
       facing: 1,
       animTime: 0
       ,
@@ -962,6 +1005,7 @@
       player.reloadTimer = 0;
       player.reloadWeaponKey = null;
       player.shootCooldown = 0;
+      player.recoilTimer = 0;
       player.facing = 1;
       player.animTime = 0;
       player.onLadder = false;
@@ -969,8 +1013,7 @@
       player.isDucking = false;
       player.invulnTimer = 0;
       player.hitFlashTimer = 0;
-      prevGameplayInput = { jump: false, shoot: false, reload: false };
-      Object.keys(keys).forEach((k) => { keys[k] = false; });
+      resetGameplayInput();
       menuSelection = 0;
       mainMenuSelection = 0;
 
@@ -1266,6 +1309,7 @@
       } catch (err) {}
       if (player.health <= 0) {
         gameState = 'gameover';
+        resetGameplayInput();
         // Transition to menu track on death so gameover/start screens
         // always use the same music context.
         fadeOut(gameMusic);
@@ -1274,337 +1318,243 @@
       return true;
     }
 
-    /**
-     * Update the game simulation. Handles input, movement, shooting,
-     * reloading, enemy AI, collisions and spawning. dt is elapsed
-     * milliseconds since the last update.
-     */
-    function updateGame(dt) {
-      // Accumulate elapsed play time each update for difficulty scaling
-      elapsedTime += dt;
-      const wKey = player.weapon;
-      const weapon = WEAPONS[wKey];
-      player.animTime += dt;
-      player.invulnTimer = Math.max(0, player.invulnTimer - dt);
-      player.hitFlashTimer = Math.max(0, player.hitFlashTimer - dt);
+    // Sweep the projectile center against a rectangle expanded by its
+    // half extents. Return the first fraction of the step in contact.
+    function projectileEntry(x, y, dx, dy, bullet, target) {
+      const left = target.x - bullet.width / 2;
+      const top = target.y - bullet.height / 2;
+      const right = target.x + target.width + bullet.width / 2;
+      const bottom = target.y + target.height + bullet.height / 2;
+      if ((!dx && (x < left || x > right)) || (!dy && (y < top || y > bottom))) {
+        return Infinity;
+      }
+      const tx = dx > 0 ? (left - x) / dx : (right - x) / dx;
+      const ty = dy > 0 ? (top - y) / dy : (bottom - y) / dy;
+      const exitX = dx > 0 ? (right - x) / dx : (left - x) / dx;
+      const exitY = dy > 0 ? (bottom - y) / dy : (top - y) / dy;
+      const entry = Math.max(0, dx ? tx : -Infinity, dy ? ty : -Infinity);
+      const exit = Math.min(1, dx ? exitX : Infinity, dy ? exitY : Infinity);
+      return entry <= exit ? entry : Infinity;
+    }
 
-      const jumpPressed = keys[' '] || keys['Space'] || keys['Spacebar'];
-      const shootPressed = keys['z'] || keys['Z'];
-      const reloadPressed = keys['x'] || keys['X'];
-      const jumpJustPressed = jumpPressed && !prevGameplayInput.jump;
-      const shootJustPressed = shootPressed && !prevGameplayInput.shoot;
-      const reloadJustPressed = reloadPressed && !prevGameplayInput.reload;
+    function projectileHit(bullet, x, y, dx, dy, targets) {
+      let time = Infinity;
+      let target = null;
+      for (const group of [obstacles, targets]) {
+        for (const candidate of group) {
+          const contact = projectileEntry(x, y, dx, dy, bullet, candidate);
+          if (contact < time) {
+            time = contact;
+            target = candidate;
+          }
+        }
+      }
+      return target ? { target, x: x + dx * time, y: y + dy * time } : null;
+    }
 
-      // Save the previous position for collision resolution.  Reset
-      // onGround so collisions can set it appropriately.  These
-      // variables are used later to detect vertical and horizontal
-      // collisions with obstacles.
-      const prevX = player.x;
-      const prevY = player.y;
-      const wasOnGround = player.onGround;
+    function advanceProjectiles(projectiles, targets, onHit) {
+      for (let i = projectiles.length - 1; i >= 0; i--) {
+        const b = projectiles[i];
+        const x = b.x + b.width / 2;
+        const y = b.y + b.height / 2;
+        let hit = null;
+        // Check the path to the muzzle on the first tick so the barrel
+        // cannot put a projectile on the far side of a thin blocker.
+        if (b.origin) {
+          const origin = b.origin;
+          hit = projectileHit(b, origin.x, origin.y, x - origin.x, y - origin.y, targets);
+          b.origin = null;
+        }
+        if (!hit) hit = projectileHit(b, x, y, b.vx, b.vy, targets);
+        if (hit) {
+          projectiles.splice(i, 1);
+          onHit(b, hit);
+          if (gameState !== 'play') return;
+          continue;
+        }
+        b.x += b.vx;
+        b.y += b.vy;
+        if (b.x < 0 || b.x > worldWidth || b.y < -50 || b.y > height + 50) {
+          projectiles.splice(i, 1);
+        }
+      }
+    }
+
+    // Canonical, right-facing anchor in the current 32px runtime atlas.
+    // The y coordinate is relative to the full sprite before crouch cropping.
+    function playerMuzzle(up) {
+      const offsetX = up ? 0 : 7 * player.facing;
+      const offsetY = up ? 0 : Math.max(2, 14.5 - (player.baseHeight - player.height));
+      return { x: player.x + player.width / 2 + offsetX, y: player.y + offsetY };
+    }
+
+    function fireRound(key, weapon, up) {
+      const muzzle = playerMuzzle(up);
+      const dirX = up ? 0 : player.facing;
+      const dirY = up ? -1 : 0;
+      const origin = { x: player.x + player.width / 2, y: player.y + player.height / 2 };
+      const pellets = weapon.pellets || 1;
+      const size = key === 'shotgun' ? 3 : (key === 'laser' ? 4 : 2);
+      for (let pellet = 0; pellet < pellets; pellet++) {
+        const angle = pellets > 1 ? (2 * pellet / (pellets - 1) - 1) * weapon.spread : 0;
+        bullets.push({
+          x: muzzle.x - size / 2, y: muzzle.y - size / 2,
+          vx: (dirX + dirY * angle) * weapon.bulletSpeed,
+          vy: (dirY - dirX * angle) * weapon.bulletSpeed,
+          width: size, height: size, damage: weapon.damage, weapon: key, origin
+        });
+      }
+      player.ammoInClip[key]--;
+      player.recoilTimer = SHOT_FEEDBACK[key].duration;
+      player.recoilUp = up;
+      player.recoilFacing = player.facing;
+      const kind = key === 'shotgun' || key === 'laser' ? key : 'default';
+      addShotFlash(muzzle.x, muzzle.y, dirX, dirY, kind);
+      spawnMuzzleParticles(muzzle.x, muzzle.y, dirX, dirY, kind);
+      playShot(key);
+    }
+
+    function updatePlayer(dt) {
+      const key = player.weapon;
+      const weapon = WEAPONS[key];
+      const wasGrounded = player.onGround;
+      const up = held('ArrowUp') || held('w');
+      const down = held('ArrowDown') || held('s');
+      const left = held('ArrowLeft') || held('a');
+      const right = held('ArrowRight') || held('d');
+      const shootTap = pressedKeys.has('z');
+      const trigger = shootTap || (weapon.auto && held('z'));
+      const aimingUp = up && (shootTap || held('z'));
+
+      if (pressedKeys.has('Space')) jumpBuffer = MOVEMENT.jumpBufferMs;
+      if (wasGrounded) coyoteTime = MOVEMENT.coyoteMs;
+
+      const bottom = player.y + player.height;
+      const ladder = ladders.find(lad =>
+        player.x + player.width > lad.x && player.x < lad.x + lad.width &&
+        bottom >= lad.y && player.y < lad.y + lad.height
+      );
+      player.onLadder = Boolean(ladder);
+      // Up+Fire aims upward. Down on the ground stays available for cover.
+      const climbIntent = !aimingUp && (up || (down && !held('z') && !shootTap && bottom < groundY));
+      player.isClimbing = Boolean(ladder && left === right && (climbIntent || player.isClimbing));
+      if (player.isClimbing) {
+        jumpBuffer = 0;
+        coyoteTime = 0;
+      }
+
+      const stand = { x: player.x, y: bottom - player.baseHeight, width: player.width, height: player.baseHeight };
+      const needsClearance = player.isDucking && !player.isClimbing;
+      const canStand = !needsClearance || !obstacles.some(obstacle => rectIntersect(stand, obstacle));
+      player.isDucking = !player.isClimbing && ((wasGrounded && down && !up) || !canStand);
+      player.height = player.isDucking ? Math.floor(player.baseHeight * 0.6) : player.baseHeight;
+      player.y = bottom - player.height;
+
+      if (player.isClimbing) {
+        player.vx = 0;
+        player.vy = climbIntent ? (up ? -MOVEMENT.climbSpeed : MOVEMENT.climbSpeed) : 0;
+      } else {
+        const direction = Number(right) - Number(left);
+        const speed = player.isDucking ? MOVEMENT.crouchSpeed : MOVEMENT.runSpeed;
+        const targetSpeed = direction * speed;
+        if (direction) player.facing = direction;
+        const change = targetSpeed - player.vx;
+        const slowing = !direction || Math.sign(player.vx) === direction && Math.abs(player.vx) > speed;
+        const acceleration = wasGrounded
+          ? (slowing ? MOVEMENT.groundBrake : MOVEMENT.groundAccel)
+          : (slowing ? MOVEMENT.airBrake : MOVEMENT.airAccel);
+        player.vx += Math.sign(change) * Math.min(Math.abs(change), acceleration);
+        if (jumpBuffer > 0 && coyoteTime > 0 && (canStand || !wasGrounded)) {
+          player.vy = -MOVEMENT.jumpSpeed;
+          jumpBuffer = 0;
+          coyoteTime = 0;
+          jumpSfx.currentTime = 0;
+          jumpSfx.play().catch(() => {});
+        }
+        player.vy += MOVEMENT.gravity;
+      }
+      if (pressedKeys.has('x') && !player.reloading && player.ammoInClip[key] < weapon.magazine && player.reserveAmmo[key] > 0) {
+        player.reloading = true;
+        player.reloadTimer = weapon.reloadTime;
+        player.reloadWeaponKey = key;
+      }
+
       player.onGround = false;
-
-      // Determine whether the player is currently overlapping a ladder.
-      // A ladder is a vertical rectangle defined in the ladders array.
-      let ladderFound = false;
-      for (let i=0; i<ladders.length; i++) {
-        const lad = ladders[i];
-        // Check for overlap with ladder.  Use >= when comparing the bottom of
-        // the player with the top of the ladder so the player can press
-        // down to transition into climbing from the exact platform edge.
-        if (player.x + player.width > lad.x && player.x < lad.x + lad.width &&
-            player.y + player.height >= lad.y && player.y < lad.y + lad.height) {
-          ladderFound = true;
-          break;
-        }
-      }
-      player.onLadder = ladderFound;
-      // Enter climbing mode when on a ladder and pressing up or down.  Exit
-      // climbing when not overlapping a ladder.  While climbing, gravity
-      // does not apply and vertical movement is controlled by key input.
-      const upPress = keys['ArrowUp'] || keys['w'] || keys['W'];
-      const downPress = keys['ArrowDown'] || keys['s'] || keys['S'];
-      if (player.onLadder && (upPress || downPress)) {
-        player.isClimbing = true;
-      } else if (!player.onLadder) {
-        player.isClimbing = false;
-      }
-
-      // Handle ducking: the player can crouch when on the ground and not
-      // climbing or reloading.  When ducking the player's height is
-      // reduced and their bottom remains anchored.  Ducking suppresses
-      // movement speed but still allows shooting.  Low‑walking is
-      // implemented by reducing moveSpeed while crouched.  We track the
-      // previous ducking state to adjust the player height and y only when
-      // transitioning to or from a crouch.
-      const wasDucking = player.isDucking;
-      player.isDucking = false;
-      if (!player.isClimbing && player.onGround && downPress && !player.reloading) {
-        player.isDucking = true;
-      }
-      // Transition into duck
-      if (player.isDucking && !wasDucking) {
-        // Reduce height to 60% of base and adjust y so the bottom stays on the ground
-        const newH = Math.floor(player.baseHeight * 0.6);
-        player.y += (player.height - newH);
-        player.height = newH;
-      } else if (!player.isDucking && wasDucking) {
-        // Stand back up: restore height and adjust y upward so the bottom remains
-        const newH = player.baseHeight;
-        player.y -= (newH - player.height);
-        player.height = newH;
-      }
-
-      // Movement
-      let moveSpeed = 2.5;
-      if (player.isDucking) moveSpeed = 1.5;
-      const moveLeft = keys['ArrowLeft'] || keys['a'] || keys['A'];
-      const moveRight = keys['ArrowRight'] || keys['d'] || keys['D'];
-      let desiredVX = 0;
-      if (!player.reloading && gameState === 'play') {
-        if (moveLeft) { desiredVX = -moveSpeed; player.facing = -1; }
-        if (moveRight) { desiredVX = moveSpeed; player.facing = 1; }
-        const accel = (player.onGround ? 0.34 : 0.18) * (dt / 16.67);
-        const friction = (player.onGround ? 0.78 : 0.9);
-        if (Math.abs(desiredVX) > 0.01) {
-          player.vx += (desiredVX - player.vx) * Math.min(1, accel);
-        } else {
-          player.vx *= Math.pow(friction, dt / 16.67);
-          if (Math.abs(player.vx) < 0.03) player.vx = 0;
-        }
-        // Jump
-        // Detect spacebar across browsers: ' ' (space), 'Space', and
-        // 'Spacebar'.  Only jump when onGround to prevent double jumps.
-if (jumpJustPressed && wasOnGround && !player.isClimbing) {
-  player.vy = -8;
-  player.onGround = false;
-  try { jumpSfx.currentTime = 0; jumpSfx.play(); } catch (err) {}
-}
-        // Shooting
-        const shootKey = weapon.auto ? shootPressed : shootJustPressed;
-        if (shootKey && player.ammoInClip[wKey] > 0 && player.shootCooldown <= 0) {
-          // Determine if the player is attempting to shoot upward.  When
-          // the up arrow (or W) is held at the moment the shot is
-          // triggered we fire bullets vertically instead of horizontally.
-          const shootUp = (keys['ArrowUp'] || keys['w'] || keys['W']);
-          let muzzleX = player.x + player.width / 2;
-          let muzzleY = player.y + player.height / 2;
-          if (shootUp) {
-            muzzleX = player.x + player.width / 2;
-            muzzleY = player.y;
-            if (wKey === 'shotgun') {
-              // Chunky shotgun cone uses consistent spread with slight random jitter.
-              const baseSpread = [-0.22, -0.1, 0, 0.1, 0.22];
-              for (let i = 0; i < baseSpread.length; i++) {
-                const horiz = (baseSpread[i] + (Math.random() - 0.5) * 0.03) * weapon.bulletSpeed;
-                const bxW = 4;
-                const bxH = 4;
-                const bx = player.x + player.width / 2 - bxW / 2;
-                const by = player.y - bxH;
-                bullets.push({ x: bx, y: by, vx: horiz, vy: -weapon.bulletSpeed, width: bxW, height: bxH, damage: weapon.damage, from: 'player', weapon: wKey });
-              }
-            } else if (wKey === 'laser') {
-              const bxW = 5;
-              const bxH = 18;
-              const bx = player.x + player.width / 2 - bxW / 2;
-              const by = player.y - bxH;
-              bullets.push({ x: bx, y: by, vx: 0, vy: -weapon.bulletSpeed, width: bxW, height: bxH, damage: weapon.damage, from: 'player', weapon: wKey, beam: true });
-            } else {
-              const bxW = 4;
-              const bxH = 6;
-              const bx = player.x + player.width / 2 - bxW / 2;
-              const by = player.y - bxH;
-              bullets.push({ x: bx, y: by, vx: 0, vy: -weapon.bulletSpeed, width: bxW, height: bxH, damage: weapon.damage, from: 'player', weapon: wKey });
-            }
-          } else {
-            muzzleX = player.x + (player.facing > 0 ? player.width : 0);
-            muzzleY = player.y + player.height / 2;
-            if (wKey === 'shotgun') {
-              const baseSpread = [-0.24, -0.12, 0, 0.12, 0.24];
-              for (let i = 0; i < baseSpread.length; i++) {
-                const angle = baseSpread[i] + (Math.random() - 0.5) * 0.04;
-                const vx = weapon.bulletSpeed * player.facing;
-                const vy = weapon.bulletSpeed * angle;
-                bullets.push({ x: player.x + (player.facing > 0 ? player.width : -6), y: player.y + player.height / 2 - 1, vx: vx, vy: vy, width: 4, height: 4, damage: weapon.damage, from: 'player', weapon: wKey });
-              }
-            } else if (wKey === 'laser') {
-              bullets.push({ x: player.x + (player.facing > 0 ? player.width : -18), y: player.y + player.height / 2 - 2, vx: weapon.bulletSpeed * player.facing, vy: 0, width: 18, height: 4, damage: weapon.damage, from: 'player', weapon: wKey, beam: true });
-            } else {
-              bullets.push({ x: player.x + (player.facing > 0 ? player.width : -6), y: player.y + player.height / 2 - 2, vx: weapon.bulletSpeed * player.facing, vy: 0, width: 6, height: 3, damage: weapon.damage, from: 'player', weapon: wKey });
-            }
-          }
-          const flashKind = wKey === 'shotgun' ? 'shotgun' : (wKey === 'laser' ? 'laser' : 'default');
-          addShotFlash(muzzleX, muzzleY, shootUp ? 0 : player.facing, shootUp ? -1 : 0, flashKind);
-          spawnMuzzleParticles(muzzleX, muzzleY, shootUp ? 0 : player.facing, shootUp ? -1 : 0, flashKind);
-          if (wKey === 'shotgun') {
-            screenShakeTimer = Math.max(screenShakeTimer, 90);
-            screenShakeStrength = Math.max(screenShakeStrength, 3.4);
-          }
-          // After firing bullets decrement ammo and set cooldown
-          player.ammoInClip[wKey]--;
-          player.shootCooldown = weapon.fireRate;
-          // Play appropriate gunshot sound for the equipped weapon
-          let sfxToPlay = null;
-          if (wKey === 'pistol') sfxToPlay = pistolSfx;
-          else if (wKey === 'rifle') sfxToPlay = rifleSfx;
-          else if (wKey === 'shotgun') sfxToPlay = shotgunSfx;
-          else if (wKey === 'laser') sfxToPlay = laserSfx;
-          if (sfxToPlay) {
-            try {
-              if (wKey === 'laser') {
-                if (sfxToPlay.paused || sfxToPlay.currentTime > 0.08) sfxToPlay.currentTime = 0;
-              } else {
-                sfxToPlay.currentTime = 0;
-              }
-              sfxToPlay.play();
-            } catch (err) {}
-          }
-        }
-        // Reload
-        if (reloadJustPressed && !player.reloading && player.ammoInClip[wKey] < weapon.magazine && player.reserveAmmo[wKey] > 0) {
-          player.reloading = true;
-          player.reloadTimer = weapon.reloadTime;
-          player.reloadWeaponKey = wKey;
-        }
-        // Ladder climbing overrides horizontal and vertical movement.  When
-        // climbing, horizontal movement is suppressed and vertical
-        // movement is controlled by up/down keys.  Gravity is disabled
-        // further below when climbing.  Only process climbing logic
-        // during play state and when not reloading.
-        if (player.isClimbing) {
-          // lock facing so the sprite remains consistent while climbing
-          // (optional; left/right keys are ignored on a ladder)
+      const prevX = player.x;
+      player.x = Math.max(0, Math.min(worldWidth - player.width, player.x + player.vx));
+      if (!player.isClimbing) {
+        for (const ob of obstacles) {
+          if (!rectIntersect(player, ob)) continue;
+          if (prevX + player.width <= ob.x) player.x = ob.x - player.width;
+          else if (prevX >= ob.x + ob.width) player.x = ob.x + ob.width;
+          else continue;
           player.vx = 0;
-          if (upPress) {
-            player.vy = -moveSpeed;
-          } else if (downPress) {
-            player.vy = moveSpeed;
-          } else {
-            player.vy = 0;
-          }
         }
       }
-      // Cooldowns
-      player.shootCooldown = Math.max(0, player.shootCooldown - dt);
-      // Reload progress
-      if (player.reloading) {
-        player.reloadTimer -= dt;
-        if (player.reloadTimer <= 0) {
-          const reloadKey = player.reloadWeaponKey || wKey;
-          const reloadWeapon = WEAPONS[reloadKey];
-          const needed = reloadWeapon.magazine - player.ammoInClip[reloadKey];
-          const ammoUsed = Math.min(needed, player.reserveAmmo[reloadKey]);
-          player.ammoInClip[reloadKey] += ammoUsed;
-          player.reserveAmmo[reloadKey] -= ammoUsed;
-          player.reloading = false;
-          player.reloadWeaponKey = null;
-        }
-      }
-      // Gravity: if the player is climbing a ladder then gravity is
-      // suppressed.  Otherwise a constant acceleration pulls them
-      // downward.  Jumping sets an upward velocity earlier in the
-      // update.
-      if (!player.isClimbing) {
-        player.vy += 0.35;
-      }
-      // Apply velocities
-      player.x += player.vx;
+
+      const prevY = player.y;
       player.y += player.vy;
-      // If climbing down a ladder and we reach the ground, snap to the
-      // ground and exit climbing.  Without this check the player can
-      // descend below the floor when holding down on a ladder.
-      if (player.isClimbing && player.y + player.height > groundY) {
-        player.y = groundY - player.height;
-        player.vy = 0;
-        player.onGround = true;
+      if (player.isClimbing && up && climbIntent && player.y + player.height <= ladder.y) {
+        player.y = ladder.y - player.height;
         player.isClimbing = false;
-      }
-      // Constrain player to horizontal world boundaries
-      if (player.x < 0) player.x = 0;
-      if (player.x > worldWidth - player.width) player.x = worldWidth - player.width;
-      // Resolve collisions with obstacles (platforms, crates, shields, barricades)
-      if (!player.isClimbing) {
-        for (let oi = 0; oi < obstacles.length; oi++) {
-          const ob = obstacles[oi];
-          // Vertical landing: if the player's previous bottom was above the top
-          // of the obstacle and the new bottom overlaps, snap the player on top.
-          if (prevY + player.height <= ob.y &&
-              player.y + player.height >= ob.y &&
-              player.x + player.width > ob.x &&
-              player.x < ob.x + ob.width) {
+        player.onGround = true;
+        player.vy = 0;
+      } else if (!player.isClimbing) {
+        for (const ob of obstacles) {
+          if (player.x + player.width <= ob.x || player.x >= ob.x + ob.width) continue;
+          if (prevY + player.height <= ob.y && player.y + player.height >= ob.y) {
             player.y = ob.y - player.height;
             player.vy = 0;
             player.onGround = true;
-          }
-          // Horizontal collision: if the player overlaps horizontally and
-          // vertically but did not land on top, push them out.
-          if (rectIntersect(player, ob)) {
-            if (prevX + player.width <= ob.x) {
-              // Came from left
-              player.x = ob.x - player.width;
-            } else if (prevX >= ob.x + ob.width) {
-              // Came from right
-              player.x = ob.x + ob.width;
-            }
+          } else if (prevY >= ob.y + ob.height && player.y < ob.y + ob.height) {
+            player.y = ob.y + ob.height;
+            player.vy = 0;
           }
         }
       }
-      // If the player hasn't landed on an obstacle or platform and has fallen
-      // below the ground plane, snap to the ground.  This check is skipped
-      // while climbing so that ladders work properly.
-      if (!player.onGround && !player.isClimbing && player.y + player.height >= groundY) {
+      if (player.y + player.height >= groundY) {
         player.y = groundY - player.height;
         player.vy = 0;
         player.onGround = true;
+        if (down) player.isClimbing = false;
       }
-      // Update player falling off world
-      if (player.y > height + 200) {
-        player.health = 0;
-        gameState = 'gameover';
-      }
-      // Update bullets.  In addition to moving bullets and culling those
-      // outside the world, we also check whether they collide with any
-      // obstacles.  Bullets that hit a crate or platform are destroyed
-      // immediately, allowing the player to take cover.
-      for (let i = bullets.length - 1; i >= 0; i--) {
-        const b = bullets[i];
-        b.x += b.vx;
-        b.y += b.vy;
-        // Remove bullets that strike obstacles
-        let removed = false;
-        for (let oi = 0; oi < obstacles.length; oi++) {
-          const ob = obstacles[oi];
-          if (rectIntersect(b, ob)) {
-            bullets.splice(i, 1);
-            removed = true;
-            break;
-          }
+
+      const cooldown = player.shootCooldown - dt;
+      const cooldownWasRunning = player.shootCooldown > 0;
+      player.shootCooldown = Math.max(0, cooldown);
+      if (player.reloading) {
+        player.reloadTimer = Math.max(0, player.reloadTimer - dt);
+        if (!player.reloadTimer) {
+          const reloadKey = player.reloadWeaponKey;
+          const needed = WEAPONS[reloadKey].magazine - player.ammoInClip[reloadKey];
+          const used = Math.min(needed, player.reserveAmmo[reloadKey]);
+          player.ammoInClip[reloadKey] += used;
+          player.reserveAmmo[reloadKey] -= used;
+          player.reloading = false;
+          player.reloadWeaponKey = null;
         }
-        if (removed) continue;
-        // Remove bullets that leave the world
-        if (b.x < 0 || b.x > worldWidth || b.y < -50 || b.y > height + 50) {
-          bullets.splice(i, 1);
+      } else if (trigger) {
+        if (player.ammoInClip[key] > 0 && player.shootCooldown <= 0) {
+          const cadenceCarry = weapon.auto && !shootTap && cooldownWasRunning ? cooldown : 0;
+          fireRound(key, weapon, aimingUp);
+          player.shootCooldown = weapon.fireRate + cadenceCarry;
+        } else if (shootTap && player.ammoInClip[key] === 0) {
+          addFloatingText(player.x + player.width / 2, player.y - 6,
+            player.reserveAmmo[key] ? 'RELOAD' : 'NO AMMO', '#ffd66b');
         }
       }
-      // Update enemy bullets with the same obstacle check
-      for (let i = enemyBullets.length - 1; i >= 0; i--) {
-        const b = enemyBullets[i];
-        b.x += b.vx;
-        b.y += b.vy;
-        let removed = false;
-        for (let oi = 0; oi < obstacles.length; oi++) {
-          const ob = obstacles[oi];
-          if (rectIntersect(b, ob)) {
-            enemyBullets.splice(i, 1);
-            removed = true;
-            break;
-          }
-        }
-        if (removed) continue;
-        if (b.x < 0 || b.x > worldWidth || b.y < -50 || b.y > height + 50) {
-          enemyBullets.splice(i, 1);
-        }
-      }
+      jumpBuffer = Math.max(0, jumpBuffer - dt);
+      coyoteTime = Math.max(0, coyoteTime - dt);
+      pressedKeys.clear();
+    }
+
+    function updateGame(dt) {
+      elapsedTime += dt;
+      player.animTime += dt;
+      player.invulnTimer = Math.max(0, player.invulnTimer - dt);
+      player.hitFlashTimer = Math.max(0, player.hitFlashTimer - dt);
+      player.recoilTimer = Math.max(0, player.recoilTimer - dt);
+      updatePlayer(dt);
       // Update enemies
       for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
@@ -1734,45 +1684,34 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
           continue;
         }
       }
-      // Collisions: player bullets vs enemies
-      for (let bi=bullets.length-1; bi>=0; bi--) {
-        const b = bullets[bi];
-        for (let ei=enemies.length-1; ei>=0; ei--) {
-          const e = enemies[ei];
-          if (rectIntersect(b,e)) {
-            // Reduce health and mark hit. Flash red for 150ms.
-            e.health -= b.damage;
-            e.hitTimer = 170;
-            spawnHitSparks(b.x + b.width * 0.5, b.y + b.height * 0.5, b.weapon);
-            const kx = (b.vx === 0 ? (player.x < e.x ? 1 : -1) : Math.sign(b.vx));
-            const impactForce = b.weapon === 'shotgun' ? 4.2 : (b.weapon === 'laser' ? 2.8 : 1.8);
-            e.x += kx * impactForce;
-            if (e.type !== 'ghost') {
-              e.vx = (e.vx || 0) + kx * 0.15;
-            }
-            if (b.weapon === 'shotgun') {
-              screenShakeTimer = Math.max(screenShakeTimer, 55);
-              screenShakeStrength = Math.max(screenShakeStrength, 2.2);
-            }
-            // Remove bullet
-            bullets.splice(bi,1);
-            // If enemy dies, spawn particle explosion and pickups, then
-            // remove it from the list
-            if (e.health <= 0) {
-              addFloatingText(e.x + e.width / 2, e.y - 8, '+DROP', '#ffd66b');
-              spawnParticles(e);
-              spawnPickups(e);
-              // Play enemy death sound effect
-              try {
-                enemyDeathSfx.currentTime = 0;
-                enemyDeathSfx.play();
-              } catch (err) {}
-              enemies.splice(ei,1);
-            }
-            break;
-          }
+      advanceProjectiles(bullets, enemies, (b, hit) => {
+        spawnHitSparks(hit.x, hit.y, b.weapon);
+        const enemy = hit.target;
+        const index = enemies.indexOf(enemy);
+        if (index < 0) return;
+        enemy.health -= b.damage;
+        enemy.hitTimer = 170;
+        const direction = Math.sign(b.vx) || (player.x < enemy.x ? 1 : -1);
+        const force = b.weapon === 'shotgun' ? 4.2 : (b.weapon === 'laser' ? 2.8 : 1.8);
+        enemy.x += direction * force;
+        if (enemy.type !== 'ghost') enemy.vx = (enemy.vx || 0) + direction * 0.15;
+        if (b.weapon === 'shotgun') {
+          screenShakeTimer = Math.max(screenShakeTimer, 55);
+          screenShakeStrength = Math.max(screenShakeStrength, 2.2);
         }
-      }
+        if (enemy.health <= 0) {
+          addFloatingText(enemy.x + enemy.width / 2, enemy.y - 8, '+DROP', '#ffd66b');
+          spawnParticles(enemy);
+          spawnPickups(enemy);
+          enemyDeathSfx.currentTime = 0;
+          enemyDeathSfx.play().catch(() => {});
+          enemies.splice(index, 1);
+        }
+      });
+      advanceProjectiles(enemyBullets, [player], (b, hit) => {
+        if (hit.target === player) damagePlayer(b.damage);
+      });
+      if (gameState !== 'play') return;
       // Decrement hit timers on enemies
       for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
@@ -1797,14 +1736,6 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
           }
         }
       }
-      // Enemy bullets vs player
-      for (let i=enemyBullets.length-1; i>=0; i--) {
-        const b = enemyBullets[i];
-        if (rectIntersect(b, player)) {
-          enemyBullets.splice(i,1);
-          damagePlayer(b.damage);
-        }
-      }
       // Enemies vs player contact with per-enemy contact cooldown so overlap
       // does not rapidly drain HP.
       for (let i=enemies.length-1; i>=0; i--) {
@@ -1821,9 +1752,7 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
           }
         }
       }
-      prevGameplayInput.jump = jumpPressed;
-      prevGameplayInput.shoot = shootPressed;
-      prevGameplayInput.reload = reloadPressed;
+      if (gameState !== 'play') return;
       // Pickups vs player
       for (let i=pickups.length-1; i>=0; i--) {
         const p = pickups[i];
@@ -2143,29 +2072,21 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
           ctx.globalAlpha = 1;
         });
       }
-      // Draw player bullets
+      // A short, velocity-aligned tracer follows each bright projectile core.
       bullets.forEach(b => {
-        const px = b.x - cameraX;
-        if (b.weapon === 'laser') {
-          const horizontal = Math.abs(b.vx) > Math.abs(b.vy);
-          const trail = horizontal ? 24 : 18;
-          const tx = horizontal ? (px - (b.vx > 0 ? trail : 0)) : (px - 2);
-          const ty = horizontal ? (b.y - 2) : (b.y - (b.vy < 0 ? trail : 0));
-          ctx.fillStyle = 'rgba(90,245,255,0.25)';
-          ctx.fillRect(tx, ty, horizontal ? trail + b.width : b.width + 4, horizontal ? b.height + 4 : trail + b.height);
-          ctx.fillStyle = '#baffff';
-          ctx.fillRect(px, b.y, b.width, b.height);
-        } else if (b.weapon === 'shotgun') {
-          ctx.fillStyle = '#ffe0a6';
-          ctx.fillRect(px - 0.5, b.y - 0.5, b.width + 1, b.height + 1);
-          ctx.fillStyle = '#fff8db';
-          ctx.fillRect(px, b.y, Math.max(1, b.width - 1), Math.max(1, b.height - 1));
-        } else {
-          ctx.fillStyle = '#ffe86d';
-          ctx.fillRect(px - 0.5, b.y - 0.5, b.width + 1, b.height + 1);
-          ctx.fillStyle = '#fffce3';
-          ctx.fillRect(px, b.y, Math.max(1, b.width - 1), Math.max(1, b.height - 1));
-        }
+        const x = b.x + b.width / 2 - cameraX;
+        const y = b.y + b.height / 2;
+        const speed = Math.hypot(b.vx, b.vy);
+        const trail = SHOT_FEEDBACK[b.weapon].trail;
+        const laser = b.weapon === 'laser';
+        ctx.strokeStyle = laser ? 'rgba(78,239,255,0.58)' : 'rgba(255,185,74,0.68)';
+        ctx.lineWidth = laser ? 3 : 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x - b.vx / speed * trail, y - b.vy / speed * trail);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        ctx.fillStyle = laser ? '#d1ffff' : '#fff6ce';
+        ctx.fillRect(x - b.width / 2, y - b.height / 2, b.width, b.height);
       });
       // Draw muzzle/shot flashes
       shotFlashes.forEach(f => {
@@ -2192,62 +2113,26 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
       // Draw player
       const ppx = player.x - cameraX;
       if (sheetLoaded) {
-        // Determine which animation frames to use.  Jump takes priority,
-        // followed by shooting, running, idle.  When crouching we reuse
-        // the same frames but draw only the lower portion of each frame
-        // (cropping off the top) to simulate ducking.  Shooting while
-        // crouched uses the shoot frames; moving while crouched uses
-        // running frames; otherwise the idle frame is used.
-        let frames;
-        const weapon = WEAPONS[player.weapon];
-        // Determine if the player is currently shooting.  We rely on
-        // shootCooldown > 0 to indicate a shot has been fired this
-        // frame, which syncs the animation to actual firing rather than
-        // key presses alone.
-        const isShooting = player.shootCooldown > Math.max(35, weapon.fireRate * 0.45);
-        if (!player.onGround) {
-          // In mid‑air use the jump animation regardless of crouch.
-          frames = ANIMATIONS.playerJump;
-        } else if (player.isDucking) {
-          // When ducking select special crouch animations.  These reuse
-          // existing standing frames but are separated to allow
-          // customisation later.  Shooting while crouched uses the
-          // crouch shoot frames; moving uses crouch walk; otherwise use
-          // the idle crouch.
-          if (isShooting) {
-            frames = ANIMATIONS.playerCrouchShoot;
-          } else if (Math.abs(player.vx) > 0.1) {
-            frames = ANIMATIONS.playerCrouchWalk;
-          } else {
-            frames = ANIMATIONS.playerCrouch;
-          }
-        } else {
-          // Standing animations.  Use shooting frames if a shot was
-          // recently fired; otherwise select running or idle.
-          if (isShooting) {
-            frames = ANIMATIONS.playerShoot;
-          } else if (Math.abs(player.vx) > 0.1) {
-            frames = ANIMATIONS.playerRun;
-          } else {
-            frames = ANIMATIONS.playerIdle;
-          }
-        }
-        const playerAnimStep = !player.onGround ? 120 : (player.isDucking ? (Math.abs(player.vx) > 0.1 ? 95 : 180) : (Math.abs(player.vx) > 0.1 ? 92 : 210));
-        const idx = Math.floor(player.animTime / playerAnimStep) % frames.length;
-        const f = frames[idx];
+        const moving = Math.abs(player.vx) > 0.1;
+        const frames = !player.onGround ? ANIMATIONS.playerJump
+          : player.isDucking ? (moving ? ANIMATIONS.playerCrouchWalk : ANIMATIONS.playerCrouch)
+          : moving ? ANIMATIONS.playerRun : ANIMATIONS.playerIdle;
+        const frameMs = !player.onGround ? 120 : player.isDucking ? 95 : 92;
+        const frame = frames[Math.floor(player.animTime / frameMs) % frames.length];
+        const cropOffsetY = player.baseHeight - player.height;
+        const pivot = Math.min(20, player.height - 5);
+        const feedback = SHOT_FEEDBACK[player.weapon];
+        const recoil = feedback.recoil * Math.pow(player.recoilTimer / feedback.duration, 2);
+        const kick = player.recoilFacing === player.facing ? recoil : 0;
         ctx.save();
-        // Calculate cropping for crouch: when ducking we draw only the
-        // bottom portion of the 32px sprite.  The amount to crop off the
-        // top equals (32 - current player.height).
-        const cropOffsetY = player.isDucking ? (32 - player.height) : 0;
-        const cropHeight = player.isDucking ? player.height : 32;
-        if (player.facing < 0) {
-          ctx.translate(ppx + player.width, player.y);
-          ctx.scale(-1,1);
-          ctx.drawImage(spriteSheet, f.sx, f.sy + cropOffsetY, 32, cropHeight, 0, 0, player.width, player.height);
-        } else {
-          ctx.drawImage(spriteSheet, f.sx, f.sy + cropOffsetY, 32, cropHeight, ppx, player.y, player.width, player.height);
-        }
+        ctx.translate(ppx + (player.facing < 0 ? player.width : 0), player.y);
+        ctx.scale(player.facing, 1);
+        // Keep the feet planted. Only the upper section receives a visual kick.
+        ctx.drawImage(spriteSheet, frame.sx, frame.sy + cropOffsetY + pivot, 32, player.height - pivot,
+          0, pivot, player.width, player.height - pivot);
+        const lean = player.recoilUp ? kick * 0.22 : kick;
+        ctx.transform(1, 0, lean / pivot, 1, -lean, 0);
+        ctx.drawImage(spriteSheet, frame.sx, frame.sy + cropOffsetY, 32, pivot, 0, 0, player.width, pivot);
         ctx.restore();
         if (player.hitFlashTimer > 0) {
           const alpha = Math.min(0.55, (player.hitFlashTimer / 180) * 0.55);
@@ -2739,13 +2624,19 @@ if (jumpJustPressed && wasOnGround && !player.isClimbing) {
         ctx.textAlign = 'left';
       }
     }
-    // Main loop
-    let lastTime = performance.now();
+    // Fixed simulation ticks keep input, movement, enemy AI and shot cadence
+    // consistent on fast and slow displays. Drop excess time after a stall.
     function loop(now) {
-      const dt = now - lastTime;
+      const frameMs = lastTime === null ? 0 : Math.min(MAX_FRAME_MS, now - lastTime);
       lastTime = now;
-      if (gameState === 'play') {
-        updateGame(dt);
+      if (gameState === 'play' && !document.hidden) {
+        accumulator += frameMs;
+        while (accumulator + 0.000001 >= STEP_MS && gameState === 'play') {
+          accumulator = Math.max(0, accumulator - STEP_MS);
+          updateGame(STEP_MS);
+        }
+      } else {
+        accumulator = 0;
       }
       drawGame();
       requestAnimationFrame(loop);
