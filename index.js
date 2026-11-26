@@ -226,10 +226,11 @@
     audio: true,
     particles: true,
     effects: 'system',
+    sfx: true,
     musicVolume: 0.6
   };
 
-  const SETTING_KEYS = ['difficulty', 'audio', 'particles', 'effects'];
+  const SETTING_KEYS = ['difficulty', 'audio', 'particles', 'effects', 'sfx'];
   const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
 
   function effectsReduced() {
@@ -286,12 +287,29 @@
   }
 
   function playShot(key) {
+    if (!SETTINGS.sfx) return;
+    const level = key === 'shotgun' ? 0.60 : key === 'laser' ? 0.34 : 0.46;
+    if (window.combatAudio?.play(key + 'Fire', 'fire', level)) return;
     const voices = shotVoices[key];
     const index = nextShotVoice[key];
     const voice = voices[index];
     nextShotVoice[key] = (index + 1) % voices.length;
     voice.currentTime = 0;
     voice.play().catch(() => {});
+  }
+
+  function playLegacyEffect(clip) {
+    if (!SETTINGS.sfx) return;
+    clip.currentTime = 0;
+    clip.play().catch(() => {});
+  }
+
+  function stopEffects() {
+    window.combatAudio?.stop();
+    for (const voices of Object.values(shotVoices)) {
+      for (const voice of voices) voice.pause();
+    }
+    for (const clip of [jumpSfx, playerDamageSfx, enemyDeathSfx]) clip.pause();
   }
 
   // Track total elapsed play time in milliseconds.  This value is incremented
@@ -436,7 +454,7 @@
       coyoteTime = 0;
       accumulator = 0;
       lastTime = null;
-      Object.values(shotVoices).forEach(voices => voices.forEach(voice => voice.pause()));
+      stopEffects();
     }
 
     /**
@@ -494,10 +512,7 @@
             }
           }
           // Play selection sound whenever a purchase is attempted
-          try {
-            selectSfx.currentTime = 0;
-            selectSfx.play();
-          } catch (err) {}
+          playLegacyEffect(selectSfx);
         } else if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
           // Close shop and resume play
           gameState = 'play';
@@ -551,10 +566,7 @@
             gameState = 'settings';
           }
           // Play selection sound when choosing an option on the pause menu
-          try {
-            selectSfx.currentTime = 0;
-            selectSfx.play();
-          } catch (err) {}
+          playLegacyEffect(selectSfx);
         } else if (e.key === 'Escape') {
           // cancel pause and resume play
           gameState = 'play';
@@ -594,16 +606,19 @@
             }
           } else if (key === 'particles') {
             SETTINGS.particles = !SETTINGS.particles;
+          } else if (key === 'sfx') {
+            SETTINGS.sfx = !SETTINGS.sfx;
+            if (!SETTINGS.sfx) {
+              stopEffects();
+              selectSfx.pause();
+            }
           } else {
             const modes = ['system', 'reduced', 'full'];
             const step = e.key === 'ArrowLeft' ? -1 : 1;
             SETTINGS.effects = modes[(modes.indexOf(SETTINGS.effects) + step + modes.length) % modes.length];
           }
           // Play selection sound when adjusting a setting
-          try {
-            selectSfx.currentTime = 0;
-            selectSfx.play();
-          } catch (err) {}
+          playLegacyEffect(selectSfx);
         } else if (e.key === 'Escape') {
           // Exit settings and return to the previous menu
           const returnState = prevSettingsState || 'start';
@@ -642,10 +657,7 @@
             gameState = 'settings';
           }
           // Play selection sound on start menu action
-          try {
-            selectSfx.currentTime = 0;
-            selectSfx.play();
-          } catch (err) {}
+          playLegacyEffect(selectSfx);
         }
         // no escape action on start menu
       } else if (gameState === 'gameover') {
@@ -658,10 +670,7 @@
           fadeOut(gameMusic);
           fadeIn(menuMusic);
           // Play selection sound on restart
-          try {
-            selectSfx.currentTime = 0;
-            selectSfx.play();
-          } catch (err) {}
+          playLegacyEffect(selectSfx);
         }
       }
       if (gameState !== previousState && (previousState === 'play' || gameState === 'play')) {
@@ -700,11 +709,14 @@
       const ctrlBar = document.getElementById('mobile-controls');
       if (ctrlBar) {
         ctrlBar.hidden = false;
+        document.body.setAttribute('data-touch', '');
 
         const buttons = Array.from(ctrlBar.querySelectorAll('.control-btn'));
         const menuKeys = new Set(['Enter', 'Escape', 'p', 'P', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
         const pointerToButton = new Map();
         const activePointersByButton = new Map();
+        const directionPad = ctrlBar.querySelector('.direction-pad');
+        const directionPointers = new Set();
 
         const pressButton = (btn, keyName, pointerId, event, pointerType) => {
           if (event.cancelable) event.preventDefault();
@@ -750,31 +762,34 @@
           });
           touchKeys.clear();
           activePointersByButton.clear();
+          directionPointers.clear();
           pointerToButton.clear();
           buttons.forEach((btn) => btn.classList.remove('pressed'));
         };
 
+        const finishPointer = event => {
+          const { pointerId } = event;
+          directionPointers.delete(pointerId);
+          const current = pointerToButton.get(pointerId);
+          if (current) releaseButton(current, current.dataset.key, pointerId, event);
+        };
+
         buttons.forEach((btn) => {
-          const keyName = btn.getAttribute('data-key');
+          const keyName = btn.dataset.key;
 
           btn.addEventListener('pointerdown', (event) => {
+            if (event.pointerType !== 'mouse' && directionPad.contains(btn)) {
+              directionPointers.add(event.pointerId);
+            }
             pressButton(btn, keyName, event.pointerId, event, event.pointerType);
             if (btn.setPointerCapture) {
               try { btn.setPointerCapture(event.pointerId); } catch (err) {}
             }
           }, { passive: false });
 
-          btn.addEventListener('pointerup', (event) => {
-            releaseButton(btn, keyName, event.pointerId, event);
-          }, { passive: false });
-
-          btn.addEventListener('pointercancel', (event) => {
-            releaseButton(btn, keyName, event.pointerId, event);
-          }, { passive: false });
-
-          btn.addEventListener('lostpointercapture', (event) => {
-            releaseButton(btn, keyName, event.pointerId, event);
-          }, { passive: false });
+          for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+            btn.addEventListener(type, finishPointer, { passive: false });
+          }
 
           btn.addEventListener('pointerleave', (event) => {
             if (event.pointerType === 'mouse') {
@@ -797,13 +812,24 @@
 
         ctrlBar.addEventListener('pointermove', (event) => {
           if (event.pointerType === 'mouse') return;
-          const btn = pointerToButton.get(event.pointerId);
-          if (!btn) return;
-          const rect = btn.getBoundingClientRect();
-          const inside = event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
-          if (!inside) {
-            const keyName = btn.getAttribute('data-key');
-            releaseButton(btn, keyName, event.pointerId, event);
+          const { pointerId, clientX, clientY } = event;
+          const current = pointerToButton.get(pointerId);
+          if (directionPointers.has(pointerId) && gameState === 'play') {
+            const hit = document.elementFromPoint(clientX, clientY);
+            const next = hit?.closest('.control-btn');
+            if (next && directionPad.contains(next)) {
+              if (next === current) return;
+              if (current) releaseButton(current, current.dataset.key, pointerId);
+              pressButton(next, next.dataset.key, pointerId, event, event.pointerType);
+              return;
+            }
+            // Maintain the held direction while rocking across the center.
+            if (directionPad.contains(hit)) return;
+          }
+          if (!current) return;
+          const bounds = current.getBoundingClientRect();
+          if (clientX < bounds.left || clientX > bounds.right || clientY < bounds.top || clientY > bounds.bottom) {
+            releaseButton(current, current.dataset.key, pointerId, event);
           }
         }, { passive: false });
 
@@ -1329,10 +1355,6 @@
       damageOverlayTimer = 120;
       screenShakeTimer = Math.max(screenShakeTimer, 130);
       screenShakeStrength = Math.max(screenShakeStrength, 5);
-      try {
-        playerDamageSfx.currentTime = 0;
-        playerDamageSfx.play();
-      } catch (err) {}
       if (player.health <= 0) {
         gameState = 'gameover';
         playerDownAt = performance.now();
@@ -1342,6 +1364,7 @@
         fadeOut(gameMusic);
         fadeIn(menuMusic);
       }
+      playLegacyEffect(playerDamageSfx);
       return true;
     }
 
@@ -1502,8 +1525,7 @@
           player.vy = -MOVEMENT.jumpSpeed;
           jumpBuffer = 0;
           coyoteTime = 0;
-          jumpSfx.currentTime = 0;
-          jumpSfx.play().catch(() => {});
+          playLegacyEffect(jumpSfx);
         }
         player.vy += MOVEMENT.gravity;
       }
@@ -1511,6 +1533,7 @@
         player.reloading = true;
         player.reloadTimer = weapon.reloadTime;
         player.reloadWeaponKey = key;
+        if (SETTINGS.sfx) window.combatAudio?.play(key + 'Reload', 'reload', 0.42);
       }
 
       player.onGround = false;
@@ -1562,6 +1585,7 @@
           const reloadKey = player.reloadWeaponKey;
           const needed = WEAPONS[reloadKey].magazine - player.ammoInClip[reloadKey];
           const used = Math.min(needed, player.reserveAmmo[reloadKey]);
+          if (SETTINGS.sfx) window.combatAudio?.play(reloadKey + 'Ready', 'reload', 0.46);
           player.ammoInClip[reloadKey] += used;
           player.reserveAmmo[reloadKey] -= used;
           player.reloading = false;
@@ -1573,6 +1597,7 @@
           fireRound(key, weapon, aimingUp);
           player.shootCooldown = weapon.fireRate + cadenceCarry;
         } else if (shootTap && player.ammoInClip[key] === 0) {
+          if (SETTINGS.sfx) window.combatAudio?.play('dryFire', 'fire', 0.32);
           addFloatingText(player.x + player.width / 2, player.y - 6,
             player.reserveAmmo[key] ? 'RELOAD' : 'NO AMMO', '#ffd66b');
         }
@@ -1584,6 +1609,19 @@
 
     function cameraLeft(shake = 0) {
       return Math.max(0, Math.min(worldWidth - width, player.x - 150 + shake));
+    }
+
+    function playEnemyCue(enemy, cue) {
+      if (!SETTINGS.sfx) return;
+      const x = enemy.x + enemy.width / 2;
+      const view = cameraLeft();
+      if (x < view - 48 || x > view + width + 48) return;
+      const offset = x - player.x - player.width / 2;
+      const pan = Math.max(-0.72, Math.min(0.72, offset / 330));
+      const gain = (cue === 'Warn' ? 0.48 : 0.42) / (1 + Math.abs(offset) / 720);
+      if (!window.combatAudio?.play(enemy.type + cue, 'enemy', gain, pan) && cue === 'Down') {
+        playLegacyEffect(enemyDeathSfx);
+      }
     }
 
     function updateGame(dt) {
@@ -1725,6 +1763,7 @@
                 vx: e.targetDir * ranged.speed, vy: 0, width: 8, height: 4,
                 damage, kind: e.type
               });
+              playEnemyCue(e, 'Attack');
               e.queuedShot = false;
               e.attackTimer = 140;
               e.shootTimer = ranged.recovery + Math.random() * 900;
@@ -1737,16 +1776,21 @@
               e.queuedShot = true;
               e.windupTimer = ranged.windup;
               e.attackTimer = ranged.windup;
+              playEnemyCue(e, 'Warn');
             }
           }
         } else if (closeAttack) {
           if (closeWindup) {
             e.windupTimer = Math.max(0, e.windupTimer - dt);
-            if (!e.windupTimer) e.attackTimer = 200;
+            if (!e.windupTimer) {
+              e.attackTimer = 200;
+              playEnemyCue(e, 'Attack');
+            }
           } else if (!e.attackTimer && !e.contactDamageTimer && !e.spawnGrace &&
                      absDx < closeAttack.range && Math.abs(playerMidY - enemyMidY) < 36) {
             e.targetDir = dx < 0 ? -1 : 1;
             e.windupTimer = closeAttack.windup;
+            playEnemyCue(e, 'Warn');
           }
         }
         e.x = Math.max(0, Math.min(worldWidth - e.width, e.x));
@@ -1775,8 +1819,7 @@
           addFloatingText(enemy.x + enemy.width / 2, enemy.y - 8, '+DROP', '#ffd66b');
           spawnParticles(enemy);
           spawnPickups(enemy);
-          enemyDeathSfx.currentTime = 0;
-          enemyDeathSfx.play().catch(() => {});
+          playEnemyCue(enemy, 'Down');
           fallenSprites.push({
             type: enemy.type, x: enemy.x, y: enemy.y, width: enemy.width, height: enemy.height,
             facing: enemySprite(enemy).facing, at: elapsedTime
@@ -2419,7 +2462,7 @@
       const labels = {
         start: ['Start game', 'Settings'],
         menu: ['Resume', 'Restart game', 'Settings'],
-        settings: ['Difficulty', 'Music', 'Particles', 'Camera shake and flashes'],
+        settings: ['Difficulty', 'Music', 'Particles', 'Camera shake and flashes', 'Sound effects'],
         gameover: ['Restart']
       }[mode];
       if (mode === 'gameover') {
@@ -2453,7 +2496,7 @@
       } else if (mode === 'settings') {
         const effectText = SETTINGS.effects === 'system' ? (effectsReduced() ? 'System · Reduced' : 'System · Full') :
           SETTINGS.effects === 'full' ? 'Full' : 'Reduced';
-        const values = [SETTINGS.difficulty, SETTINGS.audio ? 'On' : 'Off', SETTINGS.particles ? 'On' : 'Off', effectText];
+        const values = [SETTINGS.difficulty, SETTINGS.audio ? 'On' : 'Off', SETTINGS.particles ? 'On' : 'Off', effectText, SETTINGS.sfx ? 'On' : 'Off'];
         menuRows.forEach(({ value }, i) => { value.textContent = values[i]; });
       } else if (mode === 'shop') {
         shopGold.textContent = `${player.gold} gold`;
