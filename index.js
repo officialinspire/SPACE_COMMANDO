@@ -1320,7 +1320,7 @@
       const exitY = dy > 0 ? (bottom - y) / dy : (top - y) / dy;
       const entry = Math.max(0, dx ? tx : -Infinity, dy ? ty : -Infinity);
       const exit = Math.min(1, dx ? exitX : Infinity, dy ? exitY : Infinity);
-      return entry <= exit ? entry : Infinity;
+      return entry <= exit && exit > 0 ? entry : Infinity;
     }
 
     function projectileHit(bullet, x, y, dx, dy, targets) {
@@ -1366,16 +1366,27 @@
       }
     }
 
-    // Canonical, right-facing anchor in the current 32px runtime atlas.
-    // The y coordinate is relative to the full sprite before crouch cropping.
-    function playerMuzzle(up) {
-      const offsetX = up ? 0 : 7 * player.facing;
-      const offsetY = up ? 0 : Math.max(2, 14.5 - (player.baseHeight - player.height));
-      return { x: player.x + player.width / 2 + offsetX, y: player.y + offsetY };
+    function playerMuzzle(up, frame, kick) {
+      const center = player.x + player.width / 2;
+      const offset = frameMuzzle(frame, player.facing, kick);
+      if (offset) {
+        return { x: center + offset.x, y: player.y + player.height + offset.y };
+      }
+      // Aim-specific positions for the legacy atlas and poses without a weapon.
+      return {
+        x: center + (up ? 0 : 7 * player.facing),
+        y: player.y + (up ? 0 : Math.max(2, 14.5 - (player.baseHeight - player.height)))
+      };
     }
 
     function fireRound(key, weapon, up) {
-      const muzzle = playerMuzzle(up);
+      player.ammoInClip[key]--;
+      player.recoilTimer = SHOT_FEEDBACK[key].duration;
+      player.recoilUp = up;
+      player.recoilFacing = player.facing;
+      playerShot = { key, at: elapsedTime, up, facing: player.facing };
+      const { frame, kick } = playerSprite();
+      const muzzle = playerMuzzle(up, frame, kick);
       const dirX = up ? 0 : player.facing;
       const dirY = up ? -1 : 0;
       const origin = { x: player.x + player.width / 2, y: player.y + player.height / 2 };
@@ -1387,22 +1398,12 @@
           x: muzzle.x - size / 2, y: muzzle.y - size / 2,
           vx: (dirX + dirY * angle) * weapon.bulletSpeed,
           vy: (dirY - dirX * angle) * weapon.bulletSpeed,
-          width: size, height: size, damage: weapon.damage, weapon: key, origin
+          width: size, height: size, damage: weapon.damage, weapon: key, origin,
+          muzzleX: muzzle.x, muzzleY: muzzle.y
         });
       }
-      player.ammoInClip[key]--;
-      player.recoilTimer = SHOT_FEEDBACK[key].duration;
-      player.recoilUp = up;
-      player.recoilFacing = player.facing;
-      playerShot = { key, at: elapsedTime, up, facing: player.facing };
-      const { frame, kick } = playerSprite();
-      const muzzleOffset = frameMuzzle(frame, player.facing, kick);
-      // Preserve projectile and particle coordinates. The visible flash
-      // follows the art, whose muzzle can sit beyond the collision box.
-      const flashX = muzzleOffset ? player.x + player.width / 2 + muzzleOffset.x : muzzle.x;
-      const flashY = muzzleOffset ? player.y + player.height + muzzleOffset.y : muzzle.y;
       const kind = key === 'shotgun' || key === 'laser' ? key : 'default';
-      addShotFlash(flashX, flashY, dirX, dirY, kind);
+      addShotFlash(muzzle.x, muzzle.y, dirX, dirY, kind);
       spawnMuzzleParticles(muzzle.x, muzzle.y, dirX, dirY, kind);
       playShot(key);
     }
@@ -1428,17 +1429,16 @@
         bottom >= lad.y && player.y < lad.y + lad.height
       );
       player.onLadder = Boolean(ladder);
+      const stand = { x: player.x, y: bottom - player.baseHeight, width: player.width, height: player.baseHeight };
+      const canStand = !player.isDucking || !obstacles.some(obstacle => rectIntersect(stand, obstacle));
       // Up+Fire aims upward. Down on the ground stays available for cover.
       const climbIntent = !aimingUp && (up || (down && !held('z') && !shootTap && bottom < groundY));
-      player.isClimbing = Boolean(ladder && left === right && (climbIntent || player.isClimbing));
+      player.isClimbing = Boolean(canStand && ladder && left === right && (climbIntent || player.isClimbing));
       if (player.isClimbing) {
         jumpBuffer = 0;
         coyoteTime = 0;
       }
 
-      const stand = { x: player.x, y: bottom - player.baseHeight, width: player.width, height: player.baseHeight };
-      const needsClearance = player.isDucking && !player.isClimbing;
-      const canStand = !needsClearance || !obstacles.some(obstacle => rectIntersect(stand, obstacle));
       player.isDucking = !player.isClimbing && ((wasGrounded && down && !up) || !canStand);
       player.height = player.isDucking ? Math.floor(player.baseHeight * 0.6) : player.baseHeight;
       player.y = bottom - player.height;
@@ -1457,7 +1457,7 @@
           ? (slowing ? MOVEMENT.groundBrake : MOVEMENT.groundAccel)
           : (slowing ? MOVEMENT.airBrake : MOVEMENT.airAccel);
         player.vx += Math.sign(change) * Math.min(Math.abs(change), acceleration);
-        if (jumpBuffer > 0 && coyoteTime > 0 && (canStand || !wasGrounded)) {
+        if (jumpBuffer > 0 && coyoteTime > 0 && canStand) {
           player.vy = -MOVEMENT.jumpSpeed;
           jumpBuffer = 0;
           coyoteTime = 0;
@@ -2142,10 +2142,11 @@
       }
       // A short, velocity-aligned tracer follows each bright projectile core.
       bullets.forEach(b => {
-        const x = b.x + b.width / 2 - cameraX;
+        const worldX = b.x + b.width / 2;
+        const x = worldX - cameraX;
         const y = b.y + b.height / 2;
         const speed = Math.hypot(b.vx, b.vy);
-        const trail = SHOT_FEEDBACK[b.weapon].trail;
+        const trail = Math.min(SHOT_FEEDBACK[b.weapon].trail, Math.hypot(worldX - b.muzzleX, y - b.muzzleY));
         const laser = b.weapon === 'laser';
         ctx.strokeStyle = laser ? 'rgba(78,239,255,0.58)' : 'rgba(255,185,74,0.68)';
         ctx.lineWidth = laser ? 3 : 1.5;

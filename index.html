@@ -119,7 +119,8 @@
       // Try to enter fullscreen and lock landscape on first user interaction.
       async function goFullscreen() {
         try {
-          const el = isTouch ? document.getElementById('game-container') : document.documentElement;
+          // The touch controls are siblings of the canvas container.
+          const el = document.documentElement;
           if (el && document.fullscreenElement == null) {
             if (el.requestFullscreen) await el.requestFullscreen();
           }
