@@ -1,586 +1,236 @@
-/* Basic styling for the page */
-/* Reset body to occupy the entire viewport and provide a dark backdrop for the game. */
-html, body {
-  height: 100%;
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  background: #000 repeat-x top; /* account for notches */
-  padding-bottom: env(safe-area-inset-bottom);
-  background-size: auto 100%;
-  /* Use our sci‑fi fonts by default throughout the page.  Orbitron
-     provides a clean digital look, while Press Start 2P offers a
-     pixelated retro feel for UI elements. */
-  font-family: 'Orbitron', 'Press Start 2P', monospace;
-  color: #fff;
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-touch-callout: none;
-  touch-action: manipulation;
-}
-
-/* Define shared CSS custom properties.  The controls bar height is
-   referenced by both the canvas sizing and the bar itself.  Setting
-   it at :root makes it accessible throughout the stylesheet. */
 :root {
-  --controls-height: 120px;
-  --vh: 1vh; /* dynamic vh set from JS for mobile URL-bar safe sizing */
-  --ui-panel-bg: rgba(4, 10, 22, 0.9);
-  --ui-panel-border: rgba(110, 215, 255, 0.78);
-  --ui-text-main: #eef8ff;
-  --ui-text-muted: #a9d4f0;
-  --ui-text-accent: #ffde68;
+  color-scheme: dark;
+  font-family: system-ui, sans-serif;
+  color: #eef5f8;
+  background: #080e17;
+  --panel: #101a27;
+  --line: #415368;
+  --muted: #aebed0;
+  --cyan: #8adddf;
+  --amber: #f4c37b;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
 }
 
-/* -------------------------------------------------------------------
- * Mobile control bar
- *
- * A responsive touch controller appears at the bottom of the screen
- * when the game is played on a mobile device.  The controls are
- * hidden by default and revealed via JavaScript when a touch or
- * mobile environment is detected.  Buttons are styled with a retro
- * gold outline on a deep blue background to evoke an 8‑bit arcade
- * aesthetic.  The layout groups controls logically: shooting and
- * reloading on the left, store/jump/select in the centre, a
- * directional pad on the right and a menu button on the far edge.
- */
-#mobile-controls {
-  /* Position at the bottom of the screen and stretch full width */
-  position: absolute;
-  left: 0;
-  bottom: 0;
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html, body {
   width: 100%;
-  background: linear-gradient(180deg, rgba(10,10,10,0.96) 0%, rgba(0,0,0,0.98) 100%);
-  display: none;
-  z-index: 500;
-  padding: 10px 12px;
-  box-sizing: border-box;
-  font-family: 'Press Start 2P', monospace;
-  flex-direction: column;
-  gap: 10px;
-  padding-bottom: calc(env(safe-area-inset-bottom) + 12px);
-  border-top: 2px solid rgba(227, 201, 91, 0.95);
-  box-shadow: 0 -8px 18px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.08);
-  touch-action: none;
-  -webkit-touch-callout: none;
-  overscroll-behavior: contain;
-  user-select: none;
-  -webkit-user-select: none;
-  animation: softHudGlow 3s ease-in-out infinite;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
+.game-shell {
+  height: 100vh;
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+}
 
+.game-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  min-width: 0;
+  container-type: size;
+}
 
-/* Subtle premium scanline and glow polish for touch controller panel */
-#mobile-controls::before {
-  content: '';
+#game-container {
+  width: min(100cqw, calc(100cqh * 16 / 9));
+  aspect-ratio: 16 / 9;
+  box-shadow: inset 0 0 0 1px #34465b;
+  touch-action: none;
+}
+
+#game-canvas { display: block; width: 100%; height: 100%; }
+body:not([data-boot="ready"]) .touch-controls { visibility: hidden; }
+body[data-playing] { touch-action: none; }
+
+.title-art {
+  background: #0b1522 url("assets/ui/orbital-breach.webp") right center / cover no-repeat;
+}
+
+.start-screen, .menu-layer, .intro-layer { position: absolute; inset: 0; }
+.start-screen {
+  position: fixed;
+  z-index: 4;
+  display: grid;
+  align-items: center;
+  padding: max(16px, var(--safe-top)) max(20px, var(--safe-right)) max(16px, var(--safe-bottom)) max(clamp(24px, 9vw, 150px), var(--safe-left));
+}
+.start-screen::before, .title-art.menu-layer::before {
+  content: "";
   position: absolute;
   inset: 0;
-  pointer-events: none;
-  background: repeating-linear-gradient(
-    to bottom,
-    rgba(120, 200, 255, 0.06) 0px,
-    rgba(120, 200, 255, 0.06) 1px,
-    transparent 2px,
-    transparent 4px
-  );
-  opacity: 0.35;
+  background: linear-gradient(90deg, #08111be8 0%, #08111b98 42%, transparent 78%);
 }
-
-#mobile-controls::after {
-  content: '';
-  display: none;
-}
-
-@keyframes softHudGlow {
-  0%, 100% { box-shadow: 0 -8px 18px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.08); }
-  50% { box-shadow: 0 -8px 24px rgba(22, 130, 220, 0.35), inset 0 1px 0 rgba(255,255,255,0.16); }
-}
-
-/* Base styling for control buttons */
-#mobile-controls .control-btn {
-  background: linear-gradient(180deg, #f7e395 0%, #d8ba52 100%);
-  border: 3px solid #8e7323;
-  color: #16120a;
-  padding: 6px 8px;
+.launch-panel { position: relative; }
+.launch-panel h1, .menu-panel h1, .menu-panel h2 {
   margin: 0;
-  font-size: 12px;
-  letter-spacing: 0.55px;
-  font-weight: 700;
-  text-shadow: 0 1px 0 rgba(255,255,255,0.45);
-  width: 84px;
-  min-width: 84px;
-  height: 58px;
-  text-align: center;
+  font-weight: 800;
+  line-height: .98;
+  letter-spacing: .035em;
+}
+.launch-panel h1 {
+  margin-bottom: clamp(20px, 5vh, 44px);
+  font-size: clamp(36px, min(7.2vw, 17vh), 110px);
+  text-shadow: 0 2px 14px #020910;
+}
+button {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #172433;
+  color: inherit;
+  font: inherit;
+  font-weight: 650;
+  min-height: 44px;
   cursor: pointer;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;
-  outline: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 10px;
-  box-shadow: 0 5px 0 #61501c, inset 0 1px 0 rgba(255,255,255,0.55), 0 0 12px rgba(227, 201, 91, 0.28), 0 2px 10px rgba(0,0,0,0.45);
-  touch-action: none;
-  -webkit-tap-highlight-color: transparent;
-  transition: transform 90ms cubic-bezier(0.34, 1.56, 0.64, 1),
-              box-shadow 90ms ease,
-              filter 90ms ease,
-              background 90ms ease,
-              border-color 90ms ease;
+}
+button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+button:hover { border-color: var(--cyan); }
+button:disabled { cursor: wait; opacity: .65; }
+.system-button { padding: 8px 16px; }
+.primary-button { background: #2a2926; border-color: var(--amber); color: #ffe3b8; }
+.intro-layer { z-index: 3; background: #05090e; display: grid; place-items: center; }
+.intro-layer video { display: block; width: 100%; height: 100%; object-fit: contain; }
+#skip-intro { position: absolute; bottom: 12px; right: 12px; }
+
+.menu-layer {
+  z-index: 2;
+  display: grid;
+  align-items: safe center;
+  justify-items: center;
+  padding: 8px 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background-color: #070e17aa;
+  touch-action: pan-y;
+}
+.menu-layer.title-art { justify-items: start; padding-left: clamp(16px, 8vw, 126px); }
+.menu-panel {
   position: relative;
-  filter: drop-shadow(0 0 4px rgba(227, 201, 91, 0.35));
+  width: min(100%, 390px);
+  padding: clamp(10px, 2.6cqh, 24px);
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--cyan);
+  border-radius: 5px;
+  background: #101a27f5;
+  box-shadow: 0 12px 32px #0008;
 }
-
-#mobile-controls .control-btn:focus-visible {
-  outline: 3px solid rgba(130, 220, 255, 0.95);
-  outline-offset: 2px;
+.title-art .menu-panel {
+  width: min(100%, 310px);
+  border: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
 }
-
-
-#mobile-controls .control-btn::after {
-  content: '';
-  position: absolute;
-  inset: 3px;
-  border-radius: 7px;
-  pointer-events: none;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.15);
+.menu-panel h1 {
+  font-size: clamp(30px, min(7vw, 15cqh), 62px);
+  margin-bottom: clamp(14px, 4cqh, 26px);
 }
-
-/* Arrow buttons - increased size for better touch targets */
-#mobile-controls .arrow-btn {
-  width: 56px;
-  min-width: 56px;
-  height: 56px;
-  padding: 4px;
-  font-size: 18px;
-  font-weight: 700;
-}
-
-/* Wider menu button on desktop; on mobile rows we override width via flex */
-#mobile-controls .menu-btn { width: 86px; }
-
-/* Row containers for the control layout */
-#mobile-controls .row {
-  display: flex;
+.menu-panel h2 { font-size: clamp(19px, 6cqh, 32px); margin-bottom: 8px; }
+.menu-options { display: grid; gap: 4px; }
+.menu-row {
   width: 100%;
+  display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
+  padding: 5px 9px;
+  text-align: left;
+  background: #182534;
+  font-size: clamp(14px, 3.8cqh, 16px);
 }
-
-/* Dual button group (shoot/reload) */
-#mobile-controls .dual-buttons {
-  display: flex;
-  gap: 10px;
+.menu-row[data-selected="true"] {
+  border-color: var(--amber);
+  box-shadow: inset 3px 0 var(--amber);
+  background: #302b26;
+  color: #ffe4bd;
 }
-
-/* Arrow cluster containing left/down/right */
-#mobile-controls .arrow-cluster {
-  display: flex;
-  gap: 10px;
+.menu-detail { font-size: .84em; color: #b6c9da; white-space: nowrap; }
+.menu-row[data-selected="true"] .menu-detail { color: #ffe0af; }
+.menu-value, .shop-gold { color: var(--amber); }
+.menu-hint { color: var(--muted); margin: 8px 0 0; font-size: 12px; }
+.menu-back { width: 100%; margin-top: 5px; }
+.shop-panel { width: min(100%, 650px); }
+.shop-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.shop-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; }
+.shop-group { min-width: 0; }
+.shop-group h3 {
+  margin: 0 0 4px;
+  color: var(--cyan);
+  font-size: 12px;
+  letter-spacing: .07em;
+  text-transform: uppercase;
 }
+.shop-row { flex-wrap: wrap; column-gap: 6px; row-gap: 1px; }
+.shop-row small { color: var(--muted); width: 100%; font-size: 11px; }
+.shop-footer { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-top: 6px; }
+.shop-footer output { font-size: 12px; color: var(--muted); }
+.shop-footer button { flex: 0 0 auto; }
+.gameover-summary { margin: 0 0 10px; color: var(--muted); }
 
-/* Wrapper that stacks the up arrow above the horizontal arrow cluster */
-#mobile-controls .arrow-wrapper {
-  display: flex;
-  flex-direction: column;
+.touch-controls {
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  grid-template-areas: "movement utility actions";
   align-items: center;
-  gap: 6px;
-}
-
-/* Make the jump button expand to fill remaining space */
-#mobile-controls .jump-btn {
-  flex: 1;
-  width: auto;
-}
-
-/* Evenly distribute the bottom row buttons (menu/select/store) */
-#mobile-controls .row3 .control-btn {
-  flex: 1;
-  width: auto;
-}
-
-/* Remove margin on up-arrow (no longer in first row) */
-#mobile-controls .row1 > .control-btn.arrow-btn {
-  margin-left: 0;
-}
-
-/* Align the first row's contents to the start; it only contains shoot/reload */
-#mobile-controls .row1 {
-  justify-content: flex-start;
-}
-
-/* Game container positions the game and intro video.  On desktop it
-   scales to use the full viewport while preserving the 16:9 gameplay
-   aspect ratio.  On mobile a dedicated media query below still
-   reserves space for the control bar. */
-#game-container {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: min(100vw, calc(100dvh * 16 / 9));
-  height: min(100dvh, calc(100vw * 9 / 16));
-  max-width: 100vw;
-  max-height: 100dvh;
-  aspect-ratio: 16 / 9;
-  image-rendering: pixelated;
-  box-shadow: 0 0 0 2px rgba(72, 178, 232, 0.35), 0 16px 40px rgba(0,0,0,0.5);
-}
-
-/* Canvas fills the container.  It no longer has its own transform
-   because the container handles positioning. */
-#game-container canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-  background: #000;
-}
-
-/* TAP TO START screen appears above everything else */
-.tap-to-start-screen {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  height: calc(var(--vh, 1vh) * 100);
-  background: radial-gradient(ellipse at bottom, #1B2735 0%, #090a0f 100%);
-  z-index: 2000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
+  gap: 5px;
+  padding: 4px clamp(5px, 1.5vw, 24px);
+  background: #0d1724;
+  border-top: 1px solid #32475c;
+  touch-action: none;
   user-select: none;
   -webkit-user-select: none;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-  overflow: hidden;
 }
-
-/* Animated starfield layers */
-.tap-to-start-screen::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background:
-    radial-gradient(2px 2px at 20px 30px, white, transparent),
-    radial-gradient(2px 2px at 60px 70px, white, transparent),
-    radial-gradient(1px 1px at 50px 50px, white, transparent),
-    radial-gradient(1px 1px at 130px 80px, white, transparent),
-    radial-gradient(2px 2px at 90px 10px, white, transparent),
-    radial-gradient(1px 1px at 150px 120px, white, transparent),
-    radial-gradient(1px 1px at 200px 90px, white, transparent),
-    radial-gradient(2px 2px at 250px 30px, white, transparent),
-    radial-gradient(1px 1px at 180px 160px, white, transparent);
-  background-size: 300px 300px;
-  background-repeat: repeat;
-  animation: twinkle 3s ease-in-out infinite;
-  opacity: 0.8;
-  pointer-events: none;
+.direction-pad {
+  grid-area: movement;
+  justify-self: start;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(44px, 1fr));
+  grid-template-areas: ". up ." "left down right";
+  gap: 3px;
 }
+.direction-pad [data-key="ArrowUp"] { grid-area: up; }
+.direction-pad [data-key="ArrowLeft"] { grid-area: left; }
+.direction-pad [data-key="ArrowDown"] { grid-area: down; }
+.direction-pad [data-key="ArrowRight"] { grid-area: right; }
+.utility-pad, .action-pad { display: grid; gap: 3px; grid-template-columns: repeat(3, minmax(44px, 1fr)); }
+.utility-pad { grid-area: utility; }
+.action-pad { grid-area: actions; justify-self: end; }
+.control-btn { min-width: 44px; padding: 2px 6px; font-size: clamp(11px, 1.8vw, 14px); touch-action: none; }
+.direction-pad .control-btn { font-size: 22px; color: var(--cyan); }
+.action-pad .control-btn[data-key="z"] { border-color: #ae8249; color: var(--amber); }
+.control-btn.pressed, .control-btn:active { background: #3f352a; border-color: var(--amber); color: #fff3d9; }
 
-.tap-to-start-screen::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background:
-    radial-gradient(1px 1px at 120px 140px, rgba(255,255,255,0.8), transparent),
-    radial-gradient(1px 1px at 80px 200px, rgba(255,255,255,0.6), transparent),
-    radial-gradient(1px 1px at 220px 180px, rgba(255,255,255,0.7), transparent),
-    radial-gradient(1px 1px at 40px 100px, rgba(255,255,255,0.6), transparent),
-    radial-gradient(1px 1px at 280px 60px, rgba(255,255,255,0.8), transparent);
-  background-size: 350px 350px;
-  background-repeat: repeat;
-  animation: twinkle 4s ease-in-out infinite reverse;
-  opacity: 0.6;
-  pointer-events: none;
-}
-
-@keyframes twinkle {
-  0%, 100% {
-    opacity: 0.8;
+@media (max-width: 480px) {
+  .touch-controls {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas: "movement actions" "utility utility";
   }
-  50% {
-    opacity: 0.4;
+  .utility-pad { justify-self: center; }
+  .start-screen { background-position: 64% center; }
+  .start-screen::before, .title-art.menu-layer::before {
+    background: linear-gradient(90deg, #08111bf3, #08111b9c 70%, #08111b30);
   }
 }
 
-.tap-to-start-content {
-  text-align: center;
-  animation: fadeInPulse 2s ease-in-out infinite;
-  position: relative;
-  z-index: 1;
-  background: rgba(2, 8, 18, 0.52);
-  border: 1px solid rgba(110, 215, 255, 0.35);
-  border-radius: 14px;
-  padding: 24px 28px;
-  box-shadow: 0 8px 30px rgba(0,0,0,0.45);
+@media (max-height: 420px) and (orientation: landscape) {
+  .menu-panel { padding: 8px; }
+  .menu-panel h2 { margin-bottom: 5px; }
+  .menu-hint { margin-top: 4px; }
+  .shop-panel .menu-row { min-height: 32px; }
+  .shop-footer button { min-height: 30px; }
 }
-
-.game-title {
-  font-family: 'Black Ops One', cursive;
-  font-size: 56px;
-  color: #00ff41;
-  text-shadow:
-    0 0 10px #00ff41,
-    0 0 20px #00ff41,
-    0 0 30px #00ff41,
-    0 0 40px #00aa2b,
-    2px 2px 0px #000,
-    -2px -2px 0px rgba(0,255,65,0.3);
-  margin: 0 0 40px 0;
-  letter-spacing: 6px;
-  position: relative;
-  z-index: 1;
-}
-
-.tap-prompt {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 24px;
-  color: #fff;
-  text-shadow: 0 2px 0 rgba(0,0,0,0.75), 0 0 10px rgba(255, 255, 255, 0.8);
-  letter-spacing: 1.2px;
-  animation: pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.6;
-    transform: scale(1.05);
-  }
-}
-
-@keyframes fadeInPulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.8;
-  }
-}
-
-/* Responsive sizing for TAP TO START on mobile */
-@media (max-width: 768px) {
-  .game-title {
-    font-size: 32px;
-    margin: 0 0 30px 0;
-    letter-spacing: 2px;
-  }
-
-  .tap-prompt {
-    font-size: 18px;
-  }
-}
-
-/* Intro video overlays the canvas within the game container.  It
-   covers the same area and maintains aspect ratio without stretching
-   across the entire page.  Initially visible until ended. */
-#game-container .intro-video {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  z-index: 1000;
-  display: block;
-}
-
-/* Ensure pixelated rendering on the canvas element itself.  While the
-   game container also enables pixelated rendering, some browsers may
-   ignore the property on parent elements when scaling the canvas. */
-#game-canvas {
-  image-rendering: pixelated;
-}
-
-/* Adjust container sizing on small screens to leave room for the mobile controls
-while preserving the 16:9 aspect ratio without distortion. */
-@media (max-width: 768px) {
-#game-container {
-position: absolute;
-/* Center in the space between top of screen and top of controls */
-top: calc((calc(var(--vh, 1vh) * 100) - var(--controls-height)) / 2);
-left: 50%;
-transform: translate(-50%, -50%);
-/* Set dimensions to maintain perfect 16:9 ratio */
-width: 100vw;
-height: auto;
-aspect-ratio: 16 / 9;
-/* Don't exceed available height (viewport minus controls) */
-max-height: calc(calc(var(--vh, 1vh) * 100) - var(--controls-height));
-/* Don't exceed calculated width based on max height to maintain ratio */
-max-width: calc((calc(var(--vh, 1vh) * 100) - var(--controls-height)) * 16 / 9);
-}
-
-#game-container canvas,
-#game-container .intro-video {
-width: 100%;
-height: 100%;
-/* Prevent stretching - maintain aspect ratio with letterboxing if needed */
-object-fit: contain;
-background: #000;
-}
-}
-
 
 @media (prefers-reduced-motion: reduce) {
-  #mobile-controls,
-  .tap-to-start-content,
-  .tap-prompt,
-  .tap-to-start-screen::before,
-  .tap-to-start-screen::after,
-  #mobile-controls .control-btn.pressed {
-    animation: none !important;
-  }
-
-  #mobile-controls .control-btn {
-    transition: none;
-  }
-}
-
-
-/* Heads‑up display (HUD) elements */
-.hud {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 100;
-  font-size: 16px;
-  line-height: 1.4;
-  pointer-events: none;
-}
-
-.menu-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.8);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  z-index: 200;
-}
-
-.menu-overlay h1 {
-  margin-bottom: 20px;
-  font-size: 32px;
-}
-
-.menu-overlay .option {
-  padding: 8px 12px;
-  margin: 4px 0;
-  cursor: default;
-}
-
-.menu-overlay .selected {
-  background: #444;
-}
-
-
-/* --- Responsive touch controls sizing --- */
-@media (max-width: 430px) {
-  #mobile-controls .control-btn { width: 88px; min-width: 88px; height: 62px; font-size: 11px; }
-  #mobile-controls .arrow-btn { width: 60px; min-width: 60px; height: 60px; font-size: 17px; }
-  #mobile-controls { padding: 10px 12px; gap: 10px; }
-}
-
-@media (max-height: 460px) {
-  #mobile-controls .control-btn { width: 76px; min-width: 76px; height: 50px; font-size: 10px; }
-  #mobile-controls .arrow-btn { width: 46px; min-width: 46px; height: 46px; font-size: 14px; }
-  #mobile-controls .menu-btn { width: 80px; }
-  #mobile-controls { padding: 8px 10px; gap: 6px; }
-}
-
-
-/* --- Tactile hover/touch feedback --- */
-/* Simulate hover on touch start for initial feedback */
-#mobile-controls .control-btn:hover {
-  background: linear-gradient(180deg, #fae9ab 0%, #e4c45c 100%);
-  border-color: #c19f39;
-  filter: drop-shadow(0 0 8px rgba(227, 201, 91, 0.7)) brightness(1.05);
-  transform: translateY(-1px);
-  box-shadow: 0 6px 0 #6d5920, inset 0 2px 0 rgba(255,255,255,0.45), 0 0 16px rgba(227, 201, 91, 0.2), 0 4px 14px rgba(0,0,0,0.5);
-}
-
-/* --- Tactile press feedback --- */
-#mobile-controls .control-btn:active,
-#mobile-controls .control-btn.pressed {
-  transform: translateY(4px) scale(0.97);
-  box-shadow: 0 0 0 #6d5920, inset 0 3px 10px rgba(0,0,0,0.5), 0 0 16px rgba(227, 201, 91, 0.25);
-  filter: drop-shadow(0 0 10px rgba(227, 201, 91, 0.9)) brightness(0.84);
-  background: linear-gradient(180deg, #d3b447 0%, #c19f2f 100%);
-  border-color: #8f7222;
-}
-
-#mobile-controls .control-btn[data-key="Enter"],
-#mobile-controls .control-btn[data-key="p"],
-#mobile-controls .control-btn[data-key="Escape"] {
-  color: #0b0f16;
-  background: linear-gradient(180deg, #f9ebb1 0%, #e5cb63 100%);
-}
-
-#mobile-controls .control-btn.pressed::after {
-  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.3), inset 0 0 10px rgba(0,0,0,0.35);
-}
-
-/* Generic panel classes used by HTML overlays (future-proofing for readable text blocks) */
-.hud,
-.menu-overlay {
-  text-shadow: 0 2px 3px rgba(0,0,0,0.75);
-}
-
-.menu-overlay {
-  backdrop-filter: blur(2px);
-}
-
-.menu-overlay .option {
-  min-width: 220px;
-  text-align: center;
-  border: 1px solid rgba(120, 200, 255, 0.25);
-  border-radius: 6px;
-  background: rgba(4, 10, 22, 0.55);
-}
-
-.menu-overlay .selected {
-  background: rgba(36, 78, 108, 0.7);
-  border-color: rgba(255, 217, 96, 0.8);
-  color: #fff3b4;
-}
-
-/* Add a subtle pulse effect when button is being pressed */
-@keyframes buttonPress {
-  0% {
-    transform: translateY(0) scale(1);
-  }
-  50% {
-    transform: translateY(2px) scale(0.99);
-  }
-  100% {
-    transform: translateY(4px) scale(0.98);
-  }
-}
-
-#mobile-controls .control-btn.pressed {
-  animation: buttonPress 100ms ease-out forwards;
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
