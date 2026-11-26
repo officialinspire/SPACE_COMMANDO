@@ -2,9 +2,8 @@
  * SPACE COMMANDO – Canvas Edition
  *
  * This version of the game implements a complete side‑scrolling shooter
- * using nothing more than the HTML5 Canvas API. It loads a single
- * sprite sheet for all actors (player and enemies) and a parallax
- * background image, then draws and animates everything manually. There
+ * using the HTML5 Canvas API. It loads actor and pickup atlases and
+ * a parallax background, then draws and animates each layer. There
  * are four enemy types (zombie, ghost, robot, alien) and four weapons
  * (pistol, assault rifle, shotgun and laser). Enemies drop gold and
  * ammo crates on death, and gold can be spent on new weapons via the
@@ -21,73 +20,57 @@
  */
 
 (() => {
-  // Define a base64 encoded version of the sprite sheet. Reading local files
-  // over the file:// protocol can be blocked by some browsers, so
-  // embedding the binary data as a Data URI ensures the image loads
-  // reliably. If you replace the sprite sheet, regenerate this array
-  // using `base64 -w0 file.png` and update the segments.
-  const SPRITE_SEGMENTS = [
-    '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'
-  ];
+  const legacySprites = loadSpriteImage(new URL('space-commando-sprite-sheet.png', document.baseURI));
+  const atlases = {};
+  const manifestURL = new URL('assets/sprites/manifest.json', document.baseURI);
+  let artReady = false;
 
-  // Build the Data URI for the sprite sheet by concatenating segments. This
-  // avoids extremely long literal strings while still embedding the
-  // entire asset in the source.
-  // Initialise the sprite sheet by loading the provided PNG.  Once the
-  // image loads the sheetLoaded flag will be set to true.  Loading
-  // directly from disk keeps the code cleaner than embedding a base64
-  // encoded sprite sheet.  The SPRITE_SEGMENTS array defined above is
-  // no longer used but retained for reference.
-  const spriteSheet = new Image();
-  spriteSheet.src = 'space-commando-sprite-sheet.png';
-  let sheetLoaded = false;
-  spriteSheet.onload = () => { sheetLoaded = true; };
+  function loadSpriteImage(url) {
+    const image = new Image();
+    const ready = new Promise((resolve, reject) => {
+      image.onload = () => {
+        if (image.decode) image.decode().then(resolve, reject);
+        else resolve();
+      };
+      image.onerror = reject;
+    });
+    image.src = url.href;
+    return { image, ready };
+  }
+
+  let legacyReady = false;
+  legacySprites.ready.then(() => { legacyReady = true; }, () => {});
+
+  async function preloadAtlases() {
+    const controller = new AbortController();
+    let timeout;
+    const load = async () => {
+      const response = await fetch(manifestURL, { signal: controller.signal });
+      if (!response.ok) throw new Error('Sprite manifest unavailable');
+      const manifest = await response.json();
+      await Promise.allSettled(['player', 'enemies', 'pickups'].map(async name => {
+        const entry = manifest?.[name];
+        if (entry?.image !== name + '.webp' || !entry.clips) return;
+        const asset = loadSpriteImage(new URL(entry.image, manifestURL));
+        await asset.ready;
+        if (!artReady) atlases[name] = { image: asset.image, clips: entry.clips };
+      }));
+    };
+    try {
+      await Promise.race([
+        load(),
+        new Promise(resolve => { timeout = setTimeout(resolve, 3500); })
+      ]);
+    } catch {
+      // The legacy atlas and basic shapes remain available offline or on errors.
+    } finally {
+      artReady = true;
+      clearTimeout(timeout);
+      controller.abort();
+    }
+  }
+
+  preloadAtlases();
 
   // Load the parallax background. This large image is drawn behind
   // everything else and scrolls slower than the foreground to give a
@@ -98,37 +81,30 @@
   let bgLoaded = false;
   backgroundImg.onload = () => { bgLoaded = true; };
 
-  // Define frame coordinates (sx, sy) for each animation.  The sprite
-  // sheet uses 32 px tiles.  You can adjust these indices if you
-  // rearrange the sheet.  Frames for zombies and ghosts span two rows.
-  const ANIMATIONS = {
-    // Player running frames (row 0, cols 0–3)
-    playerRun: [ {sx:0, sy:0}, {sx:32, sy:0}, {sx:64, sy:0}, {sx:96, sy:0} ],
-    playerIdle: [ {sx:0, sy:0} ],
-    playerJump: [ {sx:0, sy:32}, {sx:32, sy:32} ],
-    // The current atlas reuses standing frames with a crop for crouching.
-    playerCrouch: [ {sx:0, sy:0} ],
-    playerCrouchWalk: [ {sx:0, sy:0}, {sx:32, sy:0}, {sx:64, sy:0}, {sx:96, sy:0} ],
-    // Robot walking frames (row 2, cols 0–3)
-    robotWalk: [ {sx:0, sy:64}, {sx:32, sy:64}, {sx:64, sy:64}, {sx:96, sy:64} ],
-    // Zombie walking frames (row 2 col4‑5 and row3 col0)
-    zombieWalk: [ {sx:128, sy:64}, {sx:160, sy:64}, {sx:0, sy:96} ],
-    // Zombie attack frames (row3 col0‑1)
-    zombieAttack: [ {sx:0, sy:96}, {sx:32, sy:96} ],
-    // Ghost floating frames (row3 col2‑5)
-    ghostFloat: [ {sx:64, sy:96}, {sx:96, sy:96}, {sx:128, sy:96}, {sx:160, sy:96} ],
-    // Alien walking frames (row4 col0‑3)
-    alienWalk: [ {sx:0, sy:128}, {sx:32, sy:128}, {sx:64, sy:128}, {sx:96, sy:128} ],
-    // Alien attack frame (row4 col4). Use as single frame.
-    alienAttack: [ {sx:128, sy:128} ],
-    // Ammo pickups (row5 col1–4) and coin (col6). These are used when
-    // drawing pickups.
-    ammoPistol: { sx:32, sy:160 }, // yellow bullet
-    ammoRifle: { sx:64, sy:160 },  // grey magazine
-    ammoShotgun: { sx:96, sy:160 }, // red shell
-    ammoLaser: { sx:128, sy:160 }, // green battery
-    coin: { sx:192, sy:160 } // gold coin
+  // Tile indexes are used only for the original atlas fallback.
+  const LEGACY = {
+    playerIdle: [0], playerRun: [0, 1, 2, 3], playerJump: [7, 8],
+    zombie: [18, 19, 21], ghost: [23, 24, 25, 26],
+    robot: [14, 15, 16, 17], alien: [28, 29, 30, 31],
+    gold: 41, pistol: 36, rifle: 37, shotgun: 38, laser: 39
   };
+
+  const ACTOR_SCALE = 0.5;
+  const ENEMY_COLOR = { zombie: '#00aa00', ghost: '#aaaaff', robot: '#ff8844', alien: '#55ff55' };
+  const ENEMY_FALL = { zombie: 540, ghost: 440, robot: 540, alien: 540 };
+
+  // Packed records contain x, y, width, height, origin x/y, duration, and optional muzzle x/y.
+  function clipFrame(atlas, name, time = 0, loop = false) {
+    const frames = atlases[atlas]?.clips[name];
+    if (!Array.isArray(frames) || !frames.length) return null;
+    if (frames.some(frame => !Array.isArray(frame) || !Number.isFinite(frame[6]) || frame[6] <= 0)) return null;
+    if (loop) time %= frames.reduce((sum, frame) => sum + frame[6], 0);
+    for (const frame of frames) {
+      if (time < frame[6]) return frame;
+      time -= frame[6];
+    }
+    return frames.at(-1);
+  }
 
   /**
    * Define weapons. Each weapon has a cost (gold), damage per bullet,
@@ -634,6 +610,7 @@
           startMenuSelection = (startMenuSelection + 1) % optionsCount;
         } else if (e.key === 'Enter') {
           if (startMenuSelection === 0) {
+            if (!artReady) return;
             // Begin gameplay
             restart();
             gameState = 'play';
@@ -832,6 +809,10 @@
     let enemyBullets = [];
     let enemies = [];
     let pickups = [];
+    let fallenSprites = [];
+    let lastLanding = -Infinity;
+    let playerDownAt = 0;
+    let playerShot = null;
     // Visual feedback lists for combat readability and impact.
     let floatingTexts = [];
     let shotFlashes = [];
@@ -975,6 +956,10 @@
      */
     function restart() {
       elapsedTime = 0;
+      fallenSprites = [];
+      lastLanding = -Infinity;
+      playerDownAt = 0;
+      playerShot = null;
       bullets = [];
       enemyBullets = [];
       enemies = [];
@@ -1309,6 +1294,7 @@
       } catch (err) {}
       if (player.health <= 0) {
         gameState = 'gameover';
+        playerDownAt = performance.now();
         resetGameplayInput();
         // Transition to menu track on death so gameover/start screens
         // always use the same music context.
@@ -1408,8 +1394,15 @@
       player.recoilTimer = SHOT_FEEDBACK[key].duration;
       player.recoilUp = up;
       player.recoilFacing = player.facing;
+      playerShot = { key, at: elapsedTime, up, facing: player.facing };
+      const { frame, kick } = playerSprite();
+      const muzzleOffset = frameMuzzle(frame, player.facing, kick);
+      // Preserve projectile and particle coordinates. The visible flash
+      // follows the art, whose muzzle can sit beyond the collision box.
+      const flashX = muzzleOffset ? player.x + player.width / 2 + muzzleOffset.x : muzzle.x;
+      const flashY = muzzleOffset ? player.y + player.height + muzzleOffset.y : muzzle.y;
       const kind = key === 'shotgun' || key === 'laser' ? key : 'default';
-      addShotFlash(muzzle.x, muzzle.y, dirX, dirY, kind);
+      addShotFlash(flashX, flashY, dirX, dirY, kind);
       spawnMuzzleParticles(muzzle.x, muzzle.y, dirX, dirY, kind);
       playShot(key);
     }
@@ -1554,7 +1547,10 @@
       player.invulnTimer = Math.max(0, player.invulnTimer - dt);
       player.hitFlashTimer = Math.max(0, player.hitFlashTimer - dt);
       player.recoilTimer = Math.max(0, player.recoilTimer - dt);
+      const wasGrounded = player.onGround;
       updatePlayer(dt);
+      if (!wasGrounded && player.onGround) lastLanding = elapsedTime;
+      fallenSprites = fallenSprites.filter(enemy => elapsedTime - enemy.at < ENEMY_FALL[enemy.type]);
       // Update enemies
       for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
@@ -1705,6 +1701,10 @@
           spawnPickups(enemy);
           enemyDeathSfx.currentTime = 0;
           enemyDeathSfx.play().catch(() => {});
+          fallenSprites.push({
+            type: enemy.type, x: enemy.x, y: enemy.y, width: enemy.width, height: enemy.height,
+            facing: enemySprite(enemy).facing, at: elapsedTime
+          });
           enemies.splice(index, 1);
         }
       });
@@ -1825,6 +1825,116 @@
      * Draw the entire scene. Handles parallax background, stars,
      * ground, pickups, enemies, bullets, player, HUD and overlays.
      */
+    function recoilShear(frame, scale, kick) {
+      return kick / Math.max(1, frame[5] * scale);
+    }
+
+    function frameMuzzle(frame, facing, kick) {
+      if (!frame || frame.length !== 9) return null;
+      const x = (frame[7] - frame[4]) * ACTOR_SCALE;
+      const y = (frame[8] - frame[5]) * ACTOR_SCALE;
+      return { x: (x + y * recoilShear(frame, ACTOR_SCALE, kick)) * facing, y };
+    }
+
+    function drawSprite(atlas, frame, x, y, facing = 1, scale = ACTOR_SCALE, kick = 0) {
+      const image = atlases[atlas]?.image;
+      if (!image || !Array.isArray(frame) || frame.length < 7) return false;
+      const [sx, sy, w, h, ax, ay] = frame;
+      if (![sx, sy, w, h, ax, ay].every(Number.isFinite) || sx < 0 || sy < 0 ||
+          w <= 0 || h <= 0 || sx + w > image.naturalWidth || sy + h > image.naturalHeight) return false;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(facing, 1);
+      ctx.imageSmoothingEnabled = true;
+      if (kick) ctx.transform(1, 0, recoilShear(frame, scale, kick), 1, 0, 0);
+      ctx.drawImage(image, sx, sy, w, h, -ax * scale, -ay * scale, w * scale, h * scale);
+      ctx.restore();
+      return true;
+    }
+
+    function drawLegacy(tile, x, y, w, h, facing = 1) {
+      if (!legacyReady || !Number.isInteger(tile)) return false;
+      ctx.save();
+      ctx.translate(x + (facing < 0 ? w : 0), y);
+      ctx.scale(facing, 1);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(legacySprites.image, tile % 7 * 32, Math.floor(tile / 7) * 32, 32, 32, 0, 0, w, h);
+      ctx.restore();
+      return true;
+    }
+
+    function playerSprite() {
+      const get = (name, time, loop) => clipFrame('player', name, time, loop);
+      const key = player.weapon;
+      const moving = Math.abs(player.vx) > 0.1;
+      const shotAge = playerShot ? elapsedTime - playerShot.at : Infinity;
+      const shot = playerShot?.key === key && playerShot.facing === player.facing && shotAge < SHOT_FEEDBACK[key].duration;
+      let frame;
+      if (gameState === 'start') frame = get('idle', performance.now(), true);
+      else if (gameState === 'gameover') frame = get('down', performance.now() - playerDownAt);
+      else if (player.hitFlashTimer > 0) frame = get('hit', 180 - player.hitFlashTimer);
+      else if (player.isClimbing) frame = get('climb', Math.abs(player.vy) > 0.1 ? player.animTime : 0, true);
+      else if (player.reloading && player.onGround && !player.isDucking) {
+        frame = get(key + 'Reload', WEAPONS[key].reloadTime - player.reloadTimer);
+      } else if (shot) {
+        if (playerShot.up && key === 'rifle' && player.onGround && !player.isDucking) {
+          frame = get('rifleUp', shotAge);
+        } else if (!playerShot.up && player.onGround) {
+          if (player.isDucking && key === 'rifle') frame = get('rifleCrouchFire', shotAge);
+          else if (!player.isDucking) {
+            frame = moving && key === 'rifle' ? get('rifleRun', player.animTime, true) : get(key + 'Fire', shotAge);
+          }
+        }
+      }
+      if (!frame) {
+        if (!player.onGround) {
+          frame = get('jump', player.vy < -1.7 ? 0 : player.vy > 1.7 ? 200 : 100);
+        } else if (player.isDucking) {
+          frame = get(moving ? 'crouchWalk' : 'crouch', player.animTime, true);
+        } else if (elapsedTime - lastLanding < 132) {
+          frame = get('land', elapsedTime - lastLanding);
+        } else if (moving) {
+          frame = (key === 'rifle' && get('rifleRun', player.animTime, true)) || get('run', player.animTime, true);
+        } else {
+          frame = get(key + 'Fire') || get('idle', player.animTime, true);
+        }
+      }
+      const recoil = player.recoilFacing === player.facing && !player.recoilUp
+        ? SHOT_FEEDBACK[key].recoil * (player.recoilTimer / SHOT_FEEDBACK[key].duration) ** 2 : 0;
+      return { frame, kick: shot && !player.hitFlashTimer && !player.isClimbing && gameState !== 'gameover' ? recoil : 0 };
+    }
+
+    function enemySprite(enemy) {
+      const get = (name, time, loop) => clipFrame('enemies', enemy.type + name, time, loop);
+      const ranged = enemy.type === 'robot' || enemy.type === 'alien';
+      const facing = ranged && (enemy.queuedShot || enemy.attackTimer > 0)
+        ? enemy.targetDir : enemy.dir;
+      let frame;
+      if (enemy.hitTimer > 0) frame = get('Hit', 170 - enemy.hitTimer);
+      else if (ranged && enemy.queuedShot) {
+        const windup = enemy.type === 'robot' ? 420 : 300;
+        frame = get('Attack', enemy.windupTimer > windup * 0.72 ? 0 : 55);
+      } else if (ranged && enemy.attackTimer > 0) {
+        frame = get('Attack', enemy.attackTimer > 75 ? 120 : 185);
+      } else if (enemy.attackTimer > 0) {
+        // Contact damage already happened. Play the strike and recovery only.
+        const start = enemy.type === 'ghost' ? 45 : 120;
+        frame = get('Attack', start + 200 - enemy.attackTimer);
+      } else if (!ranged && enemy.contactDamageTimer <= 0 &&
+                   Math.abs(enemy.x - player.x) < enemy.width + 16 &&
+                   Math.abs(enemy.y - player.y) < enemy.height &&
+                   Math.sign(player.x - enemy.x) === facing) {
+        // Visual anticipation on approach, without changing contact or AI timers.
+        frame = get('Attack', enemy.type === 'ghost' ? 0 : 55);
+      }
+      frame ||= get('Move', enemy.animTime / (enemy.animVariance || 1), true);
+      return { frame, facing: facing || 1 };
+    }
+
+    function enemyOrigin(enemy) {
+      return enemy.type === 'ghost' ? enemy.y + enemy.height * 0.36 : enemy.y + enemy.height;
+    }
+
     function drawGame() {
       const uiPulse = 0.5 + 0.5 * Math.sin(performance.now() * 0.004);
       const cameraX = Math.max(0, Math.min(worldWidth - width, player.x - 150 + cameraShakeX));
@@ -1867,35 +1977,21 @@
         const drawH = p.height * pulse;
         const px = p.x - cameraX - (drawW - p.width) / 2;
         const py = p.y + bob - (drawH - p.height) / 2;
-        if (sheetLoaded) {
-          if (p.type === 'gold') {
-            const f = ANIMATIONS.coin;
-            ctx.drawImage(spriteSheet, f.sx, f.sy, 32, 32, px, py, drawW, drawH);
-            ctx.strokeStyle = `rgba(255,244,140,${0.55 + 0.3 * Math.sin(wave * 1.8)})`;
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(px - 1, py + drawH * 0.2);
-            ctx.lineTo(px + drawW + 2, py + drawH * 0.85);
-            ctx.stroke();
-          } else if (p.type === 'ammo') {
-            let f;
-            if (p.ammoType === 'pistol') f = ANIMATIONS.ammoPistol;
-            else if (p.ammoType === 'rifle') f = ANIMATIONS.ammoRifle;
-            else if (p.ammoType === 'shotgun') f = ANIMATIONS.ammoShotgun;
-            else f = ANIMATIONS.ammoLaser;
-            ctx.drawImage(spriteSheet, f.sx, f.sy, 32, 32, px, py, drawW, drawH);
-          } else if (p.type === 'health') {
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(px, py, drawW, drawH);
-            ctx.strokeStyle = '#8eff95';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(px - 1, py - 1, drawW + 2, drawH + 2);
-            ctx.fillStyle = '#ff4444';
-            ctx.fillRect(px + drawW * 0.2, py + drawH * 0.45, drawW * 0.6, drawH * 0.1);
-            ctx.fillRect(px + drawW * 0.45, py + drawH * 0.2, drawW * 0.1, drawH * 0.6);
-          }
-        } else {
-          ctx.fillStyle = p.type === 'gold' ? '#ffd700' : (p.type === 'health' ? '#ffffff' : '#55ddff');
+        const icon = p.type === 'ammo' ? p.ammoType : p.type;
+        const frame = clipFrame('pickups', icon);
+        const iconScale = frame ? Math.max(drawW, drawH) * 1.18 / Math.max(frame[2], frame[3]) : 1;
+        if (p.type === 'health') {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(px, py, drawW, drawH);
+          ctx.strokeStyle = '#8eff95';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(px - 1, py - 1, drawW + 2, drawH + 2);
+          ctx.fillStyle = '#ff4444';
+          ctx.fillRect(px + drawW * 0.2, py + drawH * 0.45, drawW * 0.6, drawH * 0.1);
+          ctx.fillRect(px + drawW * 0.45, py + drawH * 0.2, drawW * 0.1, drawH * 0.6);
+        } else if (!drawSprite('pickups', frame, px + drawW / 2, py + drawH / 2, 1, iconScale) &&
+                   !drawLegacy(LEGACY[icon], px, py, drawW, drawH)) {
+          ctx.fillStyle = p.type === 'gold' ? '#ffd700' : '#55ddff';
           ctx.fillRect(px, py, drawW, drawH);
         }
         ctx.globalAlpha = 0.2;
@@ -1993,35 +2089,15 @@
       // Draw enemies
       enemies.forEach(e => {
         const px = e.x - cameraX;
-        // Draw health bar above each enemy.  A dark background bar shows
-        // maximum health, with the filled portion representing current
-        // health.  The bar width is proportional to the enemy width.
-        const barWidth = e.width;
-        const barHeight = 4;
+        const { frame, facing } = enemySprite(e);
+        const originY = enemyOrigin(e);
+        const barY = Math.min(e.y, frame ? originY - frame[5] * ACTOR_SCALE : e.y) - 8;
         const healthPct = Math.max(0, e.health) / e.maxHealth;
         ctx.fillStyle = 'rgba(50,50,50,0.8)';
-        ctx.fillRect(px, e.y - 8, barWidth, barHeight);
+        ctx.fillRect(px, barY, e.width, 4);
         ctx.fillStyle = healthPct > 0.5 ? '#33cc33' : (healthPct > 0.25 ? '#ddbb00' : '#cc3333');
-        ctx.fillRect(px, e.y - 8, barWidth * healthPct, barHeight);
+        ctx.fillRect(px, barY, e.width * healthPct, 4);
 
-        // Choose animation frames based on type and whether the enemy is currently attacking.
-        let frames;
-        if (sheetLoaded) {
-          // When attackTimer is active, select special attack frames if available.
-          if (e.attackTimer > 0) {
-            if (e.type === 'zombie') frames = ANIMATIONS.zombieAttack;
-            else if (e.type === 'alien') frames = ANIMATIONS.alienAttack;
-            else if (e.type === 'robot') frames = ANIMATIONS.robotWalk; // robots reuse walk frames
-            else if (e.type === 'ghost') frames = ANIMATIONS.ghostFloat;
-          }
-          // Default walking/floating animations
-          if (!frames) {
-            if (e.type === 'robot') frames = ANIMATIONS.robotWalk;
-            else if (e.type === 'zombie') frames = ANIMATIONS.zombieWalk;
-            else if (e.type === 'ghost') frames = ANIMATIONS.ghostFloat;
-            else if (e.type === 'alien') frames = ANIMATIONS.alienWalk;
-          }
-        }
         if (e.queuedShot && e.windupTimer > 0) {
           const chargePct = Math.max(0, Math.min(1, 1 - (e.windupTimer / (e.type === 'robot' ? 420 : 300))));
           const aimDir = e.targetDir || (player.x < e.x ? -1 : 1);
@@ -2035,27 +2111,19 @@
           ctx.stroke();
         }
 
-        if (sheetLoaded && frames) {
-          const baseAnimStep = e.type === 'ghost' ? 130 : (e.type === 'zombie' ? 170 : (e.type === 'robot' ? 145 : 125));
-          const animStep = baseAnimStep * (e.animVariance || 1);
-          const idx = Math.floor(e.animTime / animStep) % frames.length;
-          const f = frames[idx];
-          ctx.drawImage(spriteSheet, f.sx, f.sy, 32, 32, px, e.y, e.width, e.height);
-          // If hit recently, overlay a semi‑transparent red flash
-          if (e.hitTimer && e.hitTimer > 0) {
-            const alpha = Math.min(0.6, e.hitTimer / 150 * 0.6);
-            ctx.fillStyle = `rgba(255,0,0,${alpha})`;
+        if (!drawSprite('enemies', frame, px + e.width / 2, originY, facing)) {
+          const frames = LEGACY[e.type];
+          const tile = frames?.[Math.floor(e.animTime / 140) % frames.length];
+          if (!drawLegacy(tile, px, e.y, e.width, e.height, facing)) {
+            ctx.fillStyle = ENEMY_COLOR[e.type];
             ctx.fillRect(px, e.y, e.width, e.height);
           }
-        } else {
-          // fallback coloured rectangles
-          if (e.type === 'zombie') ctx.fillStyle = '#00aa00';
-          else if (e.type === 'ghost') ctx.fillStyle = '#aaaaff';
-          else if (e.type === 'alien') ctx.fillStyle = '#55ff55';
-          else ctx.fillStyle = '#ff8844';
-          ctx.fillRect(px, e.y, e.width, e.height);
         }
       });
+      for (const enemy of fallenSprites) {
+        const frame = clipFrame('enemies', enemy.type + 'Down', elapsedTime - enemy.at);
+        drawSprite('enemies', frame, enemy.x - cameraX + enemy.width / 2, enemyOrigin(enemy), enemy.facing);
+      }
       // Draw particle effects if enabled
       if (SETTINGS.particles) {
         particles.forEach(p => {
@@ -2112,37 +2180,15 @@
       });
       // Draw player
       const ppx = player.x - cameraX;
-      if (sheetLoaded) {
-        const moving = Math.abs(player.vx) > 0.1;
-        const frames = !player.onGround ? ANIMATIONS.playerJump
-          : player.isDucking ? (moving ? ANIMATIONS.playerCrouchWalk : ANIMATIONS.playerCrouch)
-          : moving ? ANIMATIONS.playerRun : ANIMATIONS.playerIdle;
-        const frameMs = !player.onGround ? 120 : player.isDucking ? 95 : 92;
-        const frame = frames[Math.floor(player.animTime / frameMs) % frames.length];
-        const cropOffsetY = player.baseHeight - player.height;
-        const pivot = Math.min(20, player.height - 5);
-        const feedback = SHOT_FEEDBACK[player.weapon];
-        const recoil = feedback.recoil * Math.pow(player.recoilTimer / feedback.duration, 2);
-        const kick = player.recoilFacing === player.facing ? recoil : 0;
-        ctx.save();
-        ctx.translate(ppx + (player.facing < 0 ? player.width : 0), player.y);
-        ctx.scale(player.facing, 1);
-        // Keep the feet planted. Only the upper section receives a visual kick.
-        ctx.drawImage(spriteSheet, frame.sx, frame.sy + cropOffsetY + pivot, 32, player.height - pivot,
-          0, pivot, player.width, player.height - pivot);
-        const lean = player.recoilUp ? kick * 0.22 : kick;
-        ctx.transform(1, 0, lean / pivot, 1, -lean, 0);
-        ctx.drawImage(spriteSheet, frame.sx, frame.sy + cropOffsetY, 32, pivot, 0, 0, player.width, pivot);
-        ctx.restore();
-        if (player.hitFlashTimer > 0) {
-          const alpha = Math.min(0.55, (player.hitFlashTimer / 180) * 0.55);
-          ctx.fillStyle = `rgba(255,80,80,${alpha})`;
+      const { frame, kick } = playerSprite();
+      if (!drawSprite('player', frame, ppx + player.width / 2, player.y + player.height, player.facing, ACTOR_SCALE, kick)) {
+        const frames = !player.onGround ? LEGACY.playerJump
+          : Math.abs(player.vx) > 0.1 ? LEGACY.playerRun : LEGACY.playerIdle;
+        const tile = frames[Math.floor(player.animTime / 110) % frames.length];
+        if (!drawLegacy(tile, ppx, player.y, player.width, player.height, player.facing)) {
+          ctx.fillStyle = '#0077ff';
           ctx.fillRect(ppx, player.y, player.width, player.height);
         }
-      } else {
-        // fallback: simple rectangle when sprites are not loaded
-        ctx.fillStyle = '#0077ff';
-        ctx.fillRect(ppx, player.y, player.width, player.height);
       }
       // Floating combat/pickup feedback text
       floatingTexts.forEach(t => {
@@ -2443,7 +2489,7 @@
         ctx.fillText('SPACE COMMANDO', panelX + panelW / 2, panelY + 50);
         ctx.shadowBlur = 0;
         // Options
-        const startOptions = ['START GAME', 'GAME SETTINGS'];
+        const startOptions = [artReady ? 'START GAME' : 'LOADING SPRITES…', 'GAME SETTINGS'];
         ctx.font = '22px "Orbitron", Arial';
         const optStartY = panelY + 120;
         const optSpacing = 50;
