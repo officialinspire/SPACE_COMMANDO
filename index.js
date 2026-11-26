@@ -209,10 +209,10 @@
     // balanced pricing: pistol bullets and shotgun shells are cheap,
     // rifle cartridges are mid‑priced and batteries (laser ammo) are
     // expensive.
-    { type: 'ammo', ammoType: 'pistol', name: 'PISTOL AMMO', cost: 5, qty: 1 },
-    { type: 'ammo', ammoType: 'rifle', name: 'RIFLE AMMO', cost: 10, qty: 10 },
-    { type: 'ammo', ammoType: 'shotgun', name: 'SHOTGUN SHELLS', cost: 5, qty: 5 },
-    { type: 'ammo', ammoType: 'laser', name: 'BATTERY', cost: 10, qty: 1 }
+    { type: 'ammo', ammoType: 'pistol', name: 'Pistol ammo', cost: 5, qty: 1 },
+    { type: 'ammo', ammoType: 'rifle', name: 'Rifle ammo', cost: 10, qty: 10 },
+    { type: 'ammo', ammoType: 'shotgun', name: 'Shotgun shells', cost: 5, qty: 5 },
+    { type: 'ammo', ammoType: 'laser', name: 'Battery', cost: 10, qty: 1 }
   ];
 
   /**
@@ -225,8 +225,16 @@
     difficulty: 'normal',
     audio: true,
     particles: true,
+    effects: 'system',
     musicVolume: 0.6
   };
+
+  const SETTING_KEYS = ['difficulty', 'audio', 'particles', 'effects'];
+  const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+  function effectsReduced() {
+    return SETTINGS.effects === 'reduced' || (SETTINGS.effects === 'system' && motionPreference.matches);
+  }
 
   // Audio objects for background music.  These will be created in
   // init() so they can access the SETTINGS object.  gameMusic
@@ -348,19 +356,7 @@
    * event listeners, game entities, and the main loop. All of the
    * gameplay logic lives within the nested helper functions.
    */
-  function updateControlsHeight() {
-      const ctrl = document.getElementById('mobile-controls');
-      if (!ctrl) return;
-      window.requestAnimationFrame(() => {
-        const h = Math.ceil(ctrl.getBoundingClientRect().height) || 0;
-        document.documentElement.style.setProperty('--controls-height', h + 'px');
-      });
-    }
-
-    function init() {
-    // Update the document title so we know the script ran. If you see
-    // this title in the browser tab, the JS has executed successfully.
-    document.title = 'SPACE COMMANDO – A #teaminspire Production';
+  function init() {
     const canvas = document.getElementById('game-canvas');
     const ctx = canvas.getContext('2d');
     const width = canvas.width;
@@ -449,6 +445,7 @@
      * weapon if the player has enough gold. P toggles the shop.
      */
     function handleMenuInput(e) {
+      if (document.body.dataset.boot !== 'ready') return;
       const previousState = gameState;
       if (gameState === 'shop') {
         // Purchase menu navigation for both weapons and ammo items
@@ -458,6 +455,7 @@
           menuSelection = (menuSelection + 1) % SHOP_ITEMS.length;
         } else if (e.key === 'Enter') {
           const item = SHOP_ITEMS[menuSelection];
+          shopNotice = '';
           if (item.type === 'weapon') {
             const key = item.key;
             const w = WEAPONS[key];
@@ -466,6 +464,7 @@
             // Enter on a weapon row buys+equips if not owned, otherwise just equips.
             if (alreadyOwned) {
               player.weapon = key;
+              shopNotice = `${w.name} equipped`;
             } else if (player.gold >= w.cost) {
               player.gold -= w.cost;
               player.ownedWeapons[key] = true;
@@ -473,6 +472,9 @@
               // refill clip and grant two extra magazines of reserve
               player.ammoInClip[key] = w.magazine;
               player.reserveAmmo[key] += w.magazine * 2;
+              shopNotice = `${w.name} purchased and equipped`;
+            } else {
+              shopNotice = `Requires ${w.cost} gold`;
             }
             if (previousWeapon !== player.weapon) player.recoilTimer = 0;
             if (player.reloading && player.reloadWeaponKey !== player.weapon) {
@@ -486,6 +488,9 @@
             if (player.gold >= item.cost) {
               player.gold -= item.cost;
               player.reserveAmmo[item.ammoType] += item.qty;
+              shopNotice = `Added ${item.qty} to reserve`;
+            } else {
+              shopNotice = `Requires ${item.cost} gold`;
             }
           }
           // Play selection sound whenever a purchase is attempted
@@ -504,6 +509,7 @@
         if (e.key === 'p' || e.key === 'P') {
           // Open purchase menu
           gameState = 'shop';
+          shopNotice = '';
           // Highlight the current weapon if present in the shop items.
           const idx = SHOP_ITEMS.findIndex(it => it.type === 'weapon' && it.key === player.weapon);
           menuSelection = idx >= 0 ? idx : 0;
@@ -535,6 +541,7 @@
             // Restart game and return to start menu
             restart();
             gameState = 'start';
+            startMenuSelection = 0;
             fadeOut(menuMusic);
             fadeIn(menuMusic); // continue playing menu music for start screen
           } else if (mainMenuSelection === 2) {
@@ -555,14 +562,12 @@
           fadeIn(gameMusic);
         }
       } else if (gameState === 'settings') {
-        // Settings menu categories: 0 difficulty, 1 audio, 2 particles
-        const settingKeys = ['difficulty', 'audio', 'particles'];
         if (e.key === 'ArrowUp') {
-          settingsSelection = (settingsSelection + settingKeys.length - 1) % settingKeys.length;
+          settingsSelection = (settingsSelection + SETTING_KEYS.length - 1) % SETTING_KEYS.length;
         } else if (e.key === 'ArrowDown') {
-          settingsSelection = (settingsSelection + 1) % settingKeys.length;
+          settingsSelection = (settingsSelection + 1) % SETTING_KEYS.length;
         } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Enter') {
-          const key = settingKeys[settingsSelection];
+          const key = SETTING_KEYS[settingsSelection];
           if (key === 'difficulty') {
             const difficulties = ['easy', 'normal', 'hard'];
             let idx = difficulties.indexOf(SETTINGS.difficulty);
@@ -589,6 +594,10 @@
             }
           } else if (key === 'particles') {
             SETTINGS.particles = !SETTINGS.particles;
+          } else {
+            const modes = ['system', 'reduced', 'full'];
+            const step = e.key === 'ArrowLeft' ? -1 : 1;
+            SETTINGS.effects = modes[(modes.indexOf(SETTINGS.effects) + step + modes.length) % modes.length];
           }
           // Play selection sound when adjusting a setting
           try {
@@ -644,6 +653,7 @@
           restart();
           // return to start screen after death
           gameState = 'start';
+          startMenuSelection = 0;
           // stop gameplay music and start menu music
           fadeOut(gameMusic);
           fadeIn(menuMusic);
@@ -657,11 +667,14 @@
       if (gameState !== previousState && (previousState === 'play' || gameState === 'play')) {
         resetGameplayInput();
       }
+      syncMenu(e.key.startsWith('Arrow'));
     }
 
     const scrollKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'];
     document.addEventListener('keydown', e => {
+      if (document.body.dataset.boot !== 'ready') return;
       const key = gameplayKey(e.key);
+      if (e.target?.closest?.('button') && (key === 'Space' || key === 'Enter')) return;
       if (scrollKeys.includes(key)) e.preventDefault();
       if (e.repeat || keyboardKeys.has(key)) return;
       if (gameState === 'play') pressGameplayKey(keyboardKeys, key);
@@ -670,35 +683,28 @@
     document.addEventListener('keyup', e => {
       const key = gameplayKey(e.key);
       releaseGameplayKey(keyboardKeys, key);
-      if (scrollKeys.includes(key)) e.preventDefault();
+      if (scrollKeys.includes(key) && !(key === 'Space' && e.target?.closest?.('button'))) e.preventDefault();
     });
     window.addEventListener('blur', resetGameplayInput);
     document.addEventListener('visibilitychange', resetGameplayInput);
+    document.addEventListener('fullscreenchange', resetGameplayInput);
+    window.addEventListener('orientationchange', resetGameplayInput);
+    window.screen.orientation?.addEventListener('change', resetGameplayInput);
     // ---------------------------------------------------------------------
     // Mobile controls
     const isMobile =
       /Mobi|Android|iPhone|iPad|iPod|Tablet/i.test(navigator.userAgent) ||
-      (navigator.maxTouchPoints && navigator.maxTouchPoints > 1);
+      navigator.maxTouchPoints > 0;
 
     if (isMobile) {
       const ctrlBar = document.getElementById('mobile-controls');
       if (ctrlBar) {
-        ctrlBar.style.display = 'flex';
-        updateControlsHeight();
-        window.addEventListener('resize', updateControlsHeight);
-        window.addEventListener('orientationchange', () => {
-          resetGameplayInput();
-          setTimeout(updateControlsHeight, 60);
-        });
-        if (window.visualViewport) {
-          window.visualViewport.addEventListener('resize', updateControlsHeight);
-        }
+        ctrlBar.hidden = false;
 
         const buttons = Array.from(ctrlBar.querySelectorAll('.control-btn'));
         const menuKeys = new Set(['Enter', 'Escape', 'p', 'P', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
         const pointerToButton = new Map();
         const activePointersByButton = new Map();
-        let lastTouchInteractionAt = 0;
 
         const pressButton = (btn, keyName, pointerId, event, pointerType) => {
           if (event.cancelable) event.preventDefault();
@@ -713,10 +719,7 @@
           if (setForButton.size === 1) btn.classList.add('pressed');
           pressGameplayKey(touchKeys, keyName);
 
-          if (pointerType === 'touch' || pointerType === 'pen') {
-            lastTouchInteractionAt = performance.now();
-            if (navigator.vibrate) navigator.vibrate(10);
-          }
+          if ((pointerType === 'touch' || pointerType === 'pen') && navigator.vibrate) navigator.vibrate(10);
 
           if (menuKeys.has(keyName) && setForButton.size === 1) {
             handleMenuInput({ key: keyName, repeat: false });
@@ -804,12 +807,15 @@
           }
         }, { passive: false });
 
-        ctrlBar.addEventListener('click', (event) => {
-          if (performance.now() - lastTouchInteractionAt < 450) {
-            event.preventDefault();
-            event.stopPropagation();
-          }
-        }, true);
+        // Keyboard and assistive-technology activations have no pointerdown.
+        ctrlBar.addEventListener('click', event => {
+          if (event.detail !== 0) return;
+          const key = event.target.closest('.control-btn')?.dataset.key;
+          if (!key) return;
+          pressGameplayKey(touchKeys, key);
+          if (menuKeys.has(key)) handleMenuInput({ key });
+          releaseGameplayKey(touchKeys, key);
+        });
       }
     }
 
@@ -858,7 +864,8 @@
     let menuSelection = 0;        // for shop menu (weapon list)
     let mainMenuSelection = 0;    // for pause menu options
     let startMenuSelection = 0;   // for initial start menu
-    let settingsSelection = 0;    // index of currently selected setting (difficulty/audio/particles)
+    let settingsSelection = 0;
+    let shopNotice = '';
 
     // Track the previous state when entering the settings menu so
     // Escaping settings returns the player to the correct screen
@@ -2094,8 +2101,8 @@
     }
 
     function drawGame() {
-      const uiPulse = 0.5 + 0.5 * Math.sin(performance.now() * 0.004);
-      const cameraX = cameraLeft(cameraShakeX);
+      const reduced = effectsReduced();
+      const cameraX = cameraLeft(reduced ? 0 : cameraShakeX);
       drawStation(cameraX);
       drawTerrain(cameraX);
       // Draw pickups
@@ -2216,7 +2223,7 @@
         const t = f.life / f.maxLife;
         const px = f.x - cameraX;
         const len = f.kind === 'laser' ? 20 : (f.kind === 'shotgun' ? 15 : 10);
-        ctx.globalAlpha = Math.max(0, t * 0.9);
+        ctx.globalAlpha = Math.max(0, t * (reduced ? 0.35 : 0.9));
         ctx.strokeStyle = f.kind === 'laser' ? '#99ffff' : '#ffdd88';
         ctx.lineWidth = f.kind === 'shotgun' ? 4 : 2;
         ctx.beginPath();
@@ -2252,481 +2259,222 @@
         const alpha = Math.max(0, t.life / t.maxLife);
         ctx.globalAlpha = alpha;
         ctx.fillStyle = t.color;
-        ctx.font = '11px "Press Start 2P", Arial';
+        ctx.font = '700 12px system-ui, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(t.text, t.x - cameraX, t.y);
         ctx.textAlign = 'left';
         ctx.globalAlpha = 1;
       });
 
-      // HUD: draw health bar, reload bar and ammo/weapon info using retro sci‑fi fonts.
-      // These elements should only appear during gameplay and shop screens.  Hide
-      // them on the start, pause and settings menus to avoid clutter behind the
-      // overlays.  This conditional prevents the old text panels showing up
-      // behind menus as seen in earlier builds.
-      if (gameState === 'play' || gameState === 'shop') {
-        const panelX = 14;
-        const panelY = 12;
-        const panelW = Math.min(378, width * 0.5);
-        const panelH = 156;
-        const wInfo = WEAPONS[player.weapon];
-        const hpPct = Math.max(0, Math.min(1, player.health / 100));
-        const clip = player.ammoInClip[player.weapon];
-        const reserve = player.reserveAmmo[player.weapon];
-
-        ctx.fillStyle = 'rgba(4, 10, 22, 0.93)';
-        ctx.fillRect(panelX, panelY, panelW, panelH);
-        ctx.strokeStyle = `rgba(110, 215, 255, ${0.74 + uiPulse * 0.2})`;
-        ctx.lineWidth = 2;
-        ctx.strokeRect(panelX, panelY, panelW, panelH);
-
-        ctx.fillStyle = '#e8f8ff';
-        ctx.font = '700 14px "Orbitron", Arial';
-        ctx.strokeStyle = 'rgba(0,0,0,0.82)';
-        ctx.lineWidth = 2;
-        ctx.strokeText('COMBAT STATUS', panelX + 12, panelY + 20);
-        ctx.fillText('COMBAT STATUS', panelX + 12, panelY + 20);
-
-        const barW = panelW - 24;
-        const hpY = panelY + 36;
-        ctx.fillStyle = 'rgba(0,0,0,0.62)';
-        ctx.fillRect(panelX + 12, hpY, barW, 20);
-        ctx.fillStyle = hpPct > 0.5 ? '#39ff83' : (hpPct > 0.25 ? '#ffd960' : '#ff6767');
-        ctx.fillRect(panelX + 12, hpY, barW * hpPct, 20);
-        ctx.strokeStyle = 'rgba(210, 240, 255, 0.65)';
-        ctx.strokeRect(panelX + 12, hpY, barW, 20);
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '10px "Press Start 2P", Arial';
-        ctx.strokeStyle = 'rgba(0,0,0,0.75)';
-        ctx.lineWidth = 2;
-        ctx.strokeText(`HEALTH ${Math.max(0, Math.floor(player.health))}%`, panelX + 16, hpY + 14);
-        ctx.fillText(`HEALTH ${Math.max(0, Math.floor(player.health))}%`, panelX + 16, hpY + 14);
-
-        const infoRows = [
-          ['GOLD', `${player.gold}`],
-          ['WEAPON', wInfo.name.toUpperCase()],
-          ['AMMO', `${clip} / ${reserve}`]
-        ];
-        ctx.font = '700 13px "Orbitron", Arial';
-        infoRows.forEach((row, i) => {
-          const rowY = hpY + 44 + i * 24;
-          const isAmmoRow = row[0] === 'AMMO';
-          if (isAmmoRow && clip <= Math.max(1, Math.floor(wInfo.magazine * 0.25))) {
-            ctx.fillStyle = `rgba(255, 184, 89, ${0.33 + uiPulse * 0.2})`;
-            ctx.fillRect(panelX + 12, rowY - 14, barW, 19);
-          }
-          ctx.fillStyle = '#a9d4f0';
-          ctx.fillText(row[0], panelX + 14, rowY);
-          ctx.fillStyle = '#ffffff';
-          ctx.textAlign = 'right';
-          ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-          ctx.lineWidth = 2;
-          ctx.strokeText(row[1], panelX + panelW - 16, rowY);
-          ctx.fillText(row[1], panelX + panelW - 16, rowY);
-          ctx.textAlign = 'left';
-        });
-
-        if (player.reloading) {
-          const reloadHudKey = player.reloadWeaponKey || player.weapon;
-          const pct = 1 - player.reloadTimer / WEAPONS[reloadHudKey].reloadTime;
-          const rY = panelY + panelH + 6;
-          ctx.fillStyle = 'rgba(8,15,30,0.84)';
-          ctx.fillRect(panelX, rY, panelW, 16);
-          ctx.fillStyle = '#223249';
-          ctx.fillRect(panelX + 2, rY + 2, panelW - 4, 12);
-          ctx.fillStyle = '#5dd8ff';
-          ctx.fillRect(panelX + 2, rY + 2, (panelW - 4) * pct, 12);
-          ctx.fillStyle = '#eefbff';
-          ctx.font = '8px "Press Start 2P", Arial';
-          ctx.strokeStyle = 'rgba(0,0,0,0.85)';
-          ctx.lineWidth = 2;
-          ctx.strokeText('RELOADING...', panelX + 6, rY + 11);
-          ctx.fillText('RELOADING...', panelX + 6, rY + 11);
-        }
-      }
-      // -------------------------------------------------------------------
-      // Shop overlay
-      //
-      // The original shop panel used a fixed row height and panel base
-      // height which caused the menu to extend off the bottom of the
-      // canvas when the list of items grew.  To ensure the entire
-      // purchase menu fits inside the game canvas, compute the row
-      // spacing and overall panel height dynamically based on the
-      // available canvas height.  A slightly smaller base height is
-      // used and rows are spaced a bit tighter than the original 36px.
-      if (gameState === 'shop') {
-        // Dim the background behind the shop panel
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        ctx.fillRect(0, 0, width, height);
-
-        const panelPaddingX = Math.max(12, Math.floor(width * 0.03));
-        const panelPaddingY = Math.max(12, Math.floor(height * 0.03));
-        const panelW = Math.min(620, width - panelPaddingX * 2);
-        const compactLayout = panelW < 510;
-
-        const titleFontSize = compactLayout ? 24 : 32;
-        const rowMainFontSize = compactLayout ? 13 : 16;
-        const rowExtraFontSize = compactLayout ? 10 : 12;
-        const hintFontSize = compactLayout ? 10 : 12;
-        const goldFontSize = compactLayout ? 9 : 11;
-
-        const headerH = compactLayout ? 66 : 86;
-        const footerH = compactLayout ? 50 : 60;
-        const preferredRowSpacing = compactLayout ? 40 : 34;
-        const minRowSpacing = compactLayout ? 30 : 24;
-        const maxPanelHeight = height - panelPaddingY * 2;
-        let rowSpacing = preferredRowSpacing;
-        let panelH = headerH + footerH + SHOP_ITEMS.length * rowSpacing + 8;
-        if (panelH > maxPanelHeight) {
-          rowSpacing = Math.max(minRowSpacing, Math.floor((maxPanelHeight - headerH - footerH - 8) / SHOP_ITEMS.length));
-          panelH = headerH + footerH + SHOP_ITEMS.length * rowSpacing + 8;
-        }
-        panelH = Math.min(panelH, maxPanelHeight);
-
-        const panelX = (width - panelW) / 2;
-        const panelY = (height - panelH) / 2;
-
-        // Draw the panel body and border
-        ctx.fillStyle = 'rgba(4, 10, 22, 0.94)';
-        ctx.fillRect(panelX, panelY, panelW, panelH);
-        ctx.strokeStyle = `rgba(0, 200, 255, ${0.65 + uiPulse * 0.2})`;
-        ctx.lineWidth = 2;
-        ctx.strokeRect(panelX, panelY, panelW, panelH);
-
-        // Title with glow effect
-        ctx.font = `bold ${titleFontSize}px "Orbitron", Arial`;
-        ctx.textAlign = 'center';
-        ctx.shadowColor = '#00ccff';
-        ctx.shadowBlur = 20;
-        ctx.fillStyle = '#00ccff';
-        ctx.fillText('SHOP', panelX + panelW / 2, panelY + (compactLayout ? 36 : 48));
-        ctx.shadowBlur = 0;
-
-        // Player gold top right
-        ctx.font = `${goldFontSize}px "Press Start 2P", Arial`;
-        ctx.fillStyle = '#88ccff';
-        ctx.textAlign = 'right';
-        ctx.fillText(`GOLD: ${player.gold}`, panelX + panelW - 14, panelY + 24);
-        ctx.textAlign = 'left';
-
-        // Draw the list of items.  Start a bit lower to make room for
-        // the title and gold display.  Use the computed rowSpacing
-        // when positioning each entry.
-        const listStartY = panelY + headerH;
-        const rowInset = compactLayout ? 10 : 16;
-        const nameX = panelX + rowInset + 6;
-        const costX = panelX + panelW * (compactLayout ? 0.63 : 0.57);
-        const extraX = panelX + panelW - rowInset - 8;
-        SHOP_ITEMS.forEach((item, i) => {
-          const rowY = listStartY + i * rowSpacing;
-          const y = rowY + (compactLayout ? 16 : 14);
-          const selected = (i === menuSelection);
-          let nameText, costText, extraText;
-          if (item.type === 'weapon') {
-            const w = WEAPONS[item.key];
-            nameText = w.name.toUpperCase();
-            const owned = !!player.ownedWeapons[item.key];
-            const canAfford = player.gold >= w.cost;
-            if (player.weapon === item.key) {
-              costText = 'EQUIPPED';
-            } else if (owned) {
-              costText = 'OWNED';
-            } else if (!canAfford) {
-              costText = 'LOCKED';
-            } else {
-              costText = `BUY ${w.cost}G`;
-            }
-            const fireRateHint = `${Math.round(60 / Math.max(1, w.fireRate / 8))}`;
-            extraText = `DMG ${w.damage}  MAG ${w.magazine}  FR ${fireRateHint}`;
-          } else {
-            nameText = item.name.toUpperCase();
-            costText = player.gold >= item.cost ? `BUY ${item.cost}G` : 'LOCKED';
-            extraText = `QTY: ${item.qty}`;
-          }
-          if (selected) {
-            ctx.fillStyle = `rgba(32, 72, 102, ${0.58 + uiPulse * 0.2})`;
-            ctx.fillRect(panelX + rowInset, rowY + 2, panelW - rowInset * 2, rowSpacing - 4);
-            ctx.strokeStyle = 'rgba(255, 221, 120, 0.85)';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(panelX + rowInset, rowY + 2, panelW - rowInset * 2, rowSpacing - 4);
-          }
-          // Name column with glow on selected
-          ctx.font = `700 ${rowMainFontSize}px "Orbitron", Arial`;
-          if (selected) {
-            ctx.shadowColor = '#ffdd55';
-            ctx.shadowBlur = 12;
-            ctx.fillStyle = '#ffdd55';
-          } else {
-            ctx.shadowBlur = 0;
-            ctx.fillStyle = '#aaaaaa';
-          }
-          ctx.fillText(nameText, nameX, y);
-          // Cost column
-          ctx.shadowBlur = 0;
-          if (costText === 'LOCKED') ctx.fillStyle = '#ff7676';
-          else if (costText.startsWith('BUY')) ctx.fillStyle = selected ? '#a6ffd2' : '#79eeb8';
-          else ctx.fillStyle = selected ? '#ffffaa' : '#888888';
-          ctx.font = `700 ${rowMainFontSize}px "Orbitron", Arial`;
-          ctx.strokeStyle = 'rgba(0,0,0,0.72)';
-          ctx.lineWidth = 2;
-          ctx.strokeText(costText, costX, y);
-          ctx.fillText(costText, costX, y);
-          // Extra column (magazine/qty)
-          ctx.font = `${rowExtraFontSize}px "Press Start 2P", Arial`;
-          ctx.fillStyle = selected ? '#fff7bd' : '#a3adb8';
-          ctx.strokeStyle = 'rgba(0,0,0,0.72)';
-          ctx.lineWidth = 2;
-          ctx.textAlign = 'right';
-          ctx.strokeText(extraText, extraX, compactLayout ? y + 14 : y);
-          ctx.fillText(extraText, extraX, compactLayout ? y + 14 : y);
-          ctx.textAlign = 'left';
-        });
-        ctx.shadowBlur = 0;
-
-        // Instructions at the bottom of the panel
-        ctx.font = `${hintFontSize}px "Orbitron", Arial`;
-        ctx.fillStyle = '#88ccff';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        const selectedItem = SHOP_ITEMS[menuSelection];
-        let actionHint = 'ENTER: BUY';
-        if (selectedItem && selectedItem.type === 'weapon' && player.ownedWeapons[selectedItem.key]) {
-          actionHint = player.weapon === selectedItem.key ? 'ENTER: EQUIPPED' : 'ENTER: EQUIP';
-        }
-        ctx.fillText(`${actionHint}  P/ESC: CLOSE`, panelX + panelW / 2, panelY + panelH - (compactLayout ? 34 : 40));
-        ctx.textBaseline = 'alphabetic';
-        ctx.textAlign = 'left';
-      }
       if (damageOverlayTimer > 0) {
-        const alpha = Math.min(0.22, (damageOverlayTimer / 120) * 0.22);
-        ctx.fillStyle = `rgba(255,30,30,${alpha})`;
+        const alpha = (damageOverlayTimer / 120) * (reduced ? 0.055 : 0.18);
+        ctx.fillStyle = `rgba(255,45,40,${alpha})`;
         ctx.fillRect(0, 0, width, height);
       }
+      if (gameState === 'play') drawHUD();
+    }
 
-      // Game over overlay
-      if (gameState === 'gameover') {
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-        ctx.fillRect(0,0,width,height);
-        ctx.textAlign = 'center';
-        ctx.fillStyle = '#ff5555';
-        ctx.font = '36px "Orbitron", Arial';
-        ctx.fillText('GAME OVER', width/2, height/2 - 50);
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '18px "Press Start 2P", Arial';
-        ctx.fillText(`FINAL GOLD: ${player.gold}`, width/2, height/2 - 10);
-        ctx.fillText('PRESS ENTER TO RESTART', width/2, height/2 + 24);
-        ctx.textAlign = 'left';
-      }
-
-      // Start menu overlay
-      if (gameState === 'start') {
-        // Darken the scene behind the menu
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        ctx.fillRect(0, 0, width, height);
-        // Widen the panel for ample space and breathe vertically
-        const panelW = 500;
-        const panelH = 280;
-        const panelX = (width - panelW) / 2;
-        const panelY = (height - panelH) / 2;
-        // Panel base and outline
-        ctx.fillStyle = 'rgba(4, 10, 22, 0.94)';
-        ctx.fillRect(panelX, panelY, panelW, panelH);
-        ctx.strokeStyle = `rgba(0, 200, 255, ${0.65 + uiPulse * 0.2})`;
-        ctx.lineWidth = 2;
-        ctx.strokeRect(panelX, panelY, panelW, panelH);
-        ctx.textAlign = 'center';
-        // Title with glow effect
-        ctx.font = 'bold 36px "Orbitron", Arial';
-        ctx.shadowColor = '#00ccff';
-        ctx.shadowBlur = 20;
-        ctx.fillStyle = '#00ccff';
-        ctx.strokeStyle = 'rgba(0,0,0,0.72)';
-        ctx.lineWidth = 3;
-        ctx.strokeText('SPACE COMMANDO', panelX + panelW / 2, panelY + 50);
-        ctx.fillText('SPACE COMMANDO', panelX + panelW / 2, panelY + 50);
-        ctx.shadowBlur = 0;
-        // Options
-        const startOptions = [artReady ? 'START GAME' : 'LOADING SPRITES…', 'GAME SETTINGS'];
-        ctx.font = '22px "Orbitron", Arial';
-        const optStartY = panelY + 120;
-        const optSpacing = 50;
-        startOptions.forEach((opt, i) => {
-          const y = optStartY + i * optSpacing;
-          const selected = (i === startMenuSelection);
-          if (selected) {
-            ctx.fillStyle = `rgba(36, 80, 112, ${0.56 + uiPulse * 0.2})`;
-            ctx.fillRect(panelX + 34, y - 24, panelW - 68, 34);
-            ctx.strokeStyle = 'rgba(255, 221, 120, 0.88)';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(panelX + 34, y - 24, panelW - 68, 34);
-          }
-          if (selected) {
-            ctx.shadowColor = '#ffdd55';
-            ctx.shadowBlur = 15;
-            ctx.fillStyle = '#ffdd55';
-          } else {
-            ctx.shadowBlur = 0;
-            ctx.fillStyle = '#aaaaaa';
-          }
-          ctx.fillText(opt, panelX + panelW / 2, y);
-        });
-        ctx.shadowBlur = 0;
-        // Instructions – split into two lines for better fit
-        ctx.font = '12px "Orbitron", Arial';
-        ctx.fillStyle = '#88ccff';
-        ctx.textBaseline = 'top';
-        const instrY = panelY + panelH - 55;
-        ctx.fillText('ARROWS: NAVIGATE', panelX + panelW / 2, instrY);
-        ctx.fillText('ENTER: SELECT', panelX + panelW / 2, instrY + 20);
-        ctx.textBaseline = 'alphabetic';
-        ctx.textAlign = 'left';
-      }
-      // Pause/menu overlay
-      if (gameState === 'menu') {
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        ctx.fillRect(0, 0, width, height);
-        const panelW = 520;
-        const optionsCount = 3;
-        const rowSpacing = 50;
-        const panelH = 240 + optionsCount * rowSpacing;
-        const panelX = (width - panelW) / 2;
-        const panelY = (height - panelH) / 2;
-        // Draw panel
-        ctx.fillStyle = 'rgba(4, 10, 22, 0.94)';
-        ctx.fillRect(panelX, panelY, panelW, panelH);
-        ctx.strokeStyle = `rgba(0, 200, 255, ${0.65 + uiPulse * 0.2})`;
-        ctx.lineWidth = 2;
-        ctx.strokeRect(panelX, panelY, panelW, panelH);
-        ctx.textAlign = 'center';
-        // Header with glow effect
-        ctx.font = 'bold 34px "Orbitron", Arial';
-        ctx.shadowColor = '#00ccff';
-        ctx.shadowBlur = 20;
-        ctx.fillStyle = '#00ccff';
-        ctx.strokeStyle = 'rgba(0,0,0,0.72)';
-        ctx.lineWidth = 3;
-        ctx.strokeText('PAUSED', panelX + panelW / 2, panelY + 50);
-        ctx.fillText('PAUSED', panelX + panelW / 2, panelY + 50);
-        ctx.shadowBlur = 0;
-        // Options
-        const menuOptions = ['RETURN TO GAME', 'RESTART GAME', 'GAME SETTINGS'];
-        ctx.font = '20px "Orbitron", Arial';
-        const menuStartY = panelY + 120;
-        menuOptions.forEach((opt, i) => {
-          const y = menuStartY + i * rowSpacing;
-          const selected = (i === mainMenuSelection);
-          if (selected) {
-            ctx.fillStyle = `rgba(36, 80, 112, ${0.56 + uiPulse * 0.2})`;
-            ctx.fillRect(panelX + 34, y - 24, panelW - 68, 34);
-            ctx.strokeStyle = 'rgba(255, 221, 120, 0.88)';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(panelX + 34, y - 24, panelW - 68, 34);
-          }
-          if (selected) {
-            ctx.shadowColor = '#ffdd55';
-            ctx.shadowBlur = 15;
-            ctx.fillStyle = '#ffdd55';
-          } else {
-            ctx.shadowBlur = 0;
-            ctx.fillStyle = '#aaaaaa';
-          }
-          ctx.fillText(opt, panelX + panelW / 2, y);
-        });
-        ctx.shadowBlur = 0;
-        // Instructions: break across two lines
-        ctx.font = '12px "Orbitron", Arial';
-        ctx.fillStyle = '#88ccff';
-        ctx.textBaseline = 'top';
-        const instrY = panelY + panelH - 55;
-        ctx.fillText('ARROWS: NAVIGATE', panelX + panelW / 2, instrY);
-        ctx.fillText('ENTER: SELECT    ESC: BACK', panelX + panelW / 2, instrY + 20);
-        ctx.textBaseline = 'alphabetic';
-        ctx.textAlign = 'left';
-      }
-      // Settings menu overlay
-      if (gameState === 'settings') {
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        ctx.fillRect(0, 0, width, height);
-        const settingKeys = ['difficulty', 'audio', 'particles'];
-        // Panel sizing: wider and taller to comfortably fit labels and values
-        const panelW = 540;
-        const rowSpacing = 48;
-        const panelH = 240 + settingKeys.length * rowSpacing;
-        const panelX = (width - panelW) / 2;
-        const panelY = (height - panelH) / 2;
-        // Panel base and border
-        ctx.fillStyle = 'rgba(4, 10, 22, 0.94)';
-        ctx.fillRect(panelX, panelY, panelW, panelH);
-        ctx.strokeStyle = `rgba(0, 200, 255, ${0.65 + uiPulse * 0.2})`;
-        ctx.lineWidth = 2;
-        ctx.strokeRect(panelX, panelY, panelW, panelH);
-        ctx.textAlign = 'center';
-        // Header with glow effect
-        ctx.font = 'bold 34px "Orbitron", Arial';
-        ctx.shadowColor = '#00ccff';
-        ctx.shadowBlur = 20;
-        ctx.fillStyle = '#00ccff';
-        ctx.strokeStyle = 'rgba(0,0,0,0.72)';
-        ctx.lineWidth = 3;
-        ctx.strokeText('SETTINGS', panelX + panelW / 2, panelY + 50);
-        ctx.fillText('SETTINGS', panelX + panelW / 2, panelY + 50);
-        ctx.shadowBlur = 0;
-        // Draw each setting: align labels left and values right
-        ctx.font = '18px "Orbitron", Arial';
-        const settingsStartY = panelY + 120;
-        settingKeys.forEach((key, i) => {
-          const y = settingsStartY + i * rowSpacing;
-          const selected = (i === settingsSelection);
-          let label;
-          let value;
-          if (key === 'difficulty') {
-            label = 'DIFFICULTY';
-            value = SETTINGS.difficulty.toUpperCase();
-          } else if (key === 'audio') {
-            label = 'MUSIC';
-            value = SETTINGS.audio ? 'ON' : 'OFF';
-          } else if (key === 'particles') {
-            label = 'PARTICLES';
-            value = SETTINGS.particles ? 'ON' : 'OFF';
-          }
-          if (selected) {
-            ctx.fillStyle = `rgba(36, 80, 112, ${0.56 + uiPulse * 0.2})`;
-            ctx.fillRect(panelX + 34, y - 24, panelW - 68, 34);
-            ctx.strokeStyle = 'rgba(255, 221, 120, 0.88)';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(panelX + 34, y - 24, panelW - 68, 34);
-          }
-          // Highlight selected line with glow
-          if (selected) {
-            ctx.shadowColor = '#ffdd55';
-            ctx.shadowBlur = 12;
-            ctx.fillStyle = '#ffdd55';
-          } else {
-            ctx.shadowBlur = 0;
-            ctx.fillStyle = '#aaaaaa';
-          }
-          ctx.textAlign = 'left';
-          // 70px padding from left edge for labels
-          ctx.fillText(label, panelX + 70, y);
-          ctx.shadowBlur = 0;
-          ctx.textAlign = 'right';
-          // Align values 70px from right edge
-          ctx.fillStyle = selected ? '#ffffaa' : '#888888';
-          ctx.fillText(value, panelX + panelW - 70, y);
-        });
-        ctx.shadowBlur = 0;
-        // Instructions: broken into two concise lines
-        ctx.font = '12px "Orbitron", Arial';
-        ctx.fillStyle = '#88ccff';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        const instrY = panelY + panelH - 55;
-        ctx.fillText('←/→/ENTER: CHANGE', panelX + panelW / 2, instrY);
-        ctx.fillText('ARROWS: NAVIGATE    ESC: BACK', panelX + panelW / 2, instrY + 20);
-        ctx.textBaseline = 'alphabetic';
-        ctx.textAlign = 'left';
+    function drawHUD() {
+      const health = Math.max(0, Math.ceil(player.health));
+      const weapon = WEAPONS[player.weapon];
+      const rounds = player.ammoInClip[player.weapon];
+      const low = rounds <= Math.max(1, Math.floor(weapon.magazine * 0.25));
+      ctx.fillStyle = 'rgba(10,18,29,0.96)';
+      ctx.fillRect(9, 8, 324, 48);
+      ctx.strokeStyle = '#415368';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(9.5, 8.5, 324, 48);
+      ctx.font = '700 15px system-ui, sans-serif';
+      ctx.fillStyle = '#e5eff5';
+      ctx.fillText(`HP ${health}%`, 19, 29);
+      ctx.fillStyle = '#26374a';
+      ctx.fillRect(19, 41, 71, 5);
+      ctx.fillStyle = health > 30 ? '#8adddf' : '#f39a7f';
+      ctx.fillRect(19, 41, 71 * health / 100, 5);
+      ctx.fillStyle = '#e5eff5';
+      ctx.fillText(weapon.name, 107, 29);
+      ctx.fillStyle = low ? '#f4c37b' : '#e5eff5';
+      ctx.fillText(`${rounds} / ${player.reserveAmmo[player.weapon]}`, 181, 29);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#f4c37b';
+      ctx.fillText(`${player.gold} G`, 323, 29);
+      ctx.textAlign = 'left';
+      ctx.font = '600 11px system-ui, sans-serif';
+      ctx.fillStyle = '#aebed0';
+      if (player.reloading) {
+        const duration = WEAPONS[player.reloadWeaponKey || player.weapon].reloadTime;
+        const progress = Math.max(0, Math.min(1, 1 - player.reloadTimer / duration));
+        ctx.fillText('Reloading', 107, 47);
+        ctx.fillStyle = '#26374a';
+        ctx.fillRect(167, 41, 83, 5);
+        ctx.fillStyle = '#8adddf';
+        ctx.fillRect(167, 41, 83 * progress, 5);
+      } else {
+        ctx.fillText('MAG / RES', 181, 46);
       }
     }
+
+    // Native menu controls sit over the Canvas, sharing the game's keyboard
+    // selection indices and shop actions with the touch controls.
+    const menuLayer = document.getElementById('game-menu');
+    let menuMode;
+    let menuRows = [];
+    let shopGold;
+    let shopStatus;
+
+    function element(tag, className, value) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (value) node.textContent = value;
+      return node;
+    }
+
+    function selectedRow() {
+      if (gameState === 'start') return startMenuSelection;
+      if (gameState === 'menu') return mainMenuSelection;
+      if (gameState === 'settings') return settingsSelection;
+      if (gameState === 'shop') return menuSelection;
+      return 0;
+    }
+
+    function selectRow(index) {
+      if (gameState === 'start') startMenuSelection = index;
+      if (gameState === 'menu') mainMenuSelection = index;
+      if (gameState === 'settings') settingsSelection = index;
+      if (gameState === 'shop') menuSelection = index;
+    }
+
+    function addMenuRow(parent, label, index, detail) {
+      const row = element('button', 'menu-row');
+      row.type = 'button';
+      const name = element('span', '', label);
+      row.append(name);
+      const value = detail ? element('span', 'menu-detail') : null;
+      if (value) row.append(value);
+      row.addEventListener('focus', () => {
+        selectRow(index);
+        syncMenu();
+      });
+      row.addEventListener('click', () => {
+        selectRow(index);
+        handleMenuInput({ key: 'Enter' });
+      });
+      parent.append(row);
+      menuRows[index] = { row, name, value };
+      return row;
+    }
+
+    function addBackButton(parent, label, className) {
+      const back = element('button', className, label);
+      back.type = 'button';
+      back.addEventListener('click', () => handleMenuInput({ key: 'Escape' }));
+      parent.append(back);
+    }
+
+    function buildMenu(mode) {
+      menuRows = [];
+      menuLayer.replaceChildren();
+      menuLayer.classList.toggle('title-art', mode === 'start');
+      menuLayer.hidden = mode === 'play' || mode === 'boot';
+      if (menuLayer.hidden) return;
+
+      const panel = element('section', mode === 'shop' ? 'menu-panel shop-panel' : 'menu-panel');
+      const heading = element(mode === 'start' ? 'h1' : 'h2', '', {
+        start: 'SPACE COMMANDO', menu: 'Paused', settings: 'Settings', shop: 'Shop', gameover: 'Game over'
+      }[mode]);
+      heading.id = 'menu-heading';
+      panel.setAttribute('aria-labelledby', heading.id);
+      menuLayer.append(panel);
+      if (mode === 'shop') {
+        const header = element('div', 'shop-heading');
+        shopGold = element('span', 'shop-gold');
+        header.append(heading, shopGold);
+        panel.append(header);
+        const grid = element('div', 'shop-grid');
+        for (const [column, title] of ['Weapons', 'Ammunition'].entries()) {
+          const group = element('section', 'shop-group');
+          group.append(element('h3', '', title));
+          const list = element('div', 'menu-options');
+          SHOP_ITEMS.slice(column * 4, (column + 1) * 4).forEach((item, i) => {
+            const weapon = WEAPONS[item.key];
+            const row = addMenuRow(list, weapon?.name || item.name, column * 4 + i, true);
+            row.classList.add('shop-row');
+            const detail = weapon ? `Damage ${weapon.damage} · Mag ${weapon.magazine}` : `+${item.qty} to reserve`;
+            row.append(element('small', '', detail));
+          });
+          group.append(list);
+          grid.append(group);
+        }
+        panel.append(grid);
+        const footer = element('div', 'shop-footer');
+        shopStatus = element('output');
+        footer.append(shopStatus);
+        addBackButton(footer, 'Close shop', 'system-button');
+        panel.append(footer);
+        return;
+      }
+
+      panel.append(heading);
+      const options = element('div', 'menu-options');
+      const labels = {
+        start: ['Start game', 'Settings'],
+        menu: ['Resume', 'Restart game', 'Settings'],
+        settings: ['Difficulty', 'Music', 'Particles', 'Camera shake and flashes'],
+        gameover: ['Restart']
+      }[mode];
+      if (mode === 'gameover') {
+        panel.append(element('p', 'gameover-summary', `Gold collected: ${player.gold}`));
+      }
+      labels.forEach((label, index) => addMenuRow(options, label, index, mode === 'settings'));
+      panel.append(options);
+      if (mode === 'settings') addBackButton(panel, 'Back', 'system-button menu-back');
+      if (mode === 'start' && !isMobile) {
+        panel.append(element('p', 'menu-hint', 'Move: A/D or arrows · Jump: Space · Fire: Z · Reload: X · Shop: P'));
+      }
+    }
+
+    function syncMenu(moveFocus = false) {
+      const mode = document.body.dataset.boot === 'ready' ? gameState : 'boot';
+      const changed = mode !== menuMode;
+      if (changed) {
+        menuMode = mode;
+        buildMenu(mode);
+        document.body.toggleAttribute('data-playing', mode === 'play');
+      }
+      if (menuLayer.hidden) return;
+      const selected = selectedRow();
+      menuRows.forEach(({ row }, i) => {
+        row.dataset.selected = String(i === selected);
+      });
+
+      if (mode === 'start') {
+        menuRows[0].row.disabled = !artReady;
+        menuRows[0].name.textContent = artReady ? 'Start game' : 'Loading sprites…';
+      } else if (mode === 'settings') {
+        const effectText = SETTINGS.effects === 'system' ? (effectsReduced() ? 'System · Reduced' : 'System · Full') :
+          SETTINGS.effects === 'full' ? 'Full' : 'Reduced';
+        const values = [SETTINGS.difficulty, SETTINGS.audio ? 'On' : 'Off', SETTINGS.particles ? 'On' : 'Off', effectText];
+        menuRows.forEach(({ value }, i) => { value.textContent = values[i]; });
+      } else if (mode === 'shop') {
+        shopGold.textContent = `${player.gold} gold`;
+        shopStatus.textContent = shopNotice;
+        SHOP_ITEMS.forEach((item, i) => {
+          const owned = item.type === 'weapon' && player.ownedWeapons[item.key];
+          const value = owned ? (player.weapon === item.key ? 'Equipped' : 'Equip') :
+            `${item.cost ?? WEAPONS[item.key].cost} G`;
+          menuRows[i].value.textContent = value;
+        });
+      }
+      if (changed || moveFocus) {
+        const row = menuRows[selected]?.row;
+        if (row && !row.disabled) row.focus();
+      }
+    }
+
+    document.addEventListener('commando-ready', () => syncMenu());
+    motionPreference.addEventListener?.('change', () => syncMenu());
+    syncMenu();
+
     // Fixed simulation ticks keep input, movement, enemy AI and shot cadence
     // consistent on fast and slow displays. Drop excess time after a stall.
     function loop(now) {
@@ -2741,6 +2489,8 @@
       } else {
         accumulator = 0;
       }
+      if ((document.body.dataset.boot === 'ready' && gameState !== menuMode) ||
+          (menuMode === 'start' && menuRows[0].row.disabled !== !artReady)) syncMenu();
       drawGame();
       requestAnimationFrame(loop);
     }

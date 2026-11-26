@@ -1,256 +1,136 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="theme-color" content="#000000">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-
-  <title>SPACE COMMANDO – Side‑Scrolling Shooter</title>
-
-  <!-- Social media link preview (Open Graph / Facebook, LinkedIn, Reddit, etc.) -->
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a1019">
+  <title>SPACE COMMANDO | Orbital Station Shooter</title>
+  <meta name="description" content="Fight through a breached orbital station in SPACE COMMANDO, a military sci-fi side-scroller from INSPIRE.">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="SPACE COMMANDO – Side‑Scrolling Shooter">
-  <meta property="og:description" content="A retro side-scrolling shooter. Play SPACE COMMANDO in your browser!">
+  <meta property="og:title" content="SPACE COMMANDO | Orbital Station Shooter">
+  <meta property="og:description" content="Fight through a breached orbital station in this military sci-fi side-scroller from INSPIRE.">
   <meta property="og:url" content="https://officialinspire.github.io/SPACE_COMMANDO/">
-  <meta property="og:image" content="https://officialinspire.github.io/SPACE_COMMANDO/SPACE_COMMANDO_TITLE_CARD.jpg">
-  <meta property="og:image:width" content="1536">
-  <meta property="og:image:height" content="1024">
-
-  <!-- Twitter/X Card (also used as a fallback by several other platforms) -->
+  <meta property="og:image" content="https://officialinspire.github.io/SPACE_COMMANDO/assets/ui/orbital-breach-social.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="675">
+  <meta property="og:image:alt" content="An armored commando looks out through a breached orbital hangar.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="SPACE COMMANDO – Side‑Scrolling Shooter">
-  <meta name="twitter:description" content="A retro side-scrolling shooter. Play SPACE COMMANDO in your browser!">
-  <meta name="twitter:image" content="https://officialinspire.github.io/SPACE_COMMANDO/SPACE_COMMANDO_TITLE_CARD.jpg">
-
-  <!-- Link the stylesheet for basic page and HUD styling -->
+  <meta name="twitter:title" content="SPACE COMMANDO | Orbital Station Shooter">
+  <meta name="twitter:description" content="Fight through a breached orbital station in this military sci-fi side-scroller from INSPIRE.">
+  <meta name="twitter:image" content="https://officialinspire.github.io/SPACE_COMMANDO/assets/ui/orbital-breach-social.jpg">
+  <meta name="twitter:image:alt" content="An armored commando looks out through a breached orbital hangar.">
   <link rel="stylesheet" href="styles.css">
-  <!-- Import a retro sci‑fi font for the heads‑up display.  Orbitron provides
-       a clean, futuristic look while Press Start 2P adds a pixel‑retro
-       flavour.  These fonts are free to use via Google Fonts.  -->
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Press+Start+2P&family=Black+Ops+One&display=swap" rel="stylesheet">
 </head>
-<body>
-  <!-- TAP TO START screen appears before everything else, outside game-container to avoid transform issues -->
-  <div id="tap-to-start" class="tap-to-start-screen">
-    <div class="tap-to-start-content">
-      <h1 class="game-title">SPACE COMMANDO</h1>
-      <div class="tap-prompt">TAP TO START</div>
-    </div>
-  </div>
-
-  <!-- Game container holds both the intro video and the canvas.  The
-       video overlays the canvas on first load and plays the credit
-       sequence with audio.  Once complete it hides itself.  Using a
-       container allows the intro to share the same dimensions as
-       the game rather than occupying the full page. -->
-  <div id="game-container">
-    <video id="intro-video" class="intro-video" src="inspiresoftwareintro.mp4" playsinline muted></video>
-    <!-- The game runs inside this canvas. It is scaled via CSS to fill the page while preserving the aspect ratio. -->
-    <canvas id="game-canvas" width="800" height="450"></canvas>
-  </div>
-
-  <!--
-    Mobile controls are arranged into rows to better mirror the provided
-    mock‑up (see fixthismobile02.jpg).  The first row contains the
-    shoot/reload pair on the left and the up arrow on the right.  The
-    second row contains the jump button on the left and a horizontal
-    cluster of left/down/right arrows on the right.  The final row
-    contains the pause/menu, select and store buttons evenly spaced.
-  -->
-  <div id="mobile-controls">
-    <!--
-      Mobile control layout for touch devices.  The first row holds the
-      shoot and reload buttons.  The second row places the jump button
-      on the left and stacks the up arrow above a horizontal left/down/right
-      pad on the right.  The bottom row contains the escape/menu,
-      select and store buttons.  Using literal key names (e.g. "Space")
-      ensures consistent behaviour when dispatching keyboard events.
-    -->
-    <!-- First row: Shoot/Reload -->
-    <div class="row row1">
-      <div class="dual-buttons">
-        <button class="control-btn" data-key="z">SHOOT</button>
-        <button class="control-btn" data-key="x">RELOAD</button>
+<body data-boot="start">
+  <main class="game-shell">
+    <div class="game-stage">
+      <div id="game-container">
+        <canvas id="game-canvas" width="800" height="450" aria-label="SPACE COMMANDO playfield"></canvas>
+      </div>
+      <div id="game-menu" class="menu-layer" hidden></div>
+      <div id="intro-layer" class="intro-layer" hidden>
+        <video id="intro-video" src="inspiresoftwareintro.mp4" playsinline muted preload="metadata"></video>
+        <button id="skip-intro" class="system-button" type="button">Skip intro</button>
       </div>
     </div>
-    <!-- Second row: Jump and directional pad -->
-    <div class="row row2">
-      <button class="control-btn jump-btn" data-key="Space">JUMP</button>
-      <div class="arrow-wrapper">
-        <button class="control-btn arrow-btn" data-key="ArrowUp">↑</button>
-        <div class="arrow-cluster">
-          <button class="control-btn arrow-btn" data-key="ArrowLeft">←</button>
-          <button class="control-btn arrow-btn" data-key="ArrowDown">↓</button>
-          <button class="control-btn arrow-btn" data-key="ArrowRight">→</button>
-        </div>
+
+    <div id="mobile-controls" class="touch-controls" role="group" aria-label="Game controls" hidden>
+      <div class="direction-pad" role="group" aria-label="Movement and aim">
+        <button class="control-btn" type="button" data-key="ArrowUp" aria-label="Up, aim or climb">↑</button>
+        <button class="control-btn" type="button" data-key="ArrowLeft" aria-label="Move left">←</button>
+        <button class="control-btn" type="button" data-key="ArrowDown" aria-label="Down, crouch or climb">↓</button>
+        <button class="control-btn" type="button" data-key="ArrowRight" aria-label="Move right">→</button>
+      </div>
+      <div class="utility-pad" role="group" aria-label="Menu controls">
+        <button class="control-btn" type="button" data-key="Escape">Menu</button>
+        <button class="control-btn" type="button" data-key="Enter">Select</button>
+        <button class="control-btn" type="button" data-key="p">Shop</button>
+      </div>
+      <div class="action-pad" role="group" aria-label="Action controls">
+        <button class="control-btn" type="button" data-key="Space">Jump</button>
+        <button class="control-btn" type="button" data-key="z">Fire</button>
+        <button class="control-btn" type="button" data-key="x">Reload</button>
       </div>
     </div>
-    <!-- Third row: Pause/Menu, Select, and Store -->
-    <div class="row row3">
-      <button class="control-btn menu-btn" data-key="Escape">ESC/MENU</button>
-      <button class="control-btn" data-key="p">STORE</button>
-      <button class="control-btn" data-key="Enter">SELECT</button>
-    </div>
+  </main>
+
+  <div id="tap-to-start" class="start-screen title-art">
+    <section class="launch-panel" aria-labelledby="launch-title">
+      <h1 id="launch-title">SPACE<br>COMMANDO</h1>
+      <button id="launch-game" class="system-button primary-button" type="button">Tap to start</button>
+    </section>
   </div>
 
-
-  <!-- Main game logic -->
   <script src="index.js"></script>
-
-  
   <script>
-    // ---- Mobile full-screen & dynamic viewport height ----
-    (function() {
-      const isTouch = (('ontouchstart' in window) || navigator.maxTouchPoints > 0);
-      // Use the Visual Viewport API when available to compute a stable 100vh that
-      // ignores the collapsing URL bar on mobile browsers.
-      function setVH() {
-        const h = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
-        document.documentElement.style.setProperty('--vh', (h * 0.01) + 'px');
-      }
-      setVH();
-      window.addEventListener('resize', setVH);
-      if (window.visualViewport) {
-        window.visualViewport.addEventListener('resize', setVH);
+    (() => {
+      const splash = document.getElementById('tap-to-start');
+      const launcher = document.getElementById('launch-game');
+      const intro = document.getElementById('intro-layer');
+      const video = document.getElementById('intro-video');
+      const skip = document.getElementById('skip-intro');
+      let stallTimer;
+
+      function toggleFullscreen() {
+        const request = document.fullscreenElement
+          ? document.exitFullscreen?.()
+          : document.documentElement.requestFullscreen?.();
+        request?.catch(() => {});
       }
 
-      // Try to enter fullscreen and lock landscape on first user interaction.
-      async function goFullscreen() {
-        try {
-          // The touch controls are siblings of the canvas container.
-          const el = document.documentElement;
-          if (el && document.fullscreenElement == null) {
-            if (el.requestFullscreen) await el.requestFullscreen();
-          }
-          if (screen.orientation && screen.orientation.lock) {
-            try { await screen.orientation.lock('landscape'); } catch (e) {}
-          }
-        } catch (e) { /* ignore */ }
+      function finishIntro() {
+        if (document.body.dataset.boot !== 'intro') return;
+        clearTimeout(stallTimer);
+        intro.hidden = true;
+        video.pause();
+        document.body.dataset.boot = 'ready';
+        const playMenuMusic = () => window.fadeIn?.(window.menuMusic);
+        if (window.menuMusic) playMenuMusic();
+        else window.addEventListener('load', playMenuMusic, { once: true });
+        document.dispatchEvent(new Event('commando-ready'));
       }
 
-      const firstInteract = () => {
-        // Prevent bounce/scroll during gameplay
-        document.body.style.overscrollBehavior = 'none';
-        document.addEventListener('touchmove', (e) => { e.preventDefault(); }, { passive: false });
-        goFullscreen();
-        // Remove these once-run listeners
-        window.removeEventListener('click', firstInteract);
-        window.removeEventListener('touchstart', firstInteract);
-        window.removeEventListener('keydown', firstInteract);
-      };
-      // Expose for other handlers (e.g. TAP TO START) and desktop shortcuts.
-      window.requestGameFullscreen = goFullscreen;
-
-      if (isTouch) {
-        window.addEventListener('click', firstInteract, { once: true });
-        window.addEventListener('touchstart', firstInteract, { once: true });
-        window.addEventListener('keydown', firstInteract, { once: true });
+      function waitForVideo() {
+        if (document.body.dataset.boot !== 'intro') return;
+        clearTimeout(stallTimer);
+        stallTimer = setTimeout(finishIntro, 6500);
       }
 
-      // Desktop convenience: double-click game area or press "F" to toggle fullscreen.
-      const gameContainer = document.getElementById('game-container');
-      if (gameContainer) {
-        gameContainer.addEventListener('dblclick', () => {
-          if (!document.fullscreenElement) {
-            goFullscreen();
-          }
-        });
+      function begin() {
+        if (document.body.dataset.boot !== 'start') return;
+        document.body.dataset.boot = 'intro';
+        splash.hidden = true;
+        intro.hidden = false;
+        if (!document.fullscreenElement) toggleFullscreen();
+        skip.focus({ preventScroll: true });
+        if (video.error) {
+          finishIntro();
+          return;
+        }
+        waitForVideo();
+        video.play().then(() => { video.muted = false; }).catch(finishIntro);
       }
-      window.addEventListener('keydown', (e) => {
-        if ((e.key === 'f' || e.key === 'F') && !document.fullscreenElement) {
-          goFullscreen();
+
+      splash.addEventListener('click', begin);
+      skip.addEventListener('click', finishIntro);
+      video.addEventListener('ended', finishIntro);
+      video.addEventListener('error', finishIntro);
+      video.addEventListener('playing', () => clearTimeout(stallTimer));
+      video.addEventListener('waiting', waitForVideo);
+      document.getElementById('game-container').addEventListener('dblclick', toggleFullscreen);
+      document.addEventListener('keydown', event => {
+        const boot = document.body.dataset.boot;
+        if (boot === 'start' && (event.key === 'Enter' || event.key === ' ') && event.target !== launcher) {
+          event.preventDefault();
+          begin();
+        } else if (boot === 'intro' && event.key === 'Escape') {
+          event.preventDefault();
+          finishIntro();
+        } else if (boot === 'ready' && event.key.toLowerCase() === 'f' && !event.repeat) {
+          toggleFullscreen();
         }
       });
     })();
-  </script>
-
-  <!-- TAP TO START and intro video handling -->
-  <script>
-    const tapToStart = document.getElementById('tap-to-start');
-    const introVideo = document.getElementById('intro-video');
-
-    if (tapToStart && introVideo) {
-      // When the intro video finishes, hide it and start the menu music
-      introVideo.addEventListener('ended', () => {
-        try { introVideo.pause(); introVideo.currentTime = 0; } catch (e) {}
-        introVideo.style.display = 'none';
-
-        // Start menu music after intro video ends (accessed from index.js global scope)
-        setTimeout(() => {
-          if (window.menuMusic && window.fadeIn) {
-            window.fadeIn(window.menuMusic);
-          }
-        }, 100);
-      });
-
-      // Handle TAP TO START screen
-      let gameStarted = false;
-      const startGame = (e) => {
-        // Prevent double-triggering from both touch and click events
-        if (gameStarted) return;
-        gameStarted = true;
-
-        // Prevent default to avoid any interference
-        if (e && e.preventDefault) {
-          e.preventDefault();
-        }
-
-        // Hide TAP TO START screen
-        tapToStart.style.display = 'none';
-
-        // Request fullscreen on the initial start interaction when possible.
-        if (window.requestGameFullscreen) {
-          window.requestGameFullscreen();
-        }
-
-        // Start the intro video (starts muted, then unmute after playback begins)
-        if (introVideo.paused) {
-          introVideo.play()
-            .then(() => {
-              // Successfully started playing, now unmute
-              introVideo.muted = false;
-            })
-            .catch((err) => {
-              // If video fails to play, hide it and start menu music directly
-              introVideo.style.display = 'none';
-              setTimeout(() => {
-                if (window.menuMusic && window.fadeIn) {
-                  window.fadeIn(window.menuMusic);
-                }
-              }, 100);
-            });
-        }
-      };
-
-      // Use pointerup as the canonical tap/click handler to avoid
-      // double-firing on touch devices that synthesize click events.
-      let lastPointerType = null;
-      tapToStart.addEventListener('pointerdown', (e) => {
-        lastPointerType = e.pointerType;
-      }, { passive: true });
-
-      tapToStart.addEventListener('pointerup', (e) => {
-        if (gameStarted) return;
-        e.preventDefault();
-        startGame(e);
-      }, { passive: false });
-
-      // Desktop fallback for older browsers with no Pointer Events.
-      tapToStart.addEventListener('click', (e) => {
-        if (gameStarted) return;
-        if (lastPointerType === 'touch' || lastPointerType === 'pen') return;
-        startGame(e);
-      });
-
-      // Handle keyboard
-      document.addEventListener('keydown', (e) => {
-        if (!gameStarted) {
-          startGame(e);
-        }
-      }, { once: true });
-    }
   </script>
 </body>
 </html>
