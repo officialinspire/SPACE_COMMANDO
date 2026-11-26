@@ -76,10 +76,9 @@
   // everything else and scrolls slower than the foreground to give a
   // sense of depth.  If it fails to load, the game falls back to a
   // simple dark starfield.
-  const backgroundImg = new Image();
-  backgroundImg.src = 'space_station_parallax.png';
+  const legacyBackground = loadSpriteImage(new URL('space_station_parallax.png', document.baseURI));
   let bgLoaded = false;
-  backgroundImg.onload = () => { bgLoaded = true; };
+  legacyBackground.ready.then(() => { bgLoaded = true; }, () => {});
 
   // Tile indexes are used only for the original atlas fallback.
   const LEGACY = {
@@ -88,6 +87,20 @@
     robot: [14, 15, 16, 17], alien: [28, 29, 30, 31],
     gold: 41, pistol: 36, rifle: 37, shotgun: 38, laser: 39
   };
+
+  const STATION_LAYERS = [['distant', 0.12], ['middle', 0.35], ['near', 0.65]];
+  const TERRAIN = {
+    deckCap: [2, 2, 256, 15], deckBody: [2, 21, 256, 42], deckEnd: [262, 21, 115, 48],
+    platform: [2, 73, 256, 28], ladder: [262, 73, 36, 156], crate: [302, 73, 112, 62],
+    shield: [2, 233, 112, 48], barricade: [118, 233, 112, 42]
+  };
+  const TERRAIN_COLOR = { crate: '#544939', platform: '#2c3b51', shield: '#325b6b', barricade: '#514d43' };
+  const AMMO_COLOR = { pistol: '#eccc87', rifle: '#c3cfe4', shotgun: '#e7a07d', laser: '#8ddfff' };
+  const station = {};
+  for (const name of [...STATION_LAYERS.map(([key]) => key), 'terrain']) {
+    const asset = loadSpriteImage(new URL(`assets/station/${name}.webp`, document.baseURI));
+    asset.ready.then(() => { station[name] = asset.image; }, () => {});
+  }
 
   const ACTOR_SCALE = 0.5;
   const ENEMY_COLOR = { zombie: '#00aa00', ghost: '#aaaaff', robot: '#ff8844', alien: '#55ff55' };
@@ -377,18 +390,14 @@
 
     // Menu music will start after the intro video ends (see index.html)
     // This prevents audio overlap between the intro video and background music.
-    // Precompute random stars for a fallback starfield. These are drawn
-    // if the background image fails to load or simply to add sparkle.
+    // Used only when neither distant background can be loaded.
     const stars = [];
     for (let i=0; i<600; i++) {
-      const layer = Math.random() < 0.35 ? 0 : (Math.random() < 0.7 ? 1 : 2);
       stars.push({
         x: Math.random() * worldWidth,
         y: Math.random() * height * 0.82,
-        size: (layer === 0 ? 0.7 : (layer === 1 ? 1.2 : 1.8)) + Math.random() * 1.1,
-        alpha: 0.22 + Math.random() * 0.55,
-        layer,
-        twinkle: Math.random() * Math.PI * 2
+        size: 0.7 + Math.random() * 1.5,
+        alpha: 0.22 + Math.random() * 0.55
       });
     }
     // Track keyboard and touch independently so releasing either input
@@ -825,7 +834,18 @@
     // and a color string. Particles are spawned when enemies are destroyed
     // to create a simple explosion effect.
     let particles = [];
+    const OPENING_END = 710;
+    const FIRST_ATTACK_GRACE = 850;
+    const RANGED = {
+      robot: { windup: 420, speed: 4.1, damage: 8, recovery: 1900 },
+      alien: { windup: 300, speed: 5.1, damage: 6, recovery: 2200 }
+    };
+    const CLOSE_ATTACK = {
+      zombie: { windup: 270, range: 55, rush: 2.2, recovery: 780 },
+      ghost: { windup: 310, range: 50, rush: 1.55, recovery: 920 }
+    };
     let spawnCooldown = 0;
+    let openingEnemyPending = true;
     // Game state machine.  Additional states include:
     // 'start'  – initial start menu shown on page load
     // 'play'   – active gameplay
@@ -851,51 +871,43 @@
     let obstacles = [];
     let ladders = [];
 
-    /**
-     * Populate the world with random crates, platforms and ladders.  The
-     * horizontal placement is randomised within the world bounds while
-     * vertical placement for platforms is chosen so they sit above the
-     * ground.  Each platform has a ladder connecting it back to the
-     * ground on most runs.  Crates, energy shields and barricades are
-     * different obstacle types drawn in distinct colours.
-     */
     function generateEnvironment() {
-      obstacles = [];
+      obstacles = [{ type: 'crate', x: 343, y: groundY - 22, width: 42, height: 22 }];
       ladders = [];
-      // Generate elevated platforms
-      const platformCount = 6;
-      for (let i=0; i<platformCount; i++) {
-        // Spread platforms across the world width, leaving space near the start
-        const sectionWidth = (worldWidth - 800) / platformCount;
-        const baseX = 400 + i * sectionWidth;
-        const x = baseX + Math.random() * sectionWidth * 0.5;
-        const widthPl = 100 + Math.random() * 120;
-        const heightPl = 12;
-        // Place platforms roughly 100–160px above the ground
-        const y = groundY - (100 + Math.random() * 60);
-        obstacles.push({ type:'platform', x, y, width: widthPl, height: heightPl });
-        // With high probability, add a ladder leading to this platform
-        if (Math.random() < 0.8) {
-          const ladderWidth = 16;
-          const ladderX = x + widthPl/2 - ladderWidth/2;
-          const ladderHeight = groundY - y;
-          ladders.push({ type:'ladder', x: ladderX, y: y, width: ladderWidth, height: ladderHeight });
-        }
+
+      // Teach one jump and one clear ladder before the procedural sections.
+      const addPlatform = (x, elevation, span) => {
+        const y = groundY - elevation;
+        obstacles.push({ type: 'platform', x, y, width: span, height: 12 });
+        // These platforms sit above solo jump height, so each has a way up.
+        ladders.push({ type: 'ladder', x: x + span / 2 - 8, y, width: 16, height: elevation });
+      };
+      addPlatform(515, 86, 134);
+      const sectionWidth = (worldWidth - 1000) / 5;
+      for (let i = 0; i < 5; i++) {
+        addPlatform(770 + i * sectionWidth + Math.random() * 260,
+          100 + Math.random() * 60, 100 + Math.random() * 120);
       }
-      // Generate ground obstacles (crates, shields, barricades)
-      const obstacleCount = 14;
-      const types = ['crate','shield','barricade'];
-      for (let i=0; i<obstacleCount; i++) {
-        const widthOb = 32 + Math.random()*32;
-        // Keep obstacles low so the player can jump over them.  Restrict the
-        // height range more tightly to encourage traversal over crates and
-        // barricades.  The maximum height is around 28px which the player
-        // can reliably clear with a jump.
-        const heightOb = 20 + Math.random()*8;
-        const x = 500 + Math.random() * (worldWidth - 600);
-        const y = groundY - heightOb;
+
+      const types = ['crate', 'shield', 'barricade'];
+      const slotWidth = (worldWidth - OPENING_END - 110) / 13;
+      for (let i = 0; i < 13; i++) {
+        const span = 32 + Math.random() * 32;
+        const obstacleHeight = 20 + Math.random() * 8;
+        const start = OPENING_END + i * slotWidth;
+        const range = slotWidth - span - 90;
+        const suggested = start + Math.random() * range;
+        const clear = x => ladders.every(ladder => x + span + 43 <= ladder.x ||
+                                                       x >= ladder.x + ladder.width + 43);
+        let x = suggested;
+        if (!clear(x)) {
+          // A ladder spans at most one forbidden interval in a cover slot.
+          x = start;
+          if (!clear(x)) x = start + range;
+          if (!clear(x)) continue;
+        }
         const type = types[Math.floor(Math.random() * types.length)];
-        obstacles.push({ type, x, y, width: widthOb, height: heightOb });
+        obstacles.push({ type, x, y: groundY - obstacleHeight, width: span, height: obstacleHeight });
       }
     }
     // Player stats and physics
@@ -972,7 +984,8 @@
       cameraShakeX = 0;
       cameraShakeY = 0;
       damageOverlayTimer = 0;
-      spawnCooldown = 0;
+      spawnCooldown = 900;
+      openingEnemyPending = true;
       gameState = 'play';
       player.x = 100;
       player.height = player.baseHeight;
@@ -1026,7 +1039,8 @@
         robot: 0.17 + progress * 0.18,
         alien: 0.11 + progress * 0.17
       };
-      const type = weightedChoice([
+      const teach = openingEnemyPending && elapsedTime < 4000 && player.x < 464;
+      const type = teach ? 'zombie' : weightedChoice([
         { item: 'zombie', weight: typeWeights.zombie },
         { item: 'ghost', weight: typeWeights.ghost },
         { item: 'robot', weight: typeWeights.robot },
@@ -1034,10 +1048,10 @@
       ]) || 'zombie';
       const spawnDir = Math.random() < 0.65 ? 1 : -1;
       const spawnOffset = width + 140 + Math.random() * 280;
-      const spawnX = spawnDir > 0 ? (player.x + spawnOffset) : (player.x - spawnOffset);
+      const spawnX = teach ? Math.max(680, player.x + 240) : player.x + spawnDir * spawnOffset;
       const e = {
         type: type,
-        x: Math.max(32, Math.min(worldWidth - 64, spawnX)),
+        x: 0,
         y: 0,
         vx: 0,
         vy: 0,
@@ -1058,6 +1072,7 @@
         windupTimer: 0,
         queuedShot: false,
         targetDir: -1,
+        spawnGrace: FIRST_ATTACK_GRACE,
         contactDamageTimer: 0,
         preferredRange: 120,
         baseY: 0,
@@ -1089,7 +1104,7 @@
         e.health = 2;
         e.maxHealth = 2;
         e.speed = 0.95 + Math.random() * 0.2;
-        e.preferredRange = 90;
+        e.preferredRange = 38;
         e.changeDirTimer = 900 + Math.random() * 900;
       } else if (type === 'robot') {
         e.y = groundY - e.height;
@@ -1117,7 +1132,26 @@
         e.health += 1;
         e.maxHealth += 1;
       }
-      enemies.push(e);
+      const clampX = x => Math.max(32, Math.min(worldWidth - e.width - 32, x));
+      const preferred = clampX(spawnX);
+      const opposite = clampX(player.x - spawnDir * spawnOffset);
+      const clear = x => Math.abs(x - player.x) >= 196 &&
+        !obstacles.some(obstacle => rectIntersect({ ...e, x }, obstacle)) &&
+        !enemies.some(enemy => rectIntersect({ ...e, x }, enemy));
+      // Search only a bounded neighborhood on either side. Retry the usual
+      // spawn timer when nearby space is occupied.
+      for (const center of [preferred, opposite]) {
+        for (let offset = 0; offset <= 256; offset += 32) {
+          const x = [clampX(center - offset), clampX(center + offset)].find(clear);
+          if (x === undefined) continue;
+          e.x = x;
+          e.dir = x < player.x ? 1 : -1;
+          e.onGround = type !== 'ghost';
+          enemies.push(e);
+          openingEnemyPending = false;
+          return;
+        }
+      }
     }
 
     /**
@@ -1541,6 +1575,10 @@
       pressedKeys.clear();
     }
 
+    function cameraLeft(shake = 0) {
+      return Math.max(0, Math.min(worldWidth - width, player.x - 150 + shake));
+    }
+
     function updateGame(dt) {
       elapsedTime += dt;
       player.animTime += dt;
@@ -1552,14 +1590,22 @@
       if (!wasGrounded && player.onGround) lastLanding = elapsedTime;
       fallenSprites = fallenSprites.filter(enemy => elapsedTime - enemy.at < ENEMY_FALL[enemy.type]);
       // Update enemies
+      const viewX = cameraLeft();
       for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
         e.animTime += dt;
+        e.spawnGrace = Math.max(0, (e.spawnGrace || 0) - dt);
+        const ranged = RANGED[e.type];
+        const closeAttack = CLOSE_ATTACK[e.type];
+        const wantsStrike = closeAttack && e.attackTimer > 115;
+        const braced = ranged && (e.queuedShot || e.attackTimer > 75);
+        const closeWindup = closeAttack && e.windupTimer > 0;
         if (e.attackTimer > 0) e.attackTimer = Math.max(0, e.attackTimer - dt);
         if (e.contactDamageTimer > 0) e.contactDamageTimer = Math.max(0, e.contactDamageTimer - dt);
 
         const prevX = e.x;
         const prevY = e.y;
+        const wasEnemyGrounded = e.onGround;
         const playerMidY = player.y + player.height / 2;
         const enemyMidY = e.y + e.height / 2;
         const dx = player.x - e.x;
@@ -1578,9 +1624,9 @@
           }
           e.phase += dt * 0.0017;
           const bob = Math.sin(e.phase * 4) * 22;
-          const chaseYOffset = Math.max(-40, Math.min(45, (playerMidY - enemyMidY) * 0.16));
-          e.baseY += ((groundY - e.height - 120 + chaseYOffset) - e.baseY) * 0.04;
-          e.x += e.speed * e.dir;
+          const hover = absDx < 154 ? playerMidY - e.height / 2 - 8 : groundY - e.height - 115;
+          if (!closeWindup) e.baseY += (hover - e.baseY) * 0.032;
+          if (!closeWindup) e.x += wantsStrike ? closeAttack.rush * e.targetDir : e.speed * e.dir;
           e.y = e.baseY + bob;
           if (e.y > groundY - e.height - 12) e.y = groundY - e.height - 12;
         } else {
@@ -1600,10 +1646,12 @@
             e.changeDirTimer = 1000 + Math.random() * 1000;
           }
 
-          e.x += e.speed * e.dir;
+          if (!braced && !closeWindup) {
+            e.x += wantsStrike ? closeAttack.rush * e.targetDir : e.speed * e.dir;
+          }
 
           let climbing = false;
-          if (e.type === 'robot' || e.type === 'alien') {
+          if (ranged && !braced) {
             for (let li = 0; li < ladders.length; li++) {
               const lad = ladders[li];
               const closeToLadder = Math.abs((e.x + e.width / 2) - (lad.x + lad.width / 2)) < 18;
@@ -1622,6 +1670,7 @@
           if (!climbing) e.vy += 0.25;
           e.y += e.vy;
           e.onGround = false;
+          let hop = false;
 
           for (let oi = 0; oi < obstacles.length; oi++) {
             const ob = obstacles[oi];
@@ -1633,11 +1682,11 @@
             if (rectIntersect(e, ob)) {
               if (prevX + e.width <= ob.x) {
                 e.x = ob.x - e.width;
-                if (e.onGround && (e.type === 'zombie' || e.type === 'alien')) e.vy = -5.6;
+                if (wasEnemyGrounded && !braced && !closeWindup && (e.type === 'zombie' || e.type === 'alien')) hop = true;
                 else e.dir = -1;
               } else if (prevX >= ob.x + ob.width) {
                 e.x = ob.x + ob.width;
-                if (e.onGround && (e.type === 'zombie' || e.type === 'alien')) e.vy = -5.6;
+                if (wasEnemyGrounded && !braced && !closeWindup && (e.type === 'zombie' || e.type === 'alien')) hop = true;
                 else e.dir = 1;
               }
             }
@@ -1648,32 +1697,52 @@
             e.vy = 0;
             e.onGround = true;
           }
+          if (hop) e.vy = -5.6;
         }
 
-        if (e.type === 'robot' || e.type === 'alien') {
-          if (!e.queuedShot) {
-            e.shootTimer -= dt;
-            if (e.shootTimer <= 0) {
-              e.targetDir = dx < 0 ? -1 : 1;
-              e.queuedShot = true;
-              e.windupTimer = e.type === 'robot' ? 420 : 300;
-              e.attackTimer = e.windupTimer;
-            }
-          } else {
-            e.windupTimer -= dt;
-            if (e.windupTimer <= 0) {
-              let bulletSpeed = e.type === 'robot' ? 4.1 : 5.1;
-              let dmg = e.type === 'robot' ? 8 : 6;
-              if (SETTINGS.difficulty === 'easy') dmg = Math.max(1, dmg - 2);
-              else if (SETTINGS.difficulty === 'hard') dmg += 2;
-              enemyBullets.push({ x: e.x + (e.targetDir < 0 ? -8 : e.width), y: e.y + e.height / 2 - 2, vx: e.targetDir * bulletSpeed, vy: 0, width: 8, height: 4, damage: dmg, from: 'enemy' });
+        const visible = e.x >= viewX + 38 && e.x + e.width <= viewX + width - 22;
+        if (ranged) {
+          if (e.queuedShot) {
+            e.windupTimer = Math.max(0, e.windupTimer - dt);
+            if (!visible || !e.onGround) {
+              e.queuedShot = false;
+              e.windupTimer = 0;
+              e.attackTimer = 0;
+              e.shootTimer = 360;
+            } else if (!e.windupTimer) {
+              let damage = ranged.damage;
+              if (SETTINGS.difficulty === 'easy') damage = Math.max(1, damage - 2);
+              else if (SETTINGS.difficulty === 'hard') damage += 2;
+              enemyBullets.push({
+                x: e.x + (e.targetDir < 0 ? -8 : e.width), y: e.y + e.height / 2 - 2,
+                vx: e.targetDir * ranged.speed, vy: 0, width: 8, height: 4,
+                damage, kind: e.type
+              });
               e.queuedShot = false;
               e.attackTimer = 140;
-              if (e.type === 'robot') e.shootTimer = 1900 + Math.random() * 900;
-              else e.shootTimer = 2200 + Math.random() * 900;
+              e.shootTimer = ranged.recovery + Math.random() * 900;
+            }
+          } else {
+            e.shootTimer = Math.max(0, e.shootTimer - dt);
+            if (!e.shootTimer && !e.spawnGrace && visible && e.onGround &&
+                absDx < 520 && Math.abs(playerMidY - enemyMidY) <= 55) {
+              e.targetDir = dx < 0 ? -1 : 1;
+              e.queuedShot = true;
+              e.windupTimer = ranged.windup;
+              e.attackTimer = ranged.windup;
             }
           }
+        } else if (closeAttack) {
+          if (closeWindup) {
+            e.windupTimer = Math.max(0, e.windupTimer - dt);
+            if (!e.windupTimer) e.attackTimer = 200;
+          } else if (!e.attackTimer && !e.contactDamageTimer && !e.spawnGrace &&
+                     absDx < closeAttack.range && Math.abs(playerMidY - enemyMidY) < 36) {
+            e.targetDir = dx < 0 ? -1 : 1;
+            e.windupTimer = closeAttack.windup;
+          }
         }
+        e.x = Math.max(0, Math.min(worldWidth - e.width, e.x));
 
         if (e.x + e.width < player.x - width * 2 || e.x > player.x + width * 3) {
           enemies.splice(i, 1);
@@ -1709,6 +1778,7 @@
         }
       });
       advanceProjectiles(enemyBullets, [player], (b, hit) => {
+        spawnHitSparks(hit.x, hit.y, 'enemy');
         if (hit.target === player) damagePlayer(b.damage);
       });
       if (gameState !== 'play') return;
@@ -1741,13 +1811,14 @@
       for (let i=enemies.length-1; i>=0; i--) {
         const e = enemies[i];
         if (rectIntersect(e, player)) {
-          if (e.contactDamageTimer <= 0) {
+          const closeAttack = CLOSE_ATTACK[e.type];
+          const inStrike = e.attackTimer > 115 && (player.x - e.x) * e.targetDir >= -6;
+          if (!e.spawnGrace && e.contactDamageTimer <= 0 && (!closeAttack || inStrike)) {
             const baseDamage = e.type === 'zombie' ? 5 : (e.type === 'ghost' ? 4 : (e.type === 'robot' ? 6 : 5));
             if (damagePlayer(baseDamage)) {
               const push = e.type === 'robot' ? 12 : 9;
-              if (player.x < e.x) player.x -= push; else player.x += push;
-              e.attackTimer = 200;
-              e.contactDamageTimer = e.type === 'ghost' ? 920 : 780;
+              player.x = Math.max(0, Math.min(worldWidth - player.width, player.x + (player.x < e.x ? -push : push)));
+              e.contactDamageTimer = closeAttack?.recovery || 780;
             }
           }
         }
@@ -1906,26 +1977,17 @@
 
     function enemySprite(enemy) {
       const get = (name, time, loop) => clipFrame('enemies', enemy.type + name, time, loop);
-      const ranged = enemy.type === 'robot' || enemy.type === 'alien';
-      const facing = ranged && (enemy.queuedShot || enemy.attackTimer > 0)
-        ? enemy.targetDir : enemy.dir;
+      const ranged = RANGED[enemy.type];
+      const attacking = enemy.windupTimer > 0 || enemy.attackTimer > 0;
+      const facing = attacking ? enemy.targetDir : enemy.dir;
       let frame;
-      if (enemy.hitTimer > 0) frame = get('Hit', 170 - enemy.hitTimer);
-      else if (ranged && enemy.queuedShot) {
-        const windup = enemy.type === 'robot' ? 420 : 300;
-        frame = get('Attack', enemy.windupTimer > windup * 0.72 ? 0 : 55);
-      } else if (ranged && enemy.attackTimer > 0) {
-        frame = get('Attack', enemy.attackTimer > 75 ? 120 : 185);
-      } else if (enemy.attackTimer > 0) {
-        // Contact damage already happened. Play the strike and recovery only.
-        const start = enemy.type === 'ghost' ? 45 : 120;
-        frame = get('Attack', start + 200 - enemy.attackTimer);
-      } else if (!ranged && enemy.contactDamageTimer <= 0 &&
-                   Math.abs(enemy.x - player.x) < enemy.width + 16 &&
-                   Math.abs(enemy.y - player.y) < enemy.height &&
-                   Math.sign(player.x - enemy.x) === facing) {
-        // Visual anticipation on approach, without changing contact or AI timers.
+      if (enemy.windupTimer > 0) {
+        // Prioritize the telegraph over hit flinches while a strike is queued.
         frame = get('Attack', enemy.type === 'ghost' ? 0 : 55);
+      } else if (enemy.hitTimer > 0) frame = get('Hit', 170 - enemy.hitTimer);
+      else if (enemy.attackTimer > 0) {
+        const strike = enemy.type === 'ghost' ? 45 : 120;
+        frame = get('Attack', strike + (ranged ? 140 : 200) - enemy.attackTimer);
       }
       frame ||= get('Move', enemy.animTime / (enemy.animVariance || 1), true);
       return { frame, facing: facing || 1 };
@@ -1935,39 +1997,107 @@
       return enemy.type === 'ghost' ? enemy.y + enemy.height * 0.36 : enemy.y + enemy.height;
     }
 
+    // Reflection gives identical edge samples at every repeat, including the planet
+    // horizon and translucent trusses. At most two panels touch the viewport.
+    function drawLayer(image, scroll, cropHeight = height) {
+      const tileHeight = Math.round(image.height * width / image.width);
+      const drawnHeight = Math.min(tileHeight, cropHeight);
+      let tile = Math.floor(scroll / width);
+      const clipTop = cropHeight < tileHeight;
+      ctx.save();
+      ctx.imageSmoothingEnabled = true;
+      if (clipTop) {
+        ctx.beginPath();
+        ctx.rect(0, 0, width, drawnHeight);
+        ctx.clip();
+      }
+      for (let x = tile * width - scroll; x < width; x += width, tile++) {
+        const flip = tile % 2 === 1;
+        ctx.save();
+        ctx.translate(x + (flip ? width : 0), 0);
+        if (flip) ctx.scale(-1, 1);
+        ctx.drawImage(image, 0, 0, width, tileHeight);
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+
+    function drawStation(cameraX) {
+      if (!station.distant) {
+        if (bgLoaded) drawLayer(legacyBackground.image, cameraX * 0.12);
+        else {
+          ctx.fillStyle = '#080f20';
+          ctx.fillRect(0, 0, width, height);
+          for (const star of stars) {
+            const x = star.x - cameraX * 0.12;
+            if (x >= 0 && x < width) {
+              ctx.fillStyle = `rgba(205,230,255,${star.alpha})`;
+              ctx.fillRect(x, star.y, star.size, star.size);
+            }
+          }
+        }
+      }
+      for (const [name, speed] of STATION_LAYERS) {
+        if (station[name]) drawLayer(station[name], cameraX * speed, name === 'near' ? 100 : height);
+      }
+      // The station stack sits behind the combat silhouettes. A small neutral
+      // veil makes the deck-level silhouettes readable against the blue planet.
+      ctx.fillStyle = 'rgba(5,10,18,0.17)';
+      ctx.fillRect(0, 0, width, height);
+    }
+
+    function drawTerrainTile(type, x, y, w, h, flip = false) {
+      if (!station.terrain) return false;
+      ctx.save();
+      ctx.imageSmoothingEnabled = true;
+      if (flip) {
+        ctx.translate(x + w, y);
+        ctx.scale(-1, 1);
+        x = y = 0;
+      }
+      ctx.drawImage(station.terrain, ...TERRAIN[type], x, y, w, h);
+      ctx.restore();
+      return true;
+    }
+
+    function drawTerrain(cameraX) {
+      ctx.fillStyle = '#101b2b';
+      ctx.fillRect(0, groundY, width, height - groundY);
+      const tileWidth = 128;
+      for (let tile = Math.floor(cameraX / tileWidth), x = tile * tileWidth - cameraX; x < width; x += tileWidth, tile++) {
+        drawTerrainTile('deckBody', x, groundY + 6, tileWidth, height - groundY - 6, tile % 2 === 1);
+        drawTerrainTile('deckCap', x, groundY, tileWidth, 7, tile % 2 === 1);
+      }
+      if (cameraX < 51) drawTerrainTile('deckEnd', -cameraX, groundY, 51, height - groundY, true);
+      if (cameraX + width > worldWidth - 51) drawTerrainTile('deckEnd', worldWidth - 51 - cameraX, groundY, 51, height - groundY);
+
+      for (const ladder of ladders) {
+        const x = ladder.x - cameraX;
+        if (x + ladder.width < 0 || x > width) continue;
+        if (drawTerrainTile('ladder', x, ladder.y, ladder.width, ladder.height)) continue;
+        ctx.fillStyle = '#65788a';
+        ctx.fillRect(x, ladder.y, 3, ladder.height);
+        ctx.fillRect(x + ladder.width - 3, ladder.y, 3, ladder.height);
+        for (let rung = 4; rung < ladder.height; rung += 8) {
+          ctx.fillRect(x + 3, ladder.y + rung, ladder.width - 6, 2);
+        }
+      }
+      for (const obstacle of obstacles) {
+        const x = obstacle.x - cameraX;
+        if (x + obstacle.width < 0 || x > width) continue;
+        ctx.fillStyle = TERRAIN_COLOR[obstacle.type];
+        ctx.fillRect(x, obstacle.y, obstacle.width, obstacle.height);
+        drawTerrainTile(obstacle.type, x, obstacle.y, obstacle.width, obstacle.height);
+        ctx.fillStyle = 'rgba(178,205,224,0.66)';
+        ctx.fillRect(x, obstacle.y, obstacle.width, 1);
+      }
+    }
+
     function drawGame() {
       const uiPulse = 0.5 + 0.5 * Math.sin(performance.now() * 0.004);
-      const cameraX = Math.max(0, Math.min(worldWidth - width, player.x - 150 + cameraShakeX));
-      // Draw parallax background
-      if (bgLoaded) {
-        const scale = height / backgroundImg.height;
-        const imgW = backgroundImg.width * scale;
-        // Scroll background at half the camera speed for parallax effect
-        const bgScroll = cameraX * 0.5;
-        let x = - (bgScroll % imgW);
-        while (x < width) {
-          ctx.drawImage(backgroundImg, 0, 0, backgroundImg.width, backgroundImg.height,
-                        x, 0, imgW, height);
-          x += imgW;
-        }
-      } else {
-        // Fallback dark space
-        ctx.fillStyle = '#000010';
-        ctx.fillRect(0,0,width,height);
-      }
-      // Draw layered starfield on top of background
-      stars.forEach(s => {
-        if (s.x >= cameraX - width && s.x <= cameraX + width * 2) {
-          const parallax = s.layer === 0 ? 0.18 : (s.layer === 1 ? 0.34 : 0.56);
-          const twinkle = 0.72 + Math.sin(performance.now() * (0.0018 + s.layer * 0.0013) + s.twinkle) * 0.28;
-          const px = s.x - cameraX * parallax;
-          ctx.fillStyle = `rgba(205,230,255,${Math.max(0.08, s.alpha * twinkle)})`;
-          ctx.fillRect(px, s.y + s.layer * 5, s.size, s.size);
-        }
-      });
-      // Draw ground (semi‑transparent dark strip)
-      ctx.fillStyle = 'rgba(0,0,30,0.8)';
-      ctx.fillRect(0, groundY, width, height - groundY);
+      const cameraX = cameraLeft(cameraShakeX);
+      drawStation(cameraX);
+      drawTerrain(cameraX);
       // Draw pickups
       pickups.forEach(p => {
         const wave = (elapsedTime * 0.006) + p.x * 0.02;
@@ -2001,91 +2131,13 @@
         ctx.fill();
         if (p.type === 'ammo') {
           ctx.globalAlpha = 0.35;
-          ctx.fillStyle = '#8ddfff';
+          ctx.fillStyle = AMMO_COLOR[p.ammoType] || AMMO_COLOR.rifle;
           ctx.fillRect(px - 1, py + drawH + 1, drawW + 2, 1.5);
         }
         ctx.globalAlpha = 1;
       });
 
 
-      // Draw obstacles and ladders.  Platforms are dark metallic beams, crates
-      // are brown boxes, shields glow blue and barricades are grey.  Ladders
-      // consist of vertical rails and evenly spaced rungs.  These are drawn
-      // before enemies and bullets so they act as background cover.
-      obstacles.forEach(ob => {
-        const px = ob.x - cameraX;
-        if (ob.type === 'crate') {
-          // Draw a military/industrial style crate with rivets and
-          // highlights.  Use layered rectangles and small rivet dots to
-          // evoke a retro sci‑fi aesthetic reminiscent of early console
-          // games such as Metroid.
-          const baseCol = '#52402a';    // main crate colour
-          const highlight = '#816b44';   // lighter colour for top/left edges
-          const shadow = '#3b2c1a';      // darker colour for bottom/right edges
-          // Base fill
-          ctx.fillStyle = baseCol;
-          ctx.fillRect(px, ob.y, ob.width, ob.height);
-          // Top and left highlights
-          ctx.fillStyle = highlight;
-          // Top strip
-          ctx.fillRect(px, ob.y, ob.width, Math.max(2, ob.height * 0.08));
-          // Left strip
-          ctx.fillRect(px, ob.y, Math.max(2, ob.width * 0.06), ob.height);
-          // Bottom and right shadows
-          ctx.fillStyle = shadow;
-          ctx.fillRect(px, ob.y + ob.height - Math.max(2, ob.height * 0.08), ob.width, Math.max(2, ob.height * 0.08));
-          ctx.fillRect(px + ob.width - Math.max(2, ob.width * 0.06), ob.y, Math.max(2, ob.width * 0.06), ob.height);
-          // Add some horizontal girders across the crate
-          ctx.fillStyle = '#705430';
-          for (let gy = 0.25; gy < 1; gy += 0.25) {
-            const yPos = ob.y + gy * ob.height - 1;
-            ctx.fillRect(px + 4, yPos, ob.width - 8, 2);
-          }
-          // Draw rivets along the edges (small dots)
-          ctx.fillStyle = '#2e1f0a';
-          const rivetCountX = Math.max(2, Math.floor(ob.width / 20));
-          const rivetCountY = Math.max(2, Math.floor(ob.height / 20));
-          for (let i = 0; i < rivetCountX; i++) {
-            const rx = px + 4 + i * ((ob.width - 8) / (rivetCountX - 1));
-            // Top rivets
-            ctx.fillRect(rx, ob.y + 2, 2, 2);
-            // Bottom rivets
-            ctx.fillRect(rx, ob.y + ob.height - 4, 2, 2);
-          }
-          for (let j = 0; j < rivetCountY; j++) {
-            const ry = ob.y + 4 + j * ((ob.height - 8) / (rivetCountY - 1));
-            // Left rivets
-            ctx.fillRect(px + 2, ry, 2, 2);
-            // Right rivets
-            ctx.fillRect(px + ob.width - 4, ry, 2, 2);
-          }
-        } else {
-          // Choose colour based on type for other obstacles
-          let col;
-          if (ob.type === 'platform') col = '#2b2b33';
-          else if (ob.type === 'shield') col = '#3366cc';
-          else if (ob.type === 'barricade') col = '#555555';
-          else col = '#444444';
-          ctx.fillStyle = col;
-          ctx.fillRect(px, ob.y, ob.width, ob.height);
-          // Add a highlight/outline for a bit of depth
-          ctx.strokeStyle = '#222222';
-          ctx.strokeRect(px, ob.y, ob.width, ob.height);
-        }
-      });
-      // Draw ladders
-      ladders.forEach(lad => {
-        const px = lad.x - cameraX;
-        // Draw two vertical rails
-        ctx.fillStyle = '#666666';
-        ctx.fillRect(px, lad.y, 4, lad.height);
-        ctx.fillRect(px + lad.width - 4, lad.y, 4, lad.height);
-        // Draw rungs every 8 pixels
-        ctx.fillStyle = '#888888';
-        for (let y=0; y<lad.height; y+=8) {
-          ctx.fillRect(px + 4, lad.y + y, lad.width - 8, 2);
-        }
-      });
       // Draw enemies
       enemies.forEach(e => {
         const px = e.x - cameraX;
@@ -2099,11 +2151,11 @@
         ctx.fillRect(px, barY, e.width * healthPct, 4);
 
         if (e.queuedShot && e.windupTimer > 0) {
-          const chargePct = Math.max(0, Math.min(1, 1 - (e.windupTimer / (e.type === 'robot' ? 420 : 300))));
+          const chargePct = 1 - e.windupTimer / RANGED[e.type].windup;
           const aimDir = e.targetDir || (player.x < e.x ? -1 : 1);
           const eyeX = px + (aimDir < 0 ? 2 : e.width - 2);
           const eyeY = e.y + e.height / 2;
-          ctx.strokeStyle = e.type === 'robot' ? `rgba(255,170,90,${0.25 + chargePct * 0.55})` : `rgba(130,255,130,${0.2 + chargePct * 0.5})`;
+          ctx.strokeStyle = e.type === 'robot' ? `rgba(255,170,90,${0.25 + chargePct * 0.55})` : `rgba(255,207,105,${0.2 + chargePct * 0.5})`;
           ctx.lineWidth = e.type === 'robot' ? 2 : 1.5;
           ctx.beginPath();
           ctx.moveTo(eyeX, eyeY);
@@ -2154,6 +2206,8 @@
         ctx.moveTo(x - b.vx / speed * trail, y - b.vy / speed * trail);
         ctx.lineTo(x, y);
         ctx.stroke();
+        ctx.fillStyle = 'rgba(8,14,26,0.8)';
+        ctx.fillRect(x - b.width / 2 - 0.7, y - b.height / 2 - 0.7, b.width + 1.4, b.height + 1.4);
         ctx.fillStyle = laser ? '#d1ffff' : '#fff6ce';
         ctx.fillRect(x - b.width / 2, y - b.height / 2, b.width, b.height);
       });
@@ -2176,8 +2230,10 @@
         const px = b.x - cameraX;
         ctx.fillStyle = 'rgba(255,92,92,0.35)';
         ctx.fillRect(px - 1, b.y - 1, b.width + 2, b.height + 2);
-        ctx.fillStyle = '#ff6060';
+        ctx.fillStyle = b.kind === 'alien' ? '#ffc75b' : '#ff6668';
         ctx.fillRect(px, b.y, b.width, b.height);
+        ctx.fillStyle = '#fff0ce';
+        ctx.fillRect(px + (b.vx > 0 ? b.width - 3 : 0), b.y + 1, 3, 2);
       });
       // Draw player
       const ppx = player.x - cameraX;
