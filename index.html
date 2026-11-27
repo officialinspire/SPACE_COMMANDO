@@ -85,10 +85,8 @@
         clearTimeout(stallTimer);
         intro.hidden = true;
         video.pause();
+        // The game's music director starts the menu theme once boot is ready.
         document.body.dataset.boot = 'ready';
-        const playMenuMusic = () => window.fadeIn?.(window.menuMusic);
-        if (window.menuMusic) playMenuMusic();
-        else window.addEventListener('load', playMenuMusic, { once: true });
         document.dispatchEvent(new Event('commando-ready'));
       }
 

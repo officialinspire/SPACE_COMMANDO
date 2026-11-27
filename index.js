@@ -259,12 +259,19 @@
     return SETTINGS.effects === 'reduced' || (SETTINGS.effects === 'system' && motionPreference.matches);
   }
 
-  // Audio objects for background music.  These will be created in
-  // init() so they can access the SETTINGS object.  gameMusic
-  // accompanies gameplay and menuMusic accompanies all in‑game menus
-  // including the shop, pause and settings screens.
-  let gameMusic;
-  let menuMusic;
+  // Background music. Tracks stream from same-origin relative URLs and are
+  // routed from the game state: the level theme plays during play, the
+  // menu theme behind the start screen, pause, shop, settings and game
+  // over, and nothing during the intro video. Each track loops inside its
+  // silent tail, falls back to the previous file if it fails to load, and
+  // has a gain trim that levels it with the other music.
+  const MUSIC_TRACKS = {
+    menu: { src: 'Space Commando_ Main Menu.mp3', tail: 2.69, gain: 0.74,
+            fallback: 'menu_background_music.mp3', fallbackTail: 0, fallbackGain: 1 },
+    play: { src: 'Space Station_ Level 1 Ambient.mp3', tail: 1.67, gain: 0.59,
+            fallback: 'game-background-music.mp3', fallbackTail: 6.9, fallbackGain: 1 }
+  };
+  const MUSIC_FADE_MS = 700;
 
   // -----------------------------------------------------------------------------
   // Sound effects
@@ -340,58 +347,6 @@
   // played.
   let elapsedTime = 0;
   /**
-   * Fade an audio track in over time.  Cancels any previous fade on
-   * that track before starting.  The track begins playing at zero
-   * volume and increments up to the provided targetVolume.  If the
-   * global audio toggle is disabled the volume will remain at zero.
-   *
-   * @param {HTMLAudioElement} audio The audio element to fade in
-   * @param {number} targetVolume The desired target volume (0–1)
-   * @param {number} step Increment added to the volume each tick
-   * @param {number} interval Milliseconds between volume updates
-   */
-  function fadeIn(audio, targetVolume = SETTINGS.musicVolume, step = 0.05, interval = 100) {
-    if (!audio) return;
-    if (audio.fadeInterval) {
-      clearInterval(audio.fadeInterval);
-    }
-    // Start at zero to avoid abrupt starts
-    audio.volume = 0;
-    try { audio.play(); } catch (err) {}
-    audio.fadeInterval = setInterval(() => {
-      const maxVol = SETTINGS.audio ? targetVolume : 0;
-      audio.volume = Math.min(maxVol, audio.volume + step);
-      if (audio.volume >= maxVol) {
-        clearInterval(audio.fadeInterval);
-        audio.fadeInterval = null;
-      }
-    }, interval);
-  }
-
-  /**
-   * Fade an audio track out over time.  Cancels any previous fade
-   * operation.  Gradually reduces volume and pauses when silent.
-   *
-   * @param {HTMLAudioElement} audio The audio element to fade out
-   * @param {number} step Decrement subtracted from the volume each tick
-   * @param {number} interval Milliseconds between volume updates
-   */
-  function fadeOut(audio, step = 0.05, interval = 100) {
-    if (!audio) return;
-    if (audio.fadeInterval) {
-      clearInterval(audio.fadeInterval);
-    }
-    audio.fadeInterval = setInterval(() => {
-      audio.volume = Math.max(0, audio.volume - step);
-      if (audio.volume <= 0) {
-        try { audio.pause(); } catch (err) {}
-        clearInterval(audio.fadeInterval);
-        audio.fadeInterval = null;
-      }
-    }, interval);
-  }
-
-  /**
    * Initialize and run the game. This function sets up the canvas,
    * event listeners, game entities, and the main loop. All of the
    * gameplay logic lives within the nested helper functions.
@@ -414,28 +369,81 @@
     // Unshaken view in world units. Gameplay checks read this directly.
     const camera = { x: 0, y: maxViewY, look: 1, lookVelocity: 0, lead: 0, yVelocity: 0, support: groundY };
 
-    // Initialise background music once per session.  Creating audio
-    // elements inside init() ensures they are tied to the document
-    // lifecycle.  Loop both tracks and leave volumes at zero until
-    // fadeIn() is called.  We defer playback to user interaction as
-    // some browsers block autoplay.
-    if (!gameMusic) {
-      gameMusic = new Audio('game-background-music.mp3');
-      gameMusic.loop = true;
-      gameMusic.volume = 0;
+    // Music tracks start with metadata only and stream once they play.
+    const music = {};
+    let musicBlocked = false;
+    let musicLast = null;
+    function startTrack(track) {
+      if (track.pending) return;
+      track.pending = true;
+      track.audio.preload = 'auto';
+      const done = () => { track.pending = false; };
+      const attempt = track.audio.play();
+      // Autoplay rejection waits for the next gesture instead of retrying every frame.
+      if (attempt?.then) attempt.then(done, () => { done(); musicBlocked = true; });
+      else done();
     }
-    if (!menuMusic) {
-      menuMusic = new Audio('menu_background_music.mp3');
-      menuMusic.loop = true;
-      menuMusic.volume = 0;
+    for (const [name, def] of Object.entries(MUSIC_TRACKS)) {
+      const audio = new Audio();
+      audio.preload = 'metadata';
+      const track = { name, audio, level: 0, gain: def.gain, tail: def.tail, failed: false, pending: false };
+      audio.addEventListener('error', () => {
+        if (track.failed) return;
+        track.failed = true;
+        track.gain = def.fallbackGain;
+        track.tail = def.fallbackTail;
+        audio.src = encodeURI(def.fallback);
+        audio.load();
+      });
+      // Loop inside the silent tail rather than waiting for the file end.
+      audio.addEventListener('timeupdate', () => {
+        if (track.tail && audio.duration && audio.currentTime >= audio.duration - track.tail + 0.12) audio.currentTime = 0;
+      });
+      audio.addEventListener('ended', () => {
+        audio.currentTime = 0;
+        if (track.level > 0) startTrack(track);
+      });
+      audio.src = encodeURI(def.src);
+      music[name] = track;
+    }
+    for (const event of ['pointerdown', 'keydown']) {
+      window.addEventListener(event, () => { musicBlocked = false; }, { capture: true, passive: true });
+    }
+    // Hidden tabs pause at once; the director fades back in on return.
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) { musicLast = null; return; }
+      for (const track of Object.values(music)) {
+        track.audio.pause();
+        track.level = 0;
+        track.audio.volume = 0;
+      }
+    });
+
+    function wantedMusic() {
+      if (document.body.dataset.boot !== 'ready' || !SETTINGS.audio || document.hidden) return null;
+      return gameState === 'play' ? 'play' : 'menu';
     }
 
-    // Expose fadeIn and menuMusic to window so intro video handler can start music
-    window.fadeIn = fadeIn;
-    window.menuMusic = menuMusic;
+    // Called every frame: fade each track toward its target for the state.
+    function updateMusic(now) {
+      const dt = musicLast === null ? 0 : Math.min(100, now - musicLast);
+      musicLast = now;
+      const wanted = wantedMusic();
+      for (const track of Object.values(music)) {
+        const target = track.name === wanted ? Math.min(1, track.gain * SETTINGS.musicVolume) : 0;
+        const step = dt / MUSIC_FADE_MS;
+        // A track that is not playing yet (blocked or buffering) waits at zero, so it still fades in.
+        if (target > track.level && !track.audio.paused) track.level = Math.min(target, track.level + step);
+        else if (target < track.level) track.level = Math.max(target, track.level - step);
+        if (target > 0 && track.audio.paused && !musicBlocked && !document.hidden) startTrack(track);
+        track.audio.volume = Math.max(0, Math.min(1, track.level));
+        if (!target && !track.level && !track.audio.paused) track.audio.pause();
+      }
+    }
+    window.commandoMusic = { tracks: music, wanted: wantedMusic };
 
-    // Menu music will start after the intro video ends (see index.html)
-    // This prevents audio overlap between the intro video and background music.
+    // Menu music starts after the intro video ends (see index.html), so the
+    // two never overlap.
     // Used only when neither distant background can be loaded.
     const stars = [];
     for (let i=0; i<600; i++) {
@@ -613,9 +621,6 @@
         } else if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
           // Close shop and resume play
           gameState = 'play';
-          // resume game music
-          fadeOut(menuMusic);
-          fadeIn(gameMusic);
         }
       } else if (gameState === 'play') {
         if (e.key === 'p' || e.key === 'P') {
@@ -625,16 +630,10 @@
           // Highlight the current weapon if present in the shop items.
           const idx = SHOP_ITEMS.findIndex(it => it.type === 'weapon' && it.key === player.weapon);
           menuSelection = idx >= 0 ? idx : 0;
-          // switch music: fade out game track and fade in menu track
-          fadeOut(gameMusic);
-          fadeIn(menuMusic);
         } else if (e.key === 'Escape') {
           // Open pause/menu overlay
           gameState = 'menu';
           mainMenuSelection = 0;
-          // swap music
-          fadeOut(gameMusic);
-          fadeIn(menuMusic);
         }
       } else if (gameState === 'menu') {
         // Pause menu options: 0: Return to Game, 1: Restart Game, 2: Game Settings
@@ -647,15 +646,11 @@
           if (mainMenuSelection === 0) {
             // Return to game
             gameState = 'play';
-            fadeOut(menuMusic);
-            fadeIn(gameMusic);
           } else if (mainMenuSelection === 1) {
             // Restart game and return to start menu
             restart();
             gameState = 'start';
             startMenuSelection = 0;
-            fadeOut(menuMusic);
-            fadeIn(menuMusic); // continue playing menu music for start screen
           } else if (mainMenuSelection === 2) {
             // Open settings menu
             prevSettingsState = 'menu';
@@ -667,8 +662,6 @@
         } else if (e.key === 'Escape') {
           // cancel pause and resume play
           gameState = 'play';
-          fadeOut(menuMusic);
-          fadeIn(gameMusic);
         }
       } else if (gameState === 'settings') {
         if (e.key === 'ArrowUp') {
@@ -685,22 +678,8 @@
             else idx = (idx + 1) % difficulties.length;
             SETTINGS.difficulty = difficulties[idx];
           } else if (key === 'audio') {
-            // Toggle music on or off.  When turning off, fade out all
-            // tracks.  When turning on, resume whichever track was
-            // associated with the previous state when entering
-            // settings.  If that state was gameplay, play game music,
-            // otherwise play menu music.
+            // Toggle music; the music director follows on the next frame.
             SETTINGS.audio = !SETTINGS.audio;
-            if (!SETTINGS.audio) {
-              fadeOut(gameMusic);
-              fadeOut(menuMusic);
-            } else {
-              if (prevSettingsState === 'play') {
-                fadeIn(gameMusic);
-              } else {
-                fadeIn(menuMusic);
-              }
-            }
           } else if (key === 'particles') {
             SETTINGS.particles = !SETTINGS.particles;
           } else if (key === 'sfx') {
@@ -722,18 +701,7 @@
           playLegacyEffect(selectSfx);
         } else if (e.key === 'Escape') {
           // Exit settings and return to the previous menu
-          const returnState = prevSettingsState || 'start';
-          // Switch audio tracks appropriately
-          if (returnState === 'play') {
-            // going back into gameplay
-            fadeOut(menuMusic);
-            fadeIn(gameMusic);
-          } else {
-            // returning to menu or start: ensure menu music is playing
-            fadeOut(gameMusic);
-            fadeIn(menuMusic);
-          }
-          gameState = returnState;
+          gameState = prevSettingsState || 'start';
         }
       } else if (gameState === 'start') {
         // Start menu options: 0 Start Game, 1 Game Settings
@@ -748,9 +716,6 @@
             // Begin gameplay
             restart();
             gameState = 'play';
-            // swap music: stop menu music and start game music
-            fadeOut(menuMusic);
-            fadeIn(gameMusic);
           } else if (startMenuSelection === 1) {
             // open settings from start menu
             prevSettingsState = 'start';
@@ -767,9 +732,6 @@
           // return to start screen after death
           gameState = 'start';
           startMenuSelection = 0;
-          // stop gameplay music and start menu music
-          fadeOut(gameMusic);
-          fadeIn(menuMusic);
           // Play selection sound on restart
           playLegacyEffect(selectSfx);
         }
@@ -1557,10 +1519,6 @@
         gameState = 'gameover';
         playerDownAt = performance.now();
         resetGameplayInput();
-        // Transition to menu track on death so gameover/start screens
-        // always use the same music context.
-        fadeOut(gameMusic);
-        fadeIn(menuMusic);
       }
       playLegacyEffect(playerDamageSfx);
       return true;
@@ -1881,6 +1839,12 @@
         rect.y >= camera.y && rect.y + rect.height <= camera.y + viewHeight;
     }
 
+    const ENEMY_CUE_LEVEL = { Warn: 0.48, Attack: 0.42, Down: 0.42, Hurt: 0.36, Move: 0.26 };
+    const HURT_CUE_GAP_MS = 260;
+    // Sentry Unit footsteps: on starting to move, then at a walking cadence.
+    const ROBOT_STEP_MS = 1500;
+    const ROBOT_START_GAP_MS = 1000;
+
     function playEnemyCue(enemy, cue) {
       if (!SETTINGS.sfx) return;
       const x = enemy.x + enemy.width / 2;
@@ -1892,10 +1856,18 @@
         y >= camera.y - 48 && y <= camera.y + viewHeight + 48;
       if (!nearView && Math.abs(offset) > 420) return;
       const pan = Math.max(-0.72, Math.min(0.72, offset / 330));
-      const gain = (cue === 'Warn' ? 0.48 : 0.42) / (1 + Math.abs(offset) / 720);
-      if (!window.combatAudio?.play(enemy.type + cue, 'enemy', gain, pan) && cue === 'Down') {
+      const gain = (ENEMY_CUE_LEVEL[cue] ?? 0.42) / (1 + Math.abs(offset) / 720);
+      const group = cue === 'Hurt' ? 'hurt' : (cue === 'Move' ? 'move' : 'enemy');
+      if (!window.combatAudio?.play(enemy.type + cue, group, gain, pan) && cue === 'Down') {
         playLegacyEffect(enemyDeathSfx);
       }
+    }
+
+    // A burst or a shotgun's pellets play one hurt cue per enemy per window.
+    function playEnemyHurt(enemy) {
+      if (elapsedTime - (enemy.hurtCueAt ?? -Infinity) < HURT_CUE_GAP_MS) return;
+      enemy.hurtCueAt = elapsedTime;
+      playEnemyCue(enemy, 'Hurt');
     }
 
     function updateGame(dt) {
@@ -2052,6 +2024,17 @@
           }
         }
 
+        if (e.type === 'robot') {
+          const moving = Boolean(e.ladder) || (e.onGround && Math.abs(e.x - prevX) > 0.2);
+          const since = elapsedTime - (e.stepCueAt ?? -Infinity);
+          // A start plays a step unless one just did; walking repeats at a cadence.
+          if (moving && since >= (e.wasMoving ? ROBOT_STEP_MS : ROBOT_START_GAP_MS)) {
+            playEnemyCue(e, 'Move');
+            e.stepCueAt = elapsedTime;
+          }
+          e.wasMoving = moving;
+        }
+
         const visible = inCameraView(e, 20);
         if (ranged) {
           if (e.queuedShot) {
@@ -2117,6 +2100,7 @@
         if (index < 0) return;
         enemy.health -= b.damage;
         enemy.hitTimer = 170;
+        if (enemy.health > 0) playEnemyHurt(enemy);
         const direction = Math.sign(b.vx) || (player.x < enemy.x ? 1 : -1);
         const force = b.weapon === 'shotgun' ? 4.2 : (b.weapon === 'laser' ? 2.8 : 1.8);
         enemy.x += direction * force;
@@ -2953,6 +2937,7 @@
       }
       if ((document.body.dataset.boot === 'ready' && gameState !== menuMode) ||
           (menuMode === 'start' && menuRows[0].row.disabled !== !artReady)) syncMenu();
+      updateMusic(now);
       drawGame();
       requestAnimationFrame(loop);
     }
