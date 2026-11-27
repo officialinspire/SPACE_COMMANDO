@@ -102,6 +102,90 @@
     asset.ready.then(() => { station[name] = asset.image; }, () => {});
   }
 
+  // The four stages of a run, in order. Stage 1 is the orbital station with
+  // its own art; the others draw from the environment kits.
+  const STAGES = [
+    { id: 'station', name: 'Orbital Station', music: 'play' },
+    { id: 'cyber', name: 'CyberCity', env: 'cyberpunk-city', music: 'cyber' },
+    { id: 'jungle', name: 'Jungle Planet', env: 'jungle-planet', music: 'jungle' },
+    { id: 'desert', name: 'Desert Temple Ruins', env: 'desert-temple-ruins', music: 'desert' }
+  ];
+
+  // How each kit's sprites map onto the game. Rectangles come from
+  // assets/environments/manifest.json. The numbers here were measured from
+  // each sprite's alpha channel inside its manifest rectangle:
+  //   box      opaque bounds [x, y, w, h] relative to the manifest rectangle
+  //   body     rows of the box that form the solid part; the first is the
+  //            walkable surface. The body is scaled to fill the collision
+  //            rectangle, so rows above (rails, grass) and below (supports,
+  //            vines) are non-solid trim.
+  //   rails    columns of a ladder's two rails, mapped onto the ladder width
+  //   surface  first solid row of a cover sprite (anything above is trim)
+  // Cover types keep the sprite's width-to-height ratio (coverAspect).
+  const ENV_ART = {
+    'cyberpunk-city': {
+      deck: { sprite: 'street-deck', box: [10, 6, 379, 104], body: [0, 104] },
+      catwalk: { sprite: 'catwalk', box: [5, 6, 381, 124], body: [60, 100] },
+      ladder: { sprite: 'access-ladder', box: [5, 5, 95, 349], rails: [12, 84] },
+      wall: { sprite: 'utility-cabinet', box: [10, 12, 241, 227] },
+      cover: {
+        crate: { sprite: 'cargo-crate', box: [9, 12, 279, 210], surface: 8 },
+        shield: { sprite: 'utility-cabinet', box: [10, 12, 241, 227], surface: 2 },
+        barricade: { sprite: 'barricade', box: [8, 6, 389, 168], surface: 9 }
+      },
+      floorDecor: [{ sprite: 'vent', box: [5, 6, 320, 244], height: 34 }],
+      hangDecor: [{ sprite: 'neon-fixture', box: [7, 9, 378, 172], height: 18 }, { sprite: 'cables-and-pipes', box: [8, 8, 377, 206], height: 22 }],
+      tint: '#0b1020'
+    },
+    'jungle-planet': {
+      deck: { sprite: 'root-deck', box: [8, 8, 386, 159], body: [20, 156] },
+      catwalk: { sprite: 'stone-ledge', box: [8, 11, 389, 166], body: [12, 76] },
+      ladder: { sprite: 'vine-ladder', box: [8, 7, 185, 386], rails: [30, 159] },
+      wall: { sprite: 'mossy-boulder', box: [6, 7, 396, 194] },
+      cover: {
+        crate: { sprite: 'overgrown-crate', box: [10, 13, 381, 220], surface: 33 },
+        shield: { sprite: 'mossy-boulder', box: [6, 7, 396, 194], surface: 33 },
+        barricade: { sprite: 'fallen-trunk', box: [6, 8, 346, 187], surface: 16 }
+      },
+      floorDecor: [{ sprite: 'fern-clump', box: [7, 8, 377, 248], height: 30 }, { sprite: 'glowing-fungi', box: [5, 8, 224, 197], height: 26 }],
+      hangDecor: [{ sprite: 'hanging-vines', box: [8, 10, 369, 359], height: 40 }],
+      tint: '#07130d'
+    },
+    'desert-temple-ruins': {
+      deck: { sprite: 'sandstone-deck', box: [7, 11, 389, 169], body: [4, 168] },
+      catwalk: { sprite: 'lintel-platform', box: [6, 6, 387, 196], body: [0, 84] },
+      ladder: { sprite: 'rope-ladder', box: [7, 5, 117, 365], rails: [6, 114] },
+      wall: { sprite: 'cover-block', box: [6, 9, 263, 243] },
+      cover: {
+        crate: { sprite: 'cover-block', box: [6, 9, 263, 243], surface: 1 },
+        shield: { sprite: 'cover-block', box: [6, 9, 263, 243], surface: 1 },
+        barricade: { sprite: 'collapsed-wall', box: [5, 10, 414, 161], surface: 2 }
+      },
+      floorDecor: [{ sprite: 'clay-urn', box: [8, 7, 211, 302], height: 34 }, { sprite: 'pillar-base', box: [5, 8, 291, 289], height: 40 }],
+      hangDecor: [{ sprite: 'bronze-lamp', box: [6, 8, 166, 265], height: 20 }],
+      tint: '#1a1208'
+    }
+  };
+  for (const art of Object.values(ENV_ART)) {
+    art.coverAspect = Object.fromEntries(Object.entries(art.cover).map(([type, c]) => [type, +(c.box[2] / (c.box[3] - c.surface)).toFixed(3)]));
+  }
+
+  // Environment images load in the background; a stage whose art is
+  // missing draws with the station terrain or flat colours instead.
+  const envArt = {};
+  const envManifestURL = new URL('assets/environments/manifest.json', document.baseURI);
+  fetch(envManifestURL).then(r => r.ok ? r.json() : null).then(manifest => {
+    for (const [id, level] of Object.entries(manifest?.levels || {})) {
+      if (!ENV_ART[id]) continue;
+      const entry = { rects: level.sprites || {} };
+      envArt[id] = entry;
+      const bg = loadSpriteImage(new URL(level.background, envManifestURL));
+      bg.ready.then(() => { entry.background = bg.image; }, () => {});
+      const objects = loadSpriteImage(new URL(level.objects, envManifestURL));
+      objects.ready.then(() => { entry.objects = objects.image; }, () => {});
+    }
+  }).catch(() => {});
+
   const ACTOR_SCALE = 0.5;
   const ENEMY_COLOR = { zombie: '#00aa00', ghost: '#aaaaff', robot: '#ff8844', alien: '#55ff55' };
   const ENEMY_FALL = { zombie: 540, ghost: 440, robot: 540, alien: 540 };
@@ -269,7 +353,14 @@
     menu: { src: 'Space Commando_ Main Menu.mp3', tail: 2.69, gain: 0.74,
             fallback: 'menu_background_music.mp3', fallbackTail: 0, fallbackGain: 1 },
     play: { src: 'Space Station_ Level 1 Ambient.mp3', tail: 1.67, gain: 0.59,
-            fallback: 'game-background-music.mp3', fallbackTail: 6.9, fallbackGain: 1 }
+            fallback: 'game-background-music.mp3', fallbackTail: 6.9, fallbackGain: 1 },
+    // Stage themes fall back to the station theme if they fail to load.
+    cyber: { src: 'Cyber City_ Urban Warfare.mp3', tail: 2.72, gain: 0.8,
+             fallback: 'Space Station_ Level 1 Ambient.mp3', fallbackTail: 1.67, fallbackGain: 0.59 },
+    jungle: { src: 'Jungle Planet_ Level Theme.mp3', tail: 1.81, gain: 0.78,
+              fallback: 'Space Station_ Level 1 Ambient.mp3', fallbackTail: 1.67, fallbackGain: 0.59 },
+    desert: { src: 'Desert Ruins_ Ancient Temple.mp3', tail: 1.25, gain: 0.68,
+              fallback: 'Space Station_ Level 1 Ambient.mp3', fallbackTail: 1.67, fallbackGain: 0.59 }
   };
   const MUSIC_FADE_MS = 700;
 
@@ -421,7 +512,7 @@
 
     function wantedMusic() {
       if (document.body.dataset.boot !== 'ready' || !SETTINGS.audio || document.hidden) return null;
-      return gameState === 'play' ? 'play' : 'menu';
+      return gameState === 'play' ? STAGES[stageIndex].music : 'menu';
     }
 
     // Called every frame: fade each track toward its target for the state.
@@ -979,14 +1070,111 @@
     let levelSeed = 0;
     const urlSeed = Number.parseInt(new URLSearchParams(location.search).get('seed'), 10);
 
+    // A run has one seed; each stage derives its own, and the station keeps
+    // the run seed so ?seed=N repeats the same station as before.
+    let runSeed = 0;
+    let stageIndex = 0;
+    let stageBanner = null;
+    let runComplete = false;
+    let decorations = [];
+    const EXIT_WIDTH = 46;
+
+    function stageSeed(index) {
+      return index ? (runSeed ^ Math.imul(index, 0x9E3779B1)) >>> 0 : runSeed;
+    }
+
     function generateEnvironment() {
-      levelSeed = Number.isFinite(urlSeed) ? urlSeed >>> 0 : (Math.random() * 2 ** 32) >>> 0;
+      const stage = STAGES[stageIndex];
+      levelSeed = stageSeed(stageIndex);
       layout = window.SpaceStation.build({
-        seed: levelSeed, worldWidth, worldHeight, deckY: DECK_Y,
+        seed: levelSeed, stage: stage.id, coverAspect: stage.env ? ENV_ART[stage.env].coverAspect : null,
+        worldWidth, worldHeight, deckY: DECK_Y,
         movement: MOVEMENT, body: { width: 32, height: 32 }
       });
       obstacles = layout.solids;
       ladders = layout.ladders;
+      decorations = stage.env ? placeDecorations(stage.env) : [];
+    }
+
+    // Non-solid props: floor pieces on walkable decks and hanging pieces
+    // under slabs and catwalks, kept clear of ladders, cover and the exit.
+    function placeDecorations(env) {
+      const art = ENV_ART[env];
+      const rng = window.SpaceStation.mulberry32(levelSeed ^ 0x5bd1e995);
+      const list = [];
+      const nearLadder = x => ladders.some(l => x > l.x - 48 && x < l.x + l.width + 48);
+      const nearCover = (x, w) => obstacles.some(o => o.role === 'cover' && x + w > o.x - 8 && x < o.x + o.width + 8);
+      for (const surface of layout.dropSurfaces) {
+        for (let x = surface.x0 + 40 + rng() * 120; x < surface.x1 - 60; x += 220 + rng() * 260) {
+          const decor = art.floorDecor[Math.floor(rng() * art.floorDecor.length)];
+          const w = decor.height * decor.box[2] / decor.box[3];
+          if (nearLadder(x + w / 2) || nearCover(x, w) || x > worldWidth - 160 || (surface.y === groundY && x < 240)) continue;
+          list.push({ decor, x, y: surface.y - decor.height, w, h: decor.height, flip: rng() < 0.5, floor: true });
+        }
+      }
+      for (const ob of obstacles) {
+        if (!['slab', 'catwalk', 'terrace'].includes(ob.type) || ob.y >= groundY) continue;
+        for (let x = ob.x + 30 + rng() * 80; x < ob.x + ob.width - 50; x += 260 + rng() * 260) {
+          const decor = art.hangDecor[Math.floor(rng() * art.hangDecor.length)];
+          const w = decor.height * decor.box[2] / decor.box[3];
+          if (nearLadder(x + w / 2)) continue;
+          list.push({ decor, x, y: ob.y + ob.height, w, h: decor.height, flip: rng() < 0.5 });
+        }
+      }
+      return list;
+    }
+
+    // Enter a stage: build it, clear stage-local threats and effects, and
+    // place the player at the start. Health, gold, weapons, ammo and
+    // difficulty carry over.
+    function enterStage(index) {
+      stageIndex = index;
+      bullets = [];
+      enemyBullets = [];
+      enemies = [];
+      pickups = [];
+      floatingTexts = [];
+      shotFlashes = [];
+      particles = [];
+      fallenSprites = [];
+      damageOverlayTimer = 0;
+      openingEnemyPending = index === 0;
+      spawnCooldown = index === 0 ? 900 : 1800;
+      player.x = 100;
+      player.height = player.baseHeight;
+      player.y = groundY - player.height;
+      player.vx = 0;
+      player.vy = 0;
+      player.onGround = true;
+      player.facing = 1;
+      player.ladder = null;
+      player.isClimbing = false;
+      player.isDucking = false;
+      player.invulnTimer = 0;
+      player.hitFlashTimer = 0;
+      lastLanding = -Infinity;
+      resetGameplayInput();
+      generateEnvironment();
+      snapCamera();
+      stageBanner = { text: `Stage ${index + 1} · ${STAGES[index].name}`, at: performance.now() };
+    }
+
+    // The exit sits at the end of the upper deck on the stage's right edge.
+    function atStageExit() {
+      const goal = layout.goal;
+      return player.onGround && !player.isClimbing && Math.abs(player.y + player.height - goal.y) < 1 &&
+        player.x + player.width >= worldWidth - EXIT_WIDTH;
+    }
+
+    function leaveStage() {
+      if (stageIndex + 1 < STAGES.length) {
+        enterStage(stageIndex + 1);
+        return;
+      }
+      runComplete = true;
+      gameState = 'gameover';
+      playerDownAt = performance.now();
+      resetGameplayInput();
     }
 
     // The nav region (structural walkable surface) under a body, projecting
@@ -1083,6 +1271,7 @@
     // Initial environment creation.  This call populates the obstacles
     // and ladders arrays with randomised platforms and cover.  Without
     // this call the world would be empty at the first launch.
+    runSeed = Number.isFinite(urlSeed) ? urlSeed >>> 0 : (Math.random() * 2 ** 32) >>> 0;
     generateEnvironment();
     snapCamera();
 
@@ -1111,6 +1300,11 @@
       spawnCooldown = 900;
       openingEnemyPending = true;
       gameState = 'play';
+      // A new run always starts at the station with a fresh seed.
+      runSeed = Number.isFinite(urlSeed) ? urlSeed >>> 0 : (Math.random() * 2 ** 32) >>> 0;
+      stageIndex = 0;
+      runComplete = false;
+      stageBanner = null;
       player.x = 100;
       player.height = player.baseHeight;
       player.y = groundY - player.height;
@@ -1146,6 +1340,7 @@
         generateEnvironment();
       }
       snapCamera();
+      stageBanner = { text: `Stage 1 · ${STAGES[0].name}`, at: performance.now() };
     }
 
     /**
@@ -1881,6 +2076,10 @@
       updateShotKicks(dt);
       updatePlayer(dt);
       updateCamera(dt);
+      if (atStageExit()) {
+        leaveStage();
+        return;
+      }
       if (!wasGrounded && player.onGround) lastLanding = elapsedTime;
       fallenSprites = fallenSprites.filter(enemy => elapsedTime - enemy.at < ENEMY_FALL[enemy.type]);
       // Update enemies against the unshaken view. Walkers route to the
@@ -2291,7 +2490,7 @@
       const shot = playerShot?.key === key && playerShot.facing === player.facing && shotAge < SHOT_FEEDBACK[key].duration;
       let frame;
       if (gameState === 'start') frame = get('idle', performance.now(), true);
-      else if (gameState === 'gameover') frame = get('down', performance.now() - playerDownAt);
+      else if (gameState === 'gameover' && !runComplete) frame = get('down', performance.now() - playerDownAt);
       else if (player.hitFlashTimer > 0) frame = get('hit', 180 - player.hitFlashTimer);
       else if (player.isClimbing) frame = get('climb', Math.abs(player.vy) > 0.1 ? player.animTime : 0, true);
       else if (player.reloading && player.onGround && !player.isDucking) {
@@ -2378,19 +2577,23 @@
     function drawStation(view) {
       const screenX = view.x * CAMERA.zoom;
       const rise = (maxViewY - view.y) * CAMERA.zoom;
+      const env = STAGES[stageIndex].env;
+      if (env) {
+        // Environment stages: one painted backdrop with slow parallax.
+        const bg = envArt[env]?.background;
+        if (bg) {
+          const scale = 1 + (CAMERA.zoom - 1) * 0.15;
+          const tileHeight = bg.height * width * scale / bg.width;
+          const lift = Math.min(rise * 0.15, Math.max(0, tileHeight - height));
+          drawLayer(bg, screenX * 0.15, scale, height - tileHeight + lift);
+        } else drawStars(screenX);
+        ctx.fillStyle = 'rgba(5,10,18,0.2)';
+        ctx.fillRect(0, 0, width, height);
+        return;
+      }
       if (!station.distant) {
         if (bgLoaded) drawLayer(legacyBackground.image, screenX * 0.12);
-        else {
-          ctx.fillStyle = '#080f20';
-          ctx.fillRect(0, 0, width, height);
-          for (const star of stars) {
-            const x = star.x - screenX * 0.12;
-            if (x >= 0 && x < width) {
-              ctx.fillStyle = `rgba(205,230,255,${star.alpha})`;
-              ctx.fillRect(x, star.y, star.size, star.size);
-            }
-          }
-        }
+        else drawStars(screenX);
       }
       for (const [name, speed] of STATION_LAYERS) {
         const image = station[name];
@@ -2410,6 +2613,140 @@
       // veil makes the deck-level silhouettes readable against the blue planet.
       ctx.fillStyle = 'rgba(5,10,18,0.17)';
       ctx.fillRect(0, 0, width, height);
+    }
+
+    // Used only when neither distant background can be loaded.
+    function drawStars(screenX) {
+      ctx.fillStyle = '#080f20';
+      ctx.fillRect(0, 0, width, height);
+      for (const star of stars) {
+        const x = star.x - screenX * 0.12;
+        if (x >= 0 && x < width) {
+          ctx.fillStyle = `rgba(205,230,255,${star.alpha})`;
+          ctx.fillRect(x, star.y, star.size, star.size);
+        }
+      }
+    }
+
+    function envSource(env, def) {
+      const art = envArt[env];
+      const rect = art?.rects[def.sprite];
+      if (!art?.objects || !rect) return null;
+      return { image: art.objects, sx: rect[0] + def.box[0], sy: rect[1] + def.box[1], sw: def.box[2], sh: def.box[3] };
+    }
+
+    function drawEnvImage(src, x, y, w, h, flip) {
+      if (!flip) { ctx.drawImage(src.image, src.sx, src.sy, src.sw, src.sh, x, y, w, h); return; }
+      ctx.save();
+      ctx.translate(x + w, y);
+      ctx.scale(-1, 1);
+      ctx.drawImage(src.image, src.sx, src.sy, src.sw, src.sh, 0, 0, w, h);
+      ctx.restore();
+    }
+
+    // A deck or ledge: the sprite's body rows fill the solid's height and
+    // tiles repeat along its width, clipped exactly at the solid's ends.
+    // Trim above and below the body draws outside the solid and is not solid.
+    function drawEnvBand(env, def, ob, view) {
+      const src = envSource(env, def);
+      if (!src) return false;
+      const [top, bottom] = def.body;
+      const scale = ob.height / (bottom - top);
+      const tileW = src.sw * scale;
+      const drawTop = ob.y - top * scale;
+      const first = Math.max(0, Math.floor((view.x - WORLD_OVERSCAN - ob.x) / tileW));
+      const last = Math.min(ob.x + ob.width, view.x + viewWidth + WORLD_OVERSCAN);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(ob.x, drawTop - 1, ob.width, src.sh * scale + 2);
+      ctx.clip();
+      for (let i = first, x = ob.x + first * tileW; x < last; i++, x += tileW) {
+        drawEnvImage(src, x, drawTop, tileW + 0.5, src.sh * scale, i % 2 === 1);
+      }
+      ctx.restore();
+      return true;
+    }
+
+    function drawEnvTerrain(view, env) {
+      const art = ENV_ART[env];
+      const deckDepth = worldHeight - groundY;
+      const floor = { x: 0, y: groundY, width: worldWidth, height: deckDepth };
+      ctx.fillStyle = art.tint;
+      ctx.fillRect(view.x - WORLD_OVERSCAN, groundY, viewWidth + WORLD_OVERSCAN * 2, deckDepth + WORLD_OVERSCAN);
+      drawEnvBand(env, art.deck, floor, view);
+      for (const ob of obstacles) {
+        if (ob.role !== 'wall' || !onScreen(view, ob.x, ob.y, ob.width, ob.height)) continue;
+        const src = envSource(env, art.wall);
+        if (!src) continue;
+        const tileH = src.sh * ob.width / src.sw;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(ob.x, ob.y, ob.width, ob.height);
+        ctx.clip();
+        for (let y = ob.y + ob.height - tileH, i = 0; y > ob.y - tileH; y -= tileH, i++) drawEnvImage(src, ob.x, y, ob.width, tileH + 0.5, i % 2 === 1);
+        ctx.restore();
+      }
+      // Ladder rails map onto the ladder's width; rungs repeat to its ends.
+      const ladderSrc = envSource(env, art.ladder);
+      for (const ladder of ladders) {
+        const top = ladder.top - 12;
+        if (!onScreen(view, ladder.x, top, ladder.width, ladder.bottom - top)) continue;
+        if (!ladderSrc) continue;
+        const [r0, r1] = art.ladder.rails;
+        const scale = ladder.width / (r1 - r0);
+        const w = ladderSrc.sw * scale;
+        const tileH = ladderSrc.sh * scale;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(ladder.x - r0 * scale, top, w, ladder.bottom - top);
+        ctx.clip();
+        for (let y = top; y < ladder.bottom; y += tileH - 2) drawEnvImage(ladderSrc, ladder.x - r0 * scale, y, w, tileH, false);
+        ctx.restore();
+      }
+      for (const ob of obstacles) {
+        if (ob.role === 'wall' || ob.type === 'deck' || !onScreen(view, ob.x, ob.y, ob.width, ob.height, 24)) continue;
+        if (ob.role === 'cover') {
+          const def = art.cover[ob.type] || art.cover.crate;
+          const src = envSource(env, def);
+          if (!src) continue;
+          const scaleY = ob.height / (src.sh - def.surface);
+          drawEnvImage(src, ob.x, ob.y - def.surface * scaleY, ob.width, src.sh * scaleY, false);
+        } else {
+          drawEnvBand(env, ob.type === 'slab' || ob.role === 'ceiling' ? art.deck : art.catwalk, ob, view);
+        }
+      }
+      // Floor props are dimmed so they read as scenery, not cover.
+      for (const d of decorations) {
+        if (!onScreen(view, d.x, d.y, d.w, d.h)) continue;
+        const src = envSource(env, d.decor);
+        if (!src) continue;
+        ctx.globalAlpha = d.floor ? 0.72 : 0.9;
+        drawEnvImage(src, d.x, d.y, d.w, d.h, d.flip);
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // The stage exit: a lit gate at the right end of the final upper deck.
+    function drawExitGate(view) {
+      const goal = layout.goal;
+      const x = worldWidth - EXIT_WIDTH;
+      const top = goal.y - 58;
+      if (!onScreen(view, x, top, EXIT_WIDTH, 58)) return;
+      const pulse = 0.55 + Math.sin(performance.now() / 260) * 0.15;
+      const glow = ctx.createLinearGradient(x, 0, worldWidth, 0);
+      glow.addColorStop(0, 'rgba(244,195,123,0)');
+      glow.addColorStop(1, `rgba(244,195,123,${0.38 * pulse})`);
+      ctx.fillStyle = glow;
+      ctx.fillRect(x, top, EXIT_WIDTH, 58);
+      ctx.fillStyle = '#2a2f3a';
+      ctx.fillRect(x, top - 4, 4, 62);
+      ctx.fillRect(worldWidth - 6, top - 4, 6, 62);
+      ctx.fillRect(x, top - 6, EXIT_WIDTH, 5);
+      ctx.fillStyle = `rgba(255,227,184,${0.75 + pulse * 0.25})`;
+      ctx.font = '700 8px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(stageIndex + 1 < STAGES.length ? 'EXIT' : 'EXTRACT', x + EXIT_WIDTH / 2, top - 9);
+      ctx.textAlign = 'left';
     }
 
     function drawTerrainTile(type, x, y, w, h, flip = false) {
@@ -2459,6 +2796,18 @@
 
     // Drawn in world units under the camera transform.
     function drawTerrain(view) {
+      const env = STAGES[stageIndex].env;
+      if (env && envArt[env]?.objects) {
+        drawEnvTerrain(view, env);
+        drawExitGate(view);
+        return;
+      }
+      drawTerrainBase(view);
+      drawExitGate(view);
+    }
+
+    // Station terrain, also the fallback when a stage's kit art is missing.
+    function drawTerrainBase(view) {
       const left = view.x - WORLD_OVERSCAN;
       const right = view.x + viewWidth + WORLD_OVERSCAN;
       // The lower deck runs past the world bottom to fill the overscan.
@@ -2505,7 +2854,7 @@
         const x = obstacle.x;
         ctx.fillStyle = TERRAIN_COLOR[obstacle.type] || TERRAIN_COLOR.platform;
         ctx.fillRect(x, obstacle.y, obstacle.width, obstacle.height);
-        if (obstacle.type === 'slab' || obstacle.type === 'catwalk') {
+        if (obstacle.type === 'slab' || obstacle.type === 'catwalk' || obstacle.type === 'terrace') {
           // Long decks tile the catwalk truss with a deck cap on top.
           drawTiled('platform', x, obstacle.y, obstacle.width, obstacle.height, 128);
           if (obstacle.type === 'slab') drawTiled('deckCap', x, obstacle.y, obstacle.width, 4, 128);
@@ -2716,7 +3065,28 @@
         ctx.fillStyle = `rgba(255,45,40,${alpha})`;
         ctx.fillRect(0, 0, width, height);
       }
-      if (gameState === 'play') drawHUD();
+      if (gameState === 'play') {
+        drawHUD();
+        drawStageBanner();
+      }
+    }
+
+    // A short title card when a stage begins.
+    function drawStageBanner() {
+      if (!stageBanner) return;
+      const age = performance.now() - stageBanner.at;
+      if (age > 2600) { stageBanner = null; return; }
+      const alpha = Math.min(1, age / 250, (2600 - age) / 500);
+      ctx.globalAlpha = alpha;
+      ctx.font = '800 22px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      const w = ctx.measureText(stageBanner.text).width + 36;
+      ctx.fillStyle = 'rgba(10,18,29,0.82)';
+      ctx.fillRect(width / 2 - w / 2, 78, w, 38);
+      ctx.fillStyle = '#ffe3b8';
+      ctx.fillText(stageBanner.text, width / 2, 105);
+      ctx.textAlign = 'left';
+      ctx.globalAlpha = 1;
     }
 
     function drawHUD() {
@@ -2757,6 +3127,10 @@
       } else {
         ctx.fillText('MAG / RES', 181, 46);
       }
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#8adddf';
+      ctx.fillText(`STAGE ${stageIndex + 1}/${STAGES.length}`, 323, 46);
+      ctx.textAlign = 'left';
     }
 
     // Native menu controls sit over the Canvas, sharing the game's keyboard
@@ -2825,7 +3199,8 @@
 
       const panel = element('section', mode === 'shop' ? 'menu-panel shop-panel' : 'menu-panel');
       const heading = element(mode === 'start' ? 'h1' : 'h2', '', {
-        start: 'SPACE COMMANDO', menu: 'Paused', settings: 'Settings', shop: 'Shop', gameover: 'Game over'
+        start: 'SPACE COMMANDO', menu: 'Paused', settings: 'Settings', shop: 'Shop',
+        gameover: runComplete ? 'Mission complete' : 'Game over'
       }[mode]);
       heading.id = 'menu-heading';
       panel.setAttribute('aria-labelledby', heading.id);
@@ -2868,7 +3243,8 @@
         gameover: ['Restart']
       }[mode];
       if (mode === 'gameover') {
-        panel.append(element('p', 'gameover-summary', `Gold collected: ${player.gold}`));
+        const reached = runComplete ? `All ${STAGES.length} stages cleared` : `Reached stage ${stageIndex + 1} · ${STAGES[stageIndex].name}`;
+        panel.append(element('p', 'gameover-summary', `${reached} · Gold collected: ${player.gold}`));
       }
       labels.forEach((label, index) => addMenuRow(options, label, index, mode === 'settings'));
       panel.append(options);
