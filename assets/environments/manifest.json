@@ -1,0 +1,215 @@
+{
+  "version": 1,
+  "rectFormat": [
+    "x",
+    "y",
+    "width",
+    "height"
+  ],
+  "levels": {
+    "cyberpunk-city": {
+      "background": "cyberpunk-city/background.webp",
+      "backgroundSize": [
+        1600,
+        900
+      ],
+      "objects": "cyberpunk-city/objects.webp",
+      "objectsSize": [
+        1254,
+        1254
+      ],
+      "sprites": {
+        "street-deck": [
+          15,
+          203,
+          395,
+          123
+        ],
+        "catwalk": [
+          432,
+          186,
+          391,
+          138
+        ],
+        "access-ladder": [
+          994,
+          44,
+          104,
+          361
+        ],
+        "cargo-crate": [
+          66,
+          528,
+          293,
+          231
+        ],
+        "barricade": [
+          425,
+          557,
+          402,
+          185
+        ],
+        "utility-cabinet": [
+          915,
+          512,
+          262,
+          246
+        ],
+        "vent": [
+          59,
+          929,
+          331,
+          257
+        ],
+        "neon-fixture": [
+          432,
+          944,
+          391,
+          186
+        ],
+        "cables-and-pipes": [
+          844,
+          929,
+          390,
+          219
+        ]
+      }
+    },
+    "jungle-planet": {
+      "background": "jungle-planet/background.webp",
+      "backgroundSize": [
+        1600,
+        900
+      ],
+      "objects": "jungle-planet/objects.webp",
+      "objectsSize": [
+        1254,
+        1254
+      ],
+      "sprites": {
+        "root-deck": [
+          8,
+          167,
+          400,
+          175
+        ],
+        "stone-ledge": [
+          425,
+          179,
+          402,
+          186
+        ],
+        "vine-ladder": [
+          946,
+          14,
+          199,
+          404
+        ],
+        "mossy-boulder": [
+          7,
+          545,
+          408,
+          214
+        ],
+        "fallen-trunk": [
+          441,
+          547,
+          362,
+          201
+        ],
+        "overgrown-crate": [
+          848,
+          512,
+          396,
+          249
+        ],
+        "fern-clump": [
+          14,
+          924,
+          391,
+          267
+        ],
+        "glowing-fungi": [
+          496,
+          952,
+          235,
+          210
+        ],
+        "hanging-vines": [
+          848,
+          855,
+          382,
+          374
+        ]
+      }
+    },
+    "desert-temple-ruins": {
+      "background": "desert-temple-ruins/background.webp",
+      "backgroundSize": [
+        1600,
+        900
+      ],
+      "objects": "desert-temple-ruins/objects.webp",
+      "objectsSize": [
+        1254,
+        1254
+      ],
+      "sprites": {
+        "sandstone-deck": [
+          8,
+          187,
+          402,
+          188
+        ],
+        "lintel-platform": [
+          431,
+          171,
+          400,
+          212
+        ],
+        "rope-ladder": [
+          995,
+          35,
+          132,
+          375
+        ],
+        "cover-block": [
+          73,
+          509,
+          276,
+          264
+        ],
+        "collapsed-wall": [
+          413,
+          573,
+          425,
+          183
+        ],
+        "masonry-pile": [
+          856,
+          550,
+          391,
+          209
+        ],
+        "pillar-base": [
+          61,
+          898,
+          302,
+          309
+        ],
+        "clay-urn": [
+          513,
+          885,
+          225,
+          318
+        ],
+        "bronze-lamp": [
+          958,
+          914,
+          178,
+          279
+        ]
+      }
+    }
+  }
+}
