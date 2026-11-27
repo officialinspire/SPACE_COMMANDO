@@ -156,6 +156,19 @@
     jumpSpeed: 8, gravity: 0.35,
     jumpBufferMs: 110, coyoteMs: 85
   };
+  // World camera. The 800×450 canvas shows a zoomed window onto the world;
+  // the HUD and screen overlays are drawn afterwards without the zoom.
+  const CAMERA = {
+    zoom: 1.4,
+    anchor: 0.39,      // player centre as a fraction of view width when facing right
+    lead: 24,          // world units of extra look-ahead at full run speed
+    leadMs: 240,       // lead smoothing time constant
+    turnMs: 420,       // critically damped settle when the player turns
+    followXMs: 60,     // horizontal follow time constant
+    followYMs: 150,    // vertical settle time
+    headroom: 64,      // dead zone above the collision top: sprite (16) + HUD band (41) + margin
+    footroom: 22       // dead zone: keep this much space below the next landing
+  };
   const SHOT_FEEDBACK = {
     pistol:  { recoil: 1.4, duration: 85,  trail: 9 },
     rifle:   { recoil: 1.8, duration: 70,  trail: 13 },
@@ -381,6 +394,11 @@
     const height = canvas.height;
     const worldWidth = 5000; // world extends horizontally
     const groundY = height - 32;
+    const viewWidth = width / CAMERA.zoom;
+    const viewHeight = height / CAMERA.zoom;
+    const restViewY = height - viewHeight;
+    // Unshaken view in world units. Gameplay checks read this directly.
+    const camera = { x: 0, y: restViewY, look: 1, lookVelocity: 0, lead: 0, yVelocity: 0 };
 
     // Initialise background music once per session.  Creating audio
     // elements inside init() ensures they are tied to the document
@@ -717,6 +735,11 @@
         const activePointersByButton = new Map();
         const directionPad = ctrlBar.querySelector('.direction-pad');
         const directionPointers = new Set();
+        // A pointer activation is followed by a compatibility click whose
+        // detail can be 0 on touch screens. Remember when each control was
+        // last pressed or released by a pointer so that click is ignored.
+        const pointerActivity = new WeakMap();
+        const POINTER_CLICK_WINDOW = 1000;
 
         const pressButton = (btn, keyName, pointerId, event, pointerType) => {
           if (event.cancelable) event.preventDefault();
@@ -778,6 +801,7 @@
           const keyName = btn.dataset.key;
 
           btn.addEventListener('pointerdown', (event) => {
+            pointerActivity.set(btn, performance.now());
             if (event.pointerType !== 'mouse' && directionPad.contains(btn)) {
               directionPointers.add(event.pointerId);
             }
@@ -790,6 +814,7 @@
           for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
             btn.addEventListener(type, finishPointer, { passive: false });
           }
+          btn.addEventListener('pointerup', () => pointerActivity.set(btn, performance.now()));
 
           btn.addEventListener('pointerleave', (event) => {
             if (event.pointerType === 'mouse') {
@@ -834,10 +859,12 @@
         }, { passive: false });
 
         // Keyboard and assistive-technology activations have no pointerdown.
+        // Clicks that follow a pointer press on the same control already acted.
         ctrlBar.addEventListener('click', event => {
-          if (event.detail !== 0) return;
-          const key = event.target.closest('.control-btn')?.dataset.key;
+          const btn = event.target.closest('.control-btn');
+          const key = btn?.dataset.key;
           if (!key) return;
+          if (performance.now() - (pointerActivity.get(btn) ?? -Infinity) < POINTER_CLICK_WINDOW) return;
           pressGameplayKey(touchKeys, key);
           if (menuKeys.has(key)) handleMenuInput({ key });
           releaseGameplayKey(touchKeys, key);
@@ -994,6 +1021,7 @@
     // and ladders arrays with randomised platforms and cover.  Without
     // this call the world would be empty at the first launch.
     generateEnvironment();
+    snapCamera();
 
     /**
      * Reset all entities and player stats to their initial values. Called
@@ -1054,12 +1082,14 @@
       if (typeof generateEnvironment === 'function') {
         generateEnvironment();
       }
+      snapCamera();
     }
 
     /**
-     * Spawn a new enemy ahead of the player. The type is selected
+     * Spawn a new enemy outside the frame. The type is selected
      * according to weights. Each enemy has its own speed, health and
-     * attack behaviour.
+     * attack behaviour. Returns false when no fair position exists so the
+     * caller can retry shortly instead.
      */
     function spawnEnemy() {
       // Choose enemy type from a smooth, time-based distribution so difficulty
@@ -1168,11 +1198,20 @@
       const clampX = x => Math.max(32, Math.min(worldWidth - e.width - 32, x));
       const preferred = clampX(spawnX);
       const opposite = clampX(player.x - spawnDir * spawnOffset);
-      const clear = x => Math.abs(x - player.x) >= 196 &&
-        !obstacles.some(obstacle => rectIntersect({ ...e, x }, obstacle)) &&
-        !enemies.some(enemy => rectIntersect({ ...e, x }, enemy));
-      // Search only a bounded neighborhood on either side. Retry the usual
-      // spawn timer when nearby space is occupied.
+      // The frame covers the unshaken view and where the camera is heading,
+      // so an enemy cannot appear inside a view that is still panning.
+      const targetX = cameraTargetX();
+      const frameLeft = Math.min(camera.x, targetX) - 40;
+      const frameRight = Math.max(camera.x, targetX) + viewWidth + 40;
+      const clearance = 16;
+      const clear = x => {
+        if (x + e.width > frameLeft && x < frameRight) return false;
+        if (Math.abs(x - player.x) < 196) return false;
+        const zone = { x: x - clearance, y: e.y, width: e.width + clearance * 2, height: e.height };
+        return !obstacles.some(obstacle => rectIntersect(zone, obstacle)) &&
+          !enemies.some(enemy => rectIntersect(zone, enemy));
+      };
+      // Search only a bounded neighborhood on either side.
       for (const center of [preferred, opposite]) {
         for (let offset = 0; offset <= 256; offset += 32) {
           const x = [clampX(center - offset), clampX(center + offset)].find(clear);
@@ -1182,9 +1221,10 @@
           e.onGround = type !== 'ghost';
           enemies.push(e);
           openingEnemyPending = false;
-          return;
+          return true;
         }
       }
+      return false;
     }
 
     /**
@@ -1607,16 +1647,97 @@
       pressedKeys.clear();
     }
 
-    function cameraLeft(shake = 0) {
-      return Math.max(0, Math.min(worldWidth - width, player.x - 150 + shake));
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    // Fraction of the remaining distance covered in dt for an exponential follow.
+    function settle(dt, ms) {
+      return 1 - Math.exp(-dt / ms);
+    }
+
+    // Critically damped approach used for turns and vertical moves so the
+    // camera eases in and out instead of starting at full speed.
+    function smoothDamp(value, velocity, target, ms, dt) {
+      const omega = 2 / ms;
+      const t = omega * dt;
+      const decay = 1 / (1 + t + 0.48 * t * t + 0.235 * t * t * t);
+      const change = value - target;
+      const temp = (velocity + omega * change) * dt;
+      return [target + (change + temp) * decay, (velocity - omega * temp) * decay];
+    }
+
+    // The highest surface under the player's feet: the ground or the
+    // top of a platform or crate the player is above.
+    function nextLanding() {
+      const feet = player.y + player.height;
+      let landing = groundY;
+      for (const ob of obstacles) {
+        if (ob.x < player.x + player.width && ob.x + ob.width > player.x &&
+            ob.y >= feet - 1 && ob.y < landing) landing = ob.y;
+      }
+      return landing;
+    }
+
+    function cameraTargetX() {
+      const anchor = 0.5 - (0.5 - CAMERA.anchor) * camera.look;
+      const x = player.x + player.width / 2 - viewWidth * anchor + camera.lead;
+      return clamp(x, 0, worldWidth - viewWidth);
+    }
+
+    // Vertical dead zone. The view rests on the deck and only rises when
+    // the player's head would enter the headroom band, while keeping the
+    // feet and the surface below them in frame.
+    function cameraTargetY() {
+      // While rising, frame the predicted apex so the camera starts moving at take-off.
+      const rising = !player.isClimbing && player.vy < 0;
+      const head = rising ? player.y - player.vy * player.vy / (2 * MOVEMENT.gravity) : player.y;
+      const feet = player.y + player.height;
+      let y = Math.min(restViewY, head - CAMERA.headroom);
+      y = Math.max(y, nextLanding() + CAMERA.footroom - viewHeight);
+      y = Math.min(y, head - 24);
+      return clamp(Math.max(y, feet + 8 - viewHeight), 0, restViewY);
+    }
+
+    function snapCamera() {
+      camera.look = player.facing;
+      camera.lookVelocity = 0;
+      camera.lead = 0;
+      camera.yVelocity = 0;
+      camera.x = cameraTargetX();
+      camera.y = cameraTargetY();
+    }
+
+    function updateCamera(dt) {
+      [camera.look, camera.lookVelocity] = smoothDamp(camera.look, camera.lookVelocity, player.facing, CAMERA.turnMs, dt);
+      const leadTarget = clamp(player.vx / MOVEMENT.runSpeed, -1, 1) * CAMERA.lead;
+      camera.lead += (leadTarget - camera.lead) * settle(dt, CAMERA.leadMs);
+      camera.x += (cameraTargetX() - camera.x) * settle(dt, CAMERA.followXMs);
+      [camera.y, camera.yVelocity] = smoothDamp(camera.y, camera.yVelocity, cameraTargetY(), CAMERA.followYMs, dt);
+      // Hard limits: the whole player always stays in frame.
+      const centre = player.x + player.width / 2;
+      camera.x = clamp(camera.x, centre + 24 - viewWidth, centre - 24);
+      camera.y = clamp(camera.y, player.y + player.height + 4 - viewHeight, player.y + player.height - 52);
+      camera.x = clamp(camera.x, 0, worldWidth - viewWidth);
+      camera.y = clamp(camera.y, 0, restViewY);
+    }
+
+    // True when a rectangle is inside the unshaken view, shrunk by inset.
+    function inCameraView(rect, inset = 0) {
+      return rect.x >= camera.x + inset && rect.x + rect.width <= camera.x + viewWidth - inset &&
+        rect.y >= camera.y && rect.y + rect.height <= camera.y + viewHeight;
     }
 
     function playEnemyCue(enemy, cue) {
       if (!SETTINGS.sfx) return;
       const x = enemy.x + enemy.width / 2;
-      const view = cameraLeft();
-      if (x < view - 48 || x > view + width + 48) return;
+      const y = enemy.y + enemy.height / 2;
       const offset = x - player.x - player.width / 2;
+      // Threats in or just outside the frame, or close to the player even
+      // when the tighter view leaves them off screen, stay audible.
+      const nearView = x >= camera.x - 48 && x <= camera.x + viewWidth + 48 &&
+        y >= camera.y - 48 && y <= camera.y + viewHeight + 48;
+      if (!nearView && Math.abs(offset) > 420) return;
       const pan = Math.max(-0.72, Math.min(0.72, offset / 330));
       const gain = (cue === 'Warn' ? 0.48 : 0.42) / (1 + Math.abs(offset) / 720);
       if (!window.combatAudio?.play(enemy.type + cue, 'enemy', gain, pan) && cue === 'Down') {
@@ -1632,14 +1753,15 @@
       player.recoilTimer = Math.max(0, player.recoilTimer - dt);
       const wasGrounded = player.onGround;
       updatePlayer(dt);
+      updateCamera(dt);
       if (!wasGrounded && player.onGround) lastLanding = elapsedTime;
       fallenSprites = fallenSprites.filter(enemy => elapsedTime - enemy.at < ENEMY_FALL[enemy.type]);
-      // Update enemies
-      const viewX = cameraLeft();
+      // Update enemies against the unshaken view.
       for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
         e.animTime += dt;
-        e.spawnGrace = Math.max(0, (e.spawnGrace || 0) - dt);
+        // The first-attack grace starts once the enemy has entered the frame.
+        if (inCameraView(e)) e.spawnGrace = Math.max(0, (e.spawnGrace || 0) - dt);
         const ranged = RANGED[e.type];
         const closeAttack = CLOSE_ATTACK[e.type];
         const wantsStrike = closeAttack && e.attackTimer > 115;
@@ -1745,7 +1867,7 @@
           if (hop) e.vy = -5.6;
         }
 
-        const visible = e.x >= viewX + 38 && e.x + e.width <= viewX + width - 22;
+        const visible = inCameraView(e, 20);
         if (ranged) {
           if (e.queuedShot) {
             e.windupTimer = Math.max(0, e.windupTimer - dt);
@@ -1930,15 +2052,14 @@
       spawnCooldown -= dt;
       if (spawnCooldown <= 0 && gameState === 'play') {
         const maxEnemies = SETTINGS.difficulty === 'easy' ? 8 : (SETTINGS.difficulty === 'hard' ? 14 : 11);
-        if (enemies.length < maxEnemies) {
-          spawnEnemy();
-        }
+        const delayed = enemies.length < maxEnemies && !spawnEnemy();
         const difficultyScale = SETTINGS.difficulty === 'easy' ? 1.22 : (SETTINGS.difficulty === 'hard' ? 0.82 : 1);
         const progress = Math.min(1, elapsedTime / 180000);
         const minCooldown = 650;
         const maxCooldown = 1650;
         const cooldown = maxCooldown - (maxCooldown - minCooldown) * progress;
-        spawnCooldown = (cooldown + Math.random() * 300) * difficultyScale;
+        // Without a fair position the spawn waits briefly and tries again.
+        spawnCooldown = delayed ? 350 : (cooldown + Math.random() * 300) * difficultyScale;
       }
     }
 
@@ -2048,38 +2169,44 @@
     }
 
     // Reflection gives identical edge samples at every repeat, including the planet
-    // horizon and translucent trusses. At most two panels touch the viewport.
-    function drawLayer(image, scroll, cropHeight = height) {
-      const tileHeight = Math.round(image.height * width / image.width);
-      const drawnHeight = Math.min(tileHeight, cropHeight);
-      let tile = Math.floor(scroll / width);
-      const clipTop = cropHeight < tileHeight;
+    // horizon and translucent trusses. Each panel overlaps its neighbour by one
+    // pixel so fractional scroll positions never open a seam.
+    function drawLayer(image, scroll, scale = 1, top = 0, cropHeight = height) {
+      const tileWidth = width * scale;
+      const tileHeight = image.height * tileWidth / image.width;
+      let tile = Math.floor(scroll / tileWidth);
+      const clipBottom = Math.min(height, top + cropHeight);
       ctx.save();
       ctx.imageSmoothingEnabled = true;
-      if (clipTop) {
+      if (clipBottom < top + tileHeight) {
         ctx.beginPath();
-        ctx.rect(0, 0, width, drawnHeight);
+        ctx.rect(0, 0, width, clipBottom);
         ctx.clip();
       }
-      for (let x = tile * width - scroll; x < width; x += width, tile++) {
-        const flip = tile % 2 === 1;
+      for (let x = tile * tileWidth - scroll; x < width; x += tileWidth, tile++) {
+        const flip = tile % 2 !== 0;
         ctx.save();
-        ctx.translate(x + (flip ? width : 0), 0);
+        ctx.translate(x + (flip ? tileWidth + 1 : 0), top);
         if (flip) ctx.scale(-1, 1);
-        ctx.drawImage(image, 0, 0, width, tileHeight);
+        ctx.drawImage(image, 0, 0, tileWidth + 1, tileHeight);
         ctx.restore();
       }
       ctx.restore();
     }
 
-    function drawStation(cameraX) {
+    // Station layers stay in screen space. Each scrolls with the zoomed deck
+    // at its parallax rate and magnifies in proportion, so distant layers
+    // barely change while the near truss tracks the foreground.
+    function drawStation(view) {
+      const screenX = view.x * CAMERA.zoom;
+      const rise = (restViewY - view.y) * CAMERA.zoom;
       if (!station.distant) {
-        if (bgLoaded) drawLayer(legacyBackground.image, cameraX * 0.12);
+        if (bgLoaded) drawLayer(legacyBackground.image, screenX * 0.12);
         else {
           ctx.fillStyle = '#080f20';
           ctx.fillRect(0, 0, width, height);
           for (const star of stars) {
-            const x = star.x - cameraX * 0.12;
+            const x = star.x - screenX * 0.12;
             if (x >= 0 && x < width) {
               ctx.fillStyle = `rgba(205,230,255,${star.alpha})`;
               ctx.fillRect(x, star.y, star.size, star.size);
@@ -2088,7 +2215,18 @@
         }
       }
       for (const [name, speed] of STATION_LAYERS) {
-        if (station[name]) drawLayer(station[name], cameraX * speed, name === 'near' ? 100 : height);
+        const image = station[name];
+        if (!image) continue;
+        const scale = 1 + (CAMERA.zoom - 1) * speed;
+        const tileHeight = image.height * width * scale / image.width;
+        if (name === 'near') {
+          // The ceiling truss hangs from the top edge.
+          drawLayer(image, screenX * speed, scale, 0, 100 * scale);
+        } else {
+          // Deck-anchored layers rise with the camera without exposing their top edge.
+          const lift = Math.min(rise * speed, Math.max(0, tileHeight - height));
+          drawLayer(image, screenX * speed, scale, height - tileHeight + lift);
+        }
       }
       // The station stack sits behind the combat silhouettes. A small neutral
       // veil makes the deck-level silhouettes readable against the blue planet.
@@ -2110,20 +2248,31 @@
       return true;
     }
 
-    function drawTerrain(cameraX) {
+    // Rectangle test against the drawn view, expanded by margin, for culling.
+    function onScreen(view, x, y, w, h, margin = 0) {
+      return x + w >= view.x - margin && x <= view.x + viewWidth + margin &&
+        y + h >= view.y - margin && y <= view.y + viewHeight + margin;
+    }
+
+    // Drawn in world units under the camera transform.
+    function drawTerrain(view) {
+      const left = view.x;
+      const right = view.x + viewWidth;
       ctx.fillStyle = '#101b2b';
-      ctx.fillRect(0, groundY, width, height - groundY);
+      ctx.fillRect(left, groundY, viewWidth, height - groundY);
       const tileWidth = 128;
-      for (let tile = Math.floor(cameraX / tileWidth), x = tile * tileWidth - cameraX; x < width; x += tileWidth, tile++) {
-        drawTerrainTile('deckBody', x, groundY + 6, tileWidth, height - groundY - 6, tile % 2 === 1);
-        drawTerrainTile('deckCap', x, groundY, tileWidth, 7, tile % 2 === 1);
+      for (let tile = Math.floor(left / tileWidth); tile * tileWidth < right; tile++) {
+        // A half-unit overlap hides antialiased seams between scaled tiles.
+        const x = tile * tileWidth;
+        drawTerrainTile('deckBody', x, groundY + 6, tileWidth + 0.5, height - groundY - 6, tile % 2 !== 0);
+        drawTerrainTile('deckCap', x, groundY, tileWidth + 0.5, 7, tile % 2 !== 0);
       }
-      if (cameraX < 51) drawTerrainTile('deckEnd', -cameraX, groundY, 51, height - groundY, true);
-      if (cameraX + width > worldWidth - 51) drawTerrainTile('deckEnd', worldWidth - 51 - cameraX, groundY, 51, height - groundY);
+      if (left < 51) drawTerrainTile('deckEnd', 0, groundY, 51, height - groundY, true);
+      if (right > worldWidth - 51) drawTerrainTile('deckEnd', worldWidth - 51, groundY, 51, height - groundY);
 
       for (const ladder of ladders) {
-        const x = ladder.x - cameraX;
-        if (x + ladder.width < 0 || x > width) continue;
+        if (!onScreen(view, ladder.x, ladder.y, ladder.width, ladder.height)) continue;
+        const x = ladder.x;
         if (drawTerrainTile('ladder', x, ladder.y, ladder.width, ladder.height)) continue;
         ctx.fillStyle = '#65788a';
         ctx.fillRect(x, ladder.y, 3, ladder.height);
@@ -2133,29 +2282,41 @@
         }
       }
       for (const obstacle of obstacles) {
-        const x = obstacle.x - cameraX;
-        if (x + obstacle.width < 0 || x > width) continue;
+        if (!onScreen(view, obstacle.x, obstacle.y, obstacle.width, obstacle.height)) continue;
+        const x = obstacle.x;
         ctx.fillStyle = TERRAIN_COLOR[obstacle.type];
         ctx.fillRect(x, obstacle.y, obstacle.width, obstacle.height);
         drawTerrainTile(obstacle.type, x, obstacle.y, obstacle.width, obstacle.height);
         ctx.fillStyle = 'rgba(178,205,224,0.66)';
-        ctx.fillRect(x, obstacle.y, obstacle.width, 1);
+        ctx.fillRect(x, obstacle.y, obstacle.width, 1 / CAMERA.zoom);
       }
+    }
+
+    // The drawn view adds screen shake (in canvas pixels) to the camera.
+    function renderView(reduced) {
+      const shake = reduced ? 0 : cameraShakeX / CAMERA.zoom;
+      return { x: clamp(camera.x + shake, 0, worldWidth - viewWidth), y: camera.y };
     }
 
     function drawGame() {
       const reduced = effectsReduced();
-      const cameraX = cameraLeft(reduced ? 0 : cameraShakeX);
-      drawStation(cameraX);
-      drawTerrain(cameraX);
+      const view = renderView(reduced);
+      const zoom = CAMERA.zoom;
+      drawStation(view);
+      // One transform maps world units to canvas pixels for everything in the
+      // world. The HUD and overlays below are drawn after it is removed.
+      ctx.save();
+      ctx.setTransform(zoom, 0, 0, zoom, -view.x * zoom, -view.y * zoom);
+      drawTerrain(view);
       // Draw pickups
       pickups.forEach(p => {
+        if (!onScreen(view, p.x, p.y, p.width, p.height, 24)) return;
         const wave = (elapsedTime * 0.006) + p.x * 0.02;
         const bob = Math.sin(wave) * 2.4;
         const pulse = 1 + Math.sin(wave * 0.8) * 0.12;
         const drawW = p.width * pulse;
         const drawH = p.height * pulse;
-        const px = p.x - cameraX - (drawW - p.width) / 2;
+        const px = p.x - (drawW - p.width) / 2;
         const py = p.y + bob - (drawH - p.height) / 2;
         const icon = p.type === 'ammo' ? p.ammoType : p.type;
         const frame = clipFrame('pickups', icon);
@@ -2188,9 +2349,10 @@
       });
 
 
-      // Draw enemies
+      // Draw enemies. Sprites extend past the collision box, hence the margin.
       enemies.forEach(e => {
-        const px = e.x - cameraX;
+        if (!onScreen(view, e.x, e.y, e.width, e.height, 72)) return;
+        const px = e.x;
         const { frame, facing } = enemySprite(e);
         const originY = enemyOrigin(e);
         const barY = Math.min(e.y, frame ? originY - frame[5] * ACTOR_SCALE : e.y) - 8;
@@ -2223,32 +2385,33 @@
         }
       });
       for (const enemy of fallenSprites) {
+        if (!onScreen(view, enemy.x, enemy.y, enemy.width, enemy.height, 72)) continue;
         const frame = clipFrame('enemies', enemy.type + 'Down', elapsedTime - enemy.at);
-        drawSprite('enemies', frame, enemy.x - cameraX + enemy.width / 2, enemyOrigin(enemy), enemy.facing);
+        drawSprite('enemies', frame, enemy.x + enemy.width / 2, enemyOrigin(enemy), enemy.facing);
       }
       // Draw particle effects if enabled
       if (SETTINGS.particles) {
         particles.forEach(p => {
-          const px = p.x - cameraX;
-          const alpha = Math.max(0, p.life / p.maxLife);
           const size = p.size || 2.2;
+          if (!onScreen(view, p.x, p.y, 0, 0, size * 2)) return;
+          const alpha = Math.max(0, p.life / p.maxLife);
           ctx.globalAlpha = alpha * (p.glow ? 0.38 + p.glow : 0.5);
           ctx.fillStyle = p.color;
           ctx.beginPath();
-          ctx.arc(px, p.y, size * 1.7, 0, Math.PI * 2);
+          ctx.arc(p.x, p.y, size * 1.7, 0, Math.PI * 2);
           ctx.fill();
           ctx.globalAlpha = alpha;
-          ctx.fillRect(px - size * 0.5, p.y - size * 0.5, size, size);
+          ctx.fillRect(p.x - size * 0.5, p.y - size * 0.5, size, size);
           ctx.globalAlpha = 1;
         });
       }
       // A short, velocity-aligned tracer follows each bright projectile core.
       bullets.forEach(b => {
-        const worldX = b.x + b.width / 2;
-        const x = worldX - cameraX;
+        if (!onScreen(view, b.x, b.y, b.width, b.height, 26)) return;
+        const x = b.x + b.width / 2;
         const y = b.y + b.height / 2;
         const speed = Math.hypot(b.vx, b.vy);
-        const trail = Math.min(SHOT_FEEDBACK[b.weapon].trail, Math.hypot(worldX - b.muzzleX, y - b.muzzleY));
+        const trail = Math.min(SHOT_FEEDBACK[b.weapon].trail, Math.hypot(x - b.muzzleX, y - b.muzzleY));
         const laser = b.weapon === 'laser';
         ctx.strokeStyle = laser ? 'rgba(78,239,255,0.58)' : 'rgba(255,185,74,0.68)';
         ctx.lineWidth = laser ? 3 : 1.5;
@@ -2263,30 +2426,30 @@
       });
       // Draw muzzle/shot flashes
       shotFlashes.forEach(f => {
+        if (!onScreen(view, f.x, f.y, 0, 0, 24)) return;
         const t = f.life / f.maxLife;
-        const px = f.x - cameraX;
         const len = f.kind === 'laser' ? 20 : (f.kind === 'shotgun' ? 15 : 10);
         ctx.globalAlpha = Math.max(0, t * (reduced ? 0.35 : 0.9));
         ctx.strokeStyle = f.kind === 'laser' ? '#99ffff' : '#ffdd88';
         ctx.lineWidth = f.kind === 'shotgun' ? 4 : 2;
         ctx.beginPath();
-        ctx.moveTo(px, f.y);
-        ctx.lineTo(px + f.dirX * len, f.y + f.dirY * len);
+        ctx.moveTo(f.x, f.y);
+        ctx.lineTo(f.x + f.dirX * len, f.y + f.dirY * len);
         ctx.stroke();
         ctx.globalAlpha = 1;
       });
       // Draw enemy bullets
       enemyBullets.forEach(b => {
-        const px = b.x - cameraX;
+        if (!onScreen(view, b.x, b.y, b.width, b.height, 4)) return;
         ctx.fillStyle = 'rgba(255,92,92,0.35)';
-        ctx.fillRect(px - 1, b.y - 1, b.width + 2, b.height + 2);
+        ctx.fillRect(b.x - 1, b.y - 1, b.width + 2, b.height + 2);
         ctx.fillStyle = b.kind === 'alien' ? '#ffc75b' : '#ff6668';
-        ctx.fillRect(px, b.y, b.width, b.height);
+        ctx.fillRect(b.x, b.y, b.width, b.height);
         ctx.fillStyle = '#fff0ce';
-        ctx.fillRect(px + (b.vx > 0 ? b.width - 3 : 0), b.y + 1, 3, 2);
+        ctx.fillRect(b.x + (b.vx > 0 ? b.width - 3 : 0), b.y + 1, 3, 2);
       });
       // Draw player
-      const ppx = player.x - cameraX;
+      const ppx = player.x;
       const { frame, kick } = playerSprite();
       if (!drawSprite('player', frame, ppx + player.width / 2, player.y + player.height, player.facing, ACTOR_SCALE, kick)) {
         const frames = !player.onGround ? LEGACY.playerJump
@@ -2297,17 +2460,19 @@
           ctx.fillRect(ppx, player.y, player.width, player.height);
         }
       }
-      // Floating combat/pickup feedback text
+      ctx.restore();
+
+      // Screen space from here on. Floating text keeps its canvas size and
+      // follows its world position.
+      ctx.font = '700 12px system-ui, sans-serif';
+      ctx.textAlign = 'center';
       floatingTexts.forEach(t => {
-        const alpha = Math.max(0, t.life / t.maxLife);
-        ctx.globalAlpha = alpha;
+        ctx.globalAlpha = Math.max(0, t.life / t.maxLife);
         ctx.fillStyle = t.color;
-        ctx.font = '700 12px system-ui, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(t.text, t.x - cameraX, t.y);
-        ctx.textAlign = 'left';
-        ctx.globalAlpha = 1;
+        ctx.fillText(t.text, (t.x - view.x) * zoom, (t.y - view.y) * zoom);
       });
+      ctx.globalAlpha = 1;
+      ctx.textAlign = 'left';
 
       if (damageOverlayTimer > 0) {
         const alpha = (damageOverlayTimer / 120) * (reduced ? 0.055 : 0.18);
