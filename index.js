@@ -102,14 +102,118 @@
     asset.ready.then(() => { station[name] = asset.image; }, () => {});
   }
 
-  // The four stages of a run, in order. Stage 1 is the orbital station with
-  // its own art; the others draw from the environment kits.
+  // The campaign route, in order, keyed by stable stage IDs (see the story
+  // draft): Space Station, Jungle Planet, CyberCity, then the Ancient Planet
+  // Ruins, which use the Desert Temple Ruins art. Everything that depends on
+  // a stage looks it up by id; the array order is only the route.
+  //   map       waypoint position on the star-map art, as fractions of its size
+  //   briefing  map and Quickplay text; it never previews unreached story beats
+  //   quickplay the fixed standalone loadout for a Quickplay session
   const STAGES = [
-    { id: 'station', name: 'Orbital Station', music: 'play' },
-    { id: 'cyber', name: 'CyberCity', env: 'cyberpunk-city', music: 'cyber' },
-    { id: 'jungle', name: 'Jungle Planet', env: 'jungle-planet', music: 'jungle' },
-    { id: 'desert', name: 'Desert Temple Ruins', env: 'desert-temple-ruins', music: 'desert' }
+    { id: 'station', name: 'Space Station', music: 'play', map: [0.453, 0.139],
+      objective: 'Recover the analyst’s research, then reach the shuttle.',
+      briefing: 'Our contact missed a scheduled check-in. The docking cradle still answers, but life-support telemetry is dead.',
+      quickplay: { health: 100, gold: 0, weapon: 'pistol', owned: ['pistol'], clip: { pistol: 12 }, reserve: { pistol: 24 } } },
+    { id: 'jungle', name: 'Jungle Planet', env: 'jungle-planet', music: 'jungle', map: [0.529, 0.362],
+      objective: 'Reach the abandoned research facility and restore its relay.',
+      briefing: 'The damaged shuttle could only make the nearest planet. A colonial research site stands empty under the canopy.',
+      quickplay: { health: 100, gold: 40, weapon: 'rifle', owned: ['pistol', 'rifle'], clip: { pistol: 12, rifle: 50 }, reserve: { pistol: 24, rifle: 60 } } },
+    { id: 'cyber', name: 'CyberCity', env: 'cyberpunk-city', music: 'cyber', map: [0.472, 0.579],
+      objective: 'Slip through the freight district and reach an impounded courier.',
+      briefing: 'A CyberCity cargo hauler is the only ride off-world. The port says freight inspection. The police are scanning for a beacon.',
+      quickplay: { health: 100, gold: 80, weapon: 'shotgun', owned: ['pistol', 'rifle', 'shotgun'], clip: { pistol: 12, rifle: 50, shotgun: 5 }, reserve: { pistol: 24, rifle: 60, shotgun: 15 } } },
+    { id: 'desert', name: 'Ancient Planet Ruins', env: 'desert-temple-ruins', music: 'desert', map: [0.529, 0.815],
+      objective: 'Open the archive, record it and reach extraction.',
+      briefing: 'HQ decrypted the analyst’s coordinates to a ruined desert world. Wind cuts across the terraces. Someone may be there first.',
+      quickplay: { health: 100, gold: 120, weapon: 'laser', owned: ['pistol', 'rifle', 'shotgun', 'laser'], clip: { pistol: 12, rifle: 50, shotgun: 5, laser: 30 }, reserve: { pistol: 24, rifle: 60, shotgun: 15, laser: 30 } } }
   ];
+  const stageById = id => STAGES.find(stage => stage.id === id);
+  const stageOrder = id => STAGES.findIndex(stage => stage.id === id);
+
+  // Campaign progress: versioned unlocks, clears and the last stage entry
+  // (stage, seed and loadout) in localStorage. Bad or foreign data resets to
+  // a fresh campaign; without storage, progress lasts for the session only.
+  const SAVE_KEY = 'space-commando.campaign';
+  const SAVE_VERSION = 1;
+  const WEAPON_KEYS = ['pistol', 'rifle', 'shotgun', 'laser'];
+  let storageNotice = '';
+  let memorySave = null;
+  const saveStorage = (() => {
+    try {
+      const probe = '__space-commando-probe__';
+      window.localStorage.setItem(probe, '1');
+      window.localStorage.removeItem(probe);
+      return window.localStorage;
+    } catch {
+      storageNotice = 'Progress can’t be saved in this browser. It lasts until you close the page.';
+      return null;
+    }
+  })();
+
+  function freshCampaign() {
+    return { unlocked: ['station'], cleared: [], entry: null };
+  }
+
+  // A loadout from untrusted data: known weapons only, sane non-negative ammo.
+  function sanitizeLoadout(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    // Out-of-range values are clamped rather than trusted.
+    const int = (value, min, max, fallback) => Number.isFinite(value) ? Math.max(min, Math.min(max, Math.floor(value))) : fallback;
+    const owned = Array.isArray(raw.owned) ? WEAPON_KEYS.filter(key => raw.owned.includes(key)) : [];
+    if (!owned.includes('pistol')) owned.unshift('pistol');
+    const weapon = owned.includes(raw.weapon) ? raw.weapon : 'pistol';
+    const clip = {};
+    const reserve = {};
+    for (const key of WEAPON_KEYS) {
+      const has = owned.includes(key);
+      clip[key] = has ? int(raw.clip?.[key], 0, WEAPONS[key].magazine, 0) : 0;
+      reserve[key] = has ? int(raw.reserve?.[key], 0, 9999, 0) : 0;
+    }
+    return { health: int(raw.health, 1, 100, 100), gold: int(raw.gold, 0, 1e6, 0), weapon, owned, clip, reserve };
+  }
+
+  function loadCampaign() {
+    let text = memorySave;
+    if (saveStorage) {
+      try { text = saveStorage.getItem(SAVE_KEY); } catch { text = memorySave; }
+    }
+    if (!text) return freshCampaign();
+    try {
+      const data = JSON.parse(text);
+      if (data?.version !== SAVE_VERSION) throw new Error('version');
+      // Clears are a prefix of the route, and only clears unlock the next
+      // stage, so an edited unlock list can't skip ahead.
+      const ids = STAGES.map(stage => stage.id);
+      let clearedCount = 0;
+      while (clearedCount < ids.length && Array.isArray(data.cleared) && data.cleared.includes(ids[clearedCount])) clearedCount++;
+      const cleared = ids.slice(0, clearedCount);
+      const unlocked = ids.slice(0, Math.min(ids.length, clearedCount + 1));
+      let entry = null;
+      if (data.entry) {
+        const seed = Number.isInteger(data.entry.seed) && data.entry.seed >= 0 ? data.entry.seed >>> 0 : null;
+        if (seed === null || !unlocked.includes(data.entry.stage)) throw new Error('entry');
+        const loadout = sanitizeLoadout(data.entry.loadout) || sanitizeLoadout(stageById(data.entry.stage).quickplay);
+        // Elapsed play time at entry keeps the difficulty ramp where it was.
+        const elapsed = Number.isFinite(data.entry.elapsed) && data.entry.elapsed >= 0 ? Math.min(data.entry.elapsed, 3.6e7) : 0;
+        entry = { stage: data.entry.stage, seed, loadout, elapsed };
+      }
+      return { unlocked, cleared, entry };
+    } catch {
+      storageNotice = 'Saved progress couldn’t be read, so the campaign was reset.';
+      return freshCampaign();
+    }
+  }
+
+  function saveCampaign(campaign) {
+    const text = JSON.stringify({ version: SAVE_VERSION, ...campaign });
+    memorySave = text;
+    if (!saveStorage) return;
+    try {
+      saveStorage.setItem(SAVE_KEY, text);
+    } catch {
+      storageNotice = 'Progress couldn’t be saved. It lasts until you close the page.';
+    }
+  }
 
   // How each kit's sprites map onto the game. Rectangles come from
   // assets/environments/manifest.json. The numbers here were measured from
@@ -791,8 +895,8 @@
           mainMenuSelection = 0;
         }
       } else if (gameState === 'menu') {
-        // Pause menu options: 0: Return to Game, 1: Restart Game, 2: Game Settings
-        const optionsCount = 3;
+        // Pause menu options: 0 Resume, 1 Retry stage, 2 Star map, 3 Settings
+        const optionsCount = 4;
         if (e.key === 'ArrowUp') {
           mainMenuSelection = (mainMenuSelection + optionsCount - 1) % optionsCount;
         } else if (e.key === 'ArrowDown') {
@@ -802,11 +906,11 @@
             // Return to game
             gameState = 'play';
           } else if (mainMenuSelection === 1) {
-            // Restart game and return to start menu
-            restart();
-            gameState = 'start';
-            startMenuSelection = 0;
+            // Retry the stage from how it was entered.
+            retryStage();
           } else if (mainMenuSelection === 2) {
+            openStarMap();
+          } else if (mainMenuSelection === 3) {
             // Open settings menu
             prevSettingsState = 'menu';
             settingsSelection = 0;
@@ -873,9 +977,7 @@
         } else if (e.key === 'Enter') {
           if (startMenuSelection === 0) {
             if (!artReady) return;
-            // Begin gameplay
-            restart();
-            gameState = 'play';
+            openStarMap();
           } else if (startMenuSelection === 1) {
             // open settings from start menu
             prevSettingsState = 'start';
@@ -887,13 +989,28 @@
         }
         // no escape action on start menu
       } else if (gameState === 'gameover') {
+        const count = endOptions.length || 1;
+        if (e.key === 'ArrowUp') endSelection = (endSelection + count - 1) % count;
+        else if (e.key === 'ArrowDown') endSelection = (endSelection + 1) % count;
+        else if (e.key === 'Enter' && endOptions[endSelection]) {
+          playLegacyEffect(selectSfx);
+          endOptions[endSelection][1]();
+        }
+      } else if (gameState === 'map') {
+        // Rows: the four waypoints, then Continue, Quickplay and Back.
+        const rows = STAGES.length + 3;
+        if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') mapRow = (mapRow + rows - 1) % rows;
+        else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') mapRow = (mapRow + 1) % rows;
+        if (mapRow < STAGES.length && e.key.startsWith('Arrow')) mapPick = mapRow;
         if (e.key === 'Enter') {
-          restart();
-          // return to start screen after death
+          playLegacyEffect(selectSfx);
+          if (mapRow < STAGES.length) mapPick = mapRow;
+          else if (mapRow === STAGES.length) continueCampaign();
+          else if (mapRow === STAGES.length + 1) startQuickplay(STAGES[mapPick].id);
+          else { gameState = 'start'; startMenuSelection = 0; }
+        } else if (e.key === 'Escape') {
           gameState = 'start';
           startMenuSelection = 0;
-          // Play selection sound on restart
-          playLegacyEffect(selectSfx);
         }
       }
       if (gameState !== previousState && (previousState === 'play' || gameState === 'play')) {
@@ -1139,22 +1256,121 @@
     let levelSeed = 0;
     const urlSeed = Number.parseInt(new URLSearchParams(location.search).get('seed'), 10);
 
-    // A run has one seed; each stage derives its own, and the station keeps
-    // the run seed so ?seed=N repeats the same station as before.
+    // Stage seeds derive from a base seed and the stage's stable id, so the
+    // route order never changes a layout. The station uses the base seed
+    // itself, so ?seed=N repeats the same station as before.
     let runSeed = 0;
     let stageIndex = 0;
     let stageBanner = null;
     let runComplete = false;
     let decorations = [];
     const EXIT_WIDTH = 46;
+    // 'campaign' or 'quickplay'. Quickplay never reads or writes campaign data.
+    let playMode = 'campaign';
+    let campaign = loadCampaign();
+    // How the current stage was entered, for Retry: { stage, seed, loadout, elapsed }.
+    let sessionEntry = null;
+    // End screen: 'dead', 'cleared', 'complete' or 'quickplay', with its actions.
+    let endKind = null;
+    let endOptions = [];
+    let endSelection = 0;
+    let mapRow = 0;
+    let mapPick = 0;
 
-    function stageSeed(index) {
-      return index ? (runSeed ^ Math.imul(index, 0x9E3779B1)) >>> 0 : runSeed;
+    function stageSeed(id, base) {
+      if (id === 'station') return base >>> 0;
+      let hash = 0x811c9dc5;
+      for (const char of id) hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193);
+      return (base ^ hash) >>> 0;
+    }
+
+    function freshSeed(id) {
+      const base = Number.isFinite(urlSeed) ? urlSeed >>> 0 : (Math.random() * 2 ** 32) >>> 0;
+      return stageSeed(id, base);
+    }
+
+    function defaultLoadout() {
+      return { health: 100, gold: 0, weapon: 'pistol', owned: ['pistol'],
+        clip: { pistol: WEAPONS.pistol.magazine, rifle: 0, shotgun: 0, laser: 0 },
+        reserve: { pistol: WEAPONS.pistol.magazine * 2, rifle: 0, shotgun: 0, laser: 0 } };
+    }
+
+    function captureLoadout() {
+      return sanitizeLoadout({
+        health: Math.max(1, Math.min(100, Math.ceil(player.health))), gold: player.gold, weapon: player.weapon,
+        owned: WEAPON_KEYS.filter(key => player.ownedWeapons[key]),
+        clip: { ...player.ammoInClip }, reserve: { ...player.reserveAmmo }
+      });
+    }
+
+    function applyLoadout(loadout) {
+      const l = sanitizeLoadout(loadout) || defaultLoadout();
+      player.health = l.health;
+      player.gold = l.gold;
+      player.weapon = l.weapon;
+      player.ownedWeapons = Object.fromEntries(WEAPON_KEYS.map(key => [key, l.owned.includes(key)]));
+      player.ammoInClip = { pistol: 0, rifle: 0, shotgun: 0, laser: 0, ...l.clip };
+      player.reserveAmmo = { pistol: 0, rifle: 0, shotgun: 0, laser: 0, ...l.reserve };
+    }
+
+    // Begin a stage in either mode from a known seed and loadout. Campaign
+    // entries are saved so Continue and Retry restore exactly this start.
+    function startStage(mode, id, seed, loadout, elapsed = 0) {
+      resetRunState();
+      playMode = mode;
+      elapsedTime = elapsed;
+      applyLoadout(loadout);
+      sessionEntry = { stage: id, seed, loadout: captureLoadout(), elapsed };
+      if (mode === 'campaign') {
+        campaign.entry = sessionEntry;
+        saveCampaign(campaign);
+      }
+      enterStage(stageOrder(id), seed);
+    }
+
+    function continueCampaign() {
+      const entry = campaign.entry;
+      if (entry) startStage('campaign', entry.stage, entry.seed, entry.loadout, entry.elapsed || 0);
+      else startStage('campaign', 'station', freshSeed('station'), defaultLoadout());
+    }
+
+    function retryStage() {
+      const entry = sessionEntry || { stage: 'station', seed: freshSeed('station'), loadout: defaultLoadout(), elapsed: 0 };
+      startStage(playMode, entry.stage, entry.seed, entry.loadout, entry.elapsed);
+    }
+
+    function startQuickplay(id) {
+      const stage = stageById(id);
+      if (!stage || !campaign.unlocked.includes(id)) return;
+      startStage('quickplay', id, freshSeed(id), stage.quickplay);
+    }
+
+    function openStarMap() {
+      resetGameplayInput();
+      gameState = 'map';
+      mapPick = Math.max(0, stageOrder(campaign.entry?.stage || campaign.unlocked.at(-1)));
+      mapRow = STAGES.length; // Campaign Continue
+    }
+
+    // End screens list their actions; Enter runs the selected one.
+    function showEnd(kind) {
+      endKind = kind;
+      endSelection = 0;
+      const next = STAGES[stageIndex + 1];
+      endOptions = {
+        dead: [['Retry stage', retryStage], ['Star map', openStarMap]],
+        quickplay: [['Retry stage', retryStage], ['Star map', openStarMap]],
+        cleared: [[`Continue to ${next?.name}`, continueCampaign], ['Star map', openStarMap]],
+        complete: [['Star map', openStarMap]]
+      }[kind];
+      runComplete = kind === 'complete';
+      gameState = 'gameover';
+      playerDownAt = performance.now();
+      resetGameplayInput();
     }
 
     function generateEnvironment() {
       const stage = STAGES[stageIndex];
-      levelSeed = stageSeed(stageIndex);
       layout = window.SpaceStation.build({
         seed: levelSeed, stage: stage.id, coverAspect: stage.env ? ENV_ART[stage.env].coverAspect : null,
         worldWidth, worldHeight, deckY: DECK_Y,
@@ -1196,8 +1412,9 @@
     // Enter a stage: build it, clear stage-local threats and effects, and
     // place the player at the start. Health, gold, weapons, ammo and
     // difficulty carry over.
-    function enterStage(index) {
+    function enterStage(index, seed = stageSeed(STAGES[index].id, runSeed)) {
       stageIndex = index;
+      levelSeed = seed >>> 0;
       bullets = [];
       enemyBullets = [];
       enemies = [];
@@ -1209,8 +1426,10 @@
       beams = [];
       slashes = [];
       damageOverlayTimer = 0;
-      openingEnemyPending = index === 0;
-      spawnCooldown = index === 0 ? 900 : 1800;
+      // The opening zombie belongs to the station, wherever it sits in the route.
+      const opening = STAGES[index].id === 'station';
+      openingEnemyPending = opening;
+      spawnCooldown = opening ? 900 : 1800;
       player.x = 100;
       player.height = player.baseHeight;
       player.y = groundY - player.height;
@@ -1227,7 +1446,7 @@
       resetGameplayInput();
       generateEnvironment();
       snapCamera();
-      stageBanner = { text: `Stage ${index + 1} · ${STAGES[index].name}`, at: performance.now() };
+      stageBanner = { text: playMode === 'quickplay' ? `Quickplay · ${STAGES[index].name}` : `Stage ${index + 1} · ${STAGES[index].name}`, at: performance.now() };
     }
 
     // The exit sits at the end of the upper deck on the stage's right edge.
@@ -1237,15 +1456,24 @@
         player.x + player.width >= worldWidth - EXIT_WIDTH;
     }
 
+    // Reaching the exit. A campaign clear unlocks the next waypoint and saves
+    // its entry with the loadout carried out of this stage; a Quickplay clear
+    // changes nothing in the campaign.
     function leaveStage() {
-      if (stageIndex + 1 < STAGES.length) {
-        enterStage(stageIndex + 1);
-        return;
+      if (playMode === 'quickplay') { showEnd('quickplay'); return; }
+      const id = STAGES[stageIndex].id;
+      if (!campaign.cleared.includes(id)) campaign.cleared.push(id);
+      const next = STAGES[stageIndex + 1];
+      if (next) {
+        if (!campaign.unlocked.includes(next.id)) campaign.unlocked.push(next.id);
+        campaign.entry = { stage: next.id, seed: freshSeed(next.id), loadout: captureLoadout(), elapsed: elapsedTime };
+        saveCampaign(campaign);
+        showEnd('cleared');
+      } else {
+        campaign.entry = null;
+        saveCampaign(campaign);
+        showEnd('complete');
       }
-      runComplete = true;
-      gameState = 'gameover';
-      playerDownAt = performance.now();
-      resetGameplayInput();
     }
 
     // The nav region (structural walkable surface) under a body, projecting
@@ -1343,6 +1571,7 @@
     // and ladders arrays with randomised platforms and cover.  Without
     // this call the world would be empty at the first launch.
     runSeed = Number.isFinite(urlSeed) ? urlSeed >>> 0 : (Math.random() * 2 ** 32) >>> 0;
+    levelSeed = stageSeed('station', runSeed);
     generateEnvironment();
     snapCamera();
 
@@ -1350,7 +1579,13 @@
      * Reset all entities and player stats to their initial values. Called
      * when restarting after game over.
      */
+    // A fresh campaign attempt from the station (unlocks are kept).
     function restart() {
+      startStage('campaign', 'station', freshSeed('station'), defaultLoadout());
+    }
+
+    // Clear everything a stage attempt touches; startStage applies the loadout.
+    function resetRunState() {
       elapsedTime = 0;
       fallenSprites = [];
       lastLanding = -Infinity;
@@ -1373,10 +1608,8 @@
       spawnCooldown = 900;
       openingEnemyPending = true;
       gameState = 'play';
-      // A new run always starts at the station with a fresh seed.
-      runSeed = Number.isFinite(urlSeed) ? urlSeed >>> 0 : (Math.random() * 2 ** 32) >>> 0;
-      stageIndex = 0;
       runComplete = false;
+      endKind = null;
       stageBanner = null;
       player.x = 100;
       player.height = player.baseHeight;
@@ -1405,15 +1638,6 @@
       resetGameplayInput();
       menuSelection = 0;
       mainMenuSelection = 0;
-
-      // Regenerate the random obstacles and ladders on each restart so the
-      // battlefield feels fresh.  This also clears any leftover
-      // environment from the previous run.
-      if (typeof generateEnvironment === 'function') {
-        generateEnvironment();
-      }
-      snapCamera();
-      stageBanner = { text: `Stage 1 · ${STAGES[0].name}`, at: performance.now() };
     }
 
     /**
@@ -1812,11 +2036,7 @@
       damageOverlayTimer = 120;
       screenShakeTimer = Math.max(screenShakeTimer, 130);
       screenShakeStrength = Math.max(screenShakeStrength, 5);
-      if (player.health <= 0) {
-        gameState = 'gameover';
-        playerDownAt = performance.now();
-        resetGameplayInput();
-      }
+      if (player.health <= 0) showEnd('dead');
       playLegacyEffect(playerDamageSfx);
       return true;
     }
@@ -2838,7 +3058,7 @@
       const shot = playerShot?.key === key && playerShot.facing === player.facing && shotAge < SHOT_FEEDBACK[key].duration;
       let frame;
       if (gameState === 'start') frame = get('idle', performance.now(), true);
-      else if (gameState === 'gameover' && !runComplete) frame = get('down', performance.now() - playerDownAt);
+      else if (gameState === 'gameover' && endKind === 'dead') frame = get('down', performance.now() - playerDownAt);
       else if (player.hitFlashTimer > 0) frame = get('hit', 180 - player.hitFlashTimer);
       else if (player.isClimbing) frame = get('climb', Math.abs(player.vy) > 0.1 ? player.animTime : 0, true);
       else if (player.reloading && player.onGround && !player.isDucking) {
@@ -3127,7 +3347,7 @@
       ctx.fillStyle = `rgba(255,227,184,${0.75 + pulse * 0.25})`;
       ctx.font = '700 8px system-ui, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(stageIndex + 1 < STAGES.length ? 'EXIT' : 'EXTRACT', x + EXIT_WIDTH / 2, top - 9);
+      ctx.fillText(playMode === 'campaign' && stageIndex + 1 === STAGES.length ? 'EXTRACT' : 'EXIT', x + EXIT_WIDTH / 2, top - 9);
       ctx.textAlign = 'left';
     }
 
@@ -3596,7 +3816,7 @@
       }
       ctx.textAlign = 'right';
       ctx.fillStyle = '#8adddf';
-      ctx.fillText(`STAGE ${stageIndex + 1}/${STAGES.length}`, 323, 46);
+      ctx.fillText(playMode === 'quickplay' ? 'QUICKPLAY' : `STAGE ${stageIndex + 1}/${STAGES.length}`, 323, 46);
       ctx.textAlign = 'left';
     }
 
@@ -3620,6 +3840,8 @@
       if (gameState === 'menu') return mainMenuSelection;
       if (gameState === 'settings') return settingsSelection;
       if (gameState === 'shop') return menuSelection;
+      if (gameState === 'map') return mapRow;
+      if (gameState === 'gameover') return endSelection;
       return 0;
     }
 
@@ -3628,6 +3850,124 @@
       if (gameState === 'menu') mainMenuSelection = index;
       if (gameState === 'settings') settingsSelection = index;
       if (gameState === 'shop') menuSelection = index;
+      if (gameState === 'map') {
+        mapRow = index;
+        if (index < STAGES.length) mapPick = index;
+      }
+      if (gameState === 'gameover') endSelection = index;
+    }
+
+    // Waypoint status for the campaign: cleared, available or locked.
+    function waypointStatus(stage) {
+      if (campaign.cleared.includes(stage.id)) return 'cleared';
+      return campaign.unlocked.includes(stage.id) ? 'available' : 'locked';
+    }
+
+    function unlockCondition(stage) {
+      const previous = STAGES[stageOrder(stage.id) - 1];
+      return previous ? `Clear ${previous.name} in the campaign to unlock.` : '';
+    }
+
+    let mapParts = null;
+    function buildStarMap(panel) {
+      const body = element('div', 'map-body');
+      const chart = element('div', 'star-map');
+      const art = element('img', 'star-map-art');
+      art.alt = '';
+      art.decoding = 'async';
+      // Without the backdrop the waypoints become a plain list over the title art.
+      art.addEventListener('load', () => chart.classList.add('has-art'));
+      art.addEventListener('error', () => {
+        chart.classList.add('no-art');
+        menuLayer.classList.add('map-fallback');
+      });
+      art.src = 'assets/ui/star-map.webp';
+      chart.append(art);
+      const svgNS = 'http://www.w3.org/2000/svg';
+      const route = document.createElementNS(svgNS, 'svg');
+      route.setAttribute('class', 'map-route');
+      route.setAttribute('viewBox', '0 0 100 100');
+      route.setAttribute('preserveAspectRatio', 'none');
+      route.setAttribute('aria-hidden', 'true');
+      const segments = [];
+      for (let i = 1; i < STAGES.length; i++) {
+        const line = document.createElementNS(svgNS, 'line');
+        const [x1, y1] = STAGES[i - 1].map;
+        const [x2, y2] = STAGES[i].map;
+        line.setAttribute('x1', x1 * 100); line.setAttribute('y1', y1 * 100);
+        line.setAttribute('x2', x2 * 100); line.setAttribute('y2', y2 * 100);
+        line.setAttribute('vector-effect', 'non-scaling-stroke');
+        route.append(line);
+        segments.push(line);
+      }
+      chart.append(route);
+      const list = element('ol', 'waypoints');
+      list.setAttribute('aria-label', 'Waypoints');
+      STAGES.forEach((stage, i) => {
+        const item = element('li');
+        const row = addMenuRow(item, stage.name, i, true);
+        row.classList.add('waypoint');
+        row.style.setProperty('--x', `${stage.map[0] * 100}%`);
+        row.style.setProperty('--y', `${stage.map[1] * 100}%`);
+        // The ring frames the planet; only the label carries a background.
+        const label = element('span', 'wp-label');
+        label.append(...row.childNodes);
+        row.append(element('span', 'wp-marker'), label);
+        list.append(item);
+      });
+      chart.append(list);
+      const side = element('div', 'map-side');
+      const brief = element('article', 'map-brief');
+      brief.id = 'map-brief';
+      brief.setAttribute('aria-live', 'polite');
+      const briefName = element('h3');
+      const briefStatus = element('p', 'map-status');
+      const briefObjective = element('p', 'map-objective');
+      const briefText = element('p', 'map-text');
+      brief.append(briefName, briefStatus, briefObjective, briefText);
+      const actions = element('div', 'menu-options map-actions');
+      addMenuRow(actions, 'Continue', STAGES.length, true);
+      addMenuRow(actions, 'Quickplay', STAGES.length + 1, true);
+      addMenuRow(actions, 'Back', STAGES.length + 2, false);
+      const notice = element('p', 'map-notice');
+      notice.setAttribute('role', 'status');
+      side.append(brief, actions, notice);
+      body.append(chart, side);
+      panel.append(body);
+      mapParts = { segments, briefName, briefStatus, briefObjective, briefText, notice };
+    }
+
+    function syncStarMap() {
+      const statusText = { cleared: 'Cleared', available: 'Available', locked: 'Locked' };
+      STAGES.forEach((stage, i) => {
+        const { row, value } = menuRows[i];
+        const status = waypointStatus(stage);
+        const next = campaign.entry?.stage === stage.id;
+        row.dataset.status = status;
+        row.dataset.next = String(next);
+        row.setAttribute('aria-pressed', String(i === mapPick));
+        value.textContent = statusText[status] + (next ? ' · Next' : '');
+        // Spoken state: name, status and, when locked, how to unlock it.
+        row.setAttribute('aria-label', `${stage.name}. ${statusText[status]}${next ? ', next campaign stop' : ''}. ${status === 'locked' ? unlockCondition(stage) : ''}`.trim());
+      });
+      mapParts.segments.forEach((line, i) => line.setAttribute('class', campaign.unlocked.includes(STAGES[i + 1].id) ? 'open' : 'locked'));
+      const picked = STAGES[mapPick];
+      const status = waypointStatus(picked);
+      mapParts.briefName.textContent = picked.name;
+      mapParts.briefStatus.textContent = status === 'locked' ? `Locked · ${unlockCondition(picked)}` : statusText[status];
+      mapParts.briefObjective.textContent = status === 'locked' ? '' : picked.objective;
+      mapParts.briefText.textContent = status === 'locked' ? '' : picked.briefing;
+      const entry = campaign.entry;
+      const complete = STAGES.every(stage => campaign.cleared.includes(stage.id));
+      const cont = menuRows[STAGES.length];
+      cont.name.textContent = entry ? `Continue · ${stageById(entry.stage).name}` : (complete ? 'Replay campaign' : 'Start campaign');
+      cont.value.textContent = entry ? `${WEAPONS[entry.loadout.weapon].name} · ${entry.loadout.health}% · ${entry.loadout.gold} G` : 'From Space Station';
+      const quick = menuRows[STAGES.length + 1];
+      const locked = status === 'locked';
+      quick.name.textContent = `Quickplay · ${picked.name}`;
+      quick.value.textContent = locked ? 'Locked' : 'Standalone loadout';
+      quick.row.setAttribute('aria-disabled', String(locked));
+      mapParts.notice.textContent = storageNotice;
     }
 
     function addMenuRow(parent, label, index, detail) {
@@ -3661,13 +4001,16 @@
       menuRows = [];
       menuLayer.replaceChildren();
       menuLayer.classList.toggle('title-art', mode === 'start');
+      menuLayer.classList.toggle('map-layer', mode === 'map');
+      menuLayer.classList.remove('map-fallback');
       menuLayer.hidden = mode === 'play' || mode === 'boot';
       if (menuLayer.hidden) return;
 
-      const panel = element('section', mode === 'shop' ? 'menu-panel shop-panel' : 'menu-panel');
+      const panel = element('section', mode === 'shop' ? 'menu-panel shop-panel' : (mode === 'map' ? 'menu-panel map-panel' : 'menu-panel'));
+      const endHeading = { dead: 'Game over', quickplay: 'Quickplay clear', cleared: 'Stage clear', complete: 'Mission complete' }[endKind] || 'Game over';
       const heading = element(mode === 'start' ? 'h1' : 'h2', '', {
-        start: 'SPACE COMMANDO', menu: 'Paused', settings: 'Settings', shop: 'Shop',
-        gameover: runComplete ? 'Mission complete' : 'Game over'
+        start: 'SPACE COMMANDO', menu: 'Paused', settings: 'Settings', shop: 'Shop', map: 'Star map',
+        gameover: endHeading
       }[mode]);
       heading.id = 'menu-heading';
       panel.setAttribute('aria-labelledby', heading.id);
@@ -3702,16 +4045,27 @@
       }
 
       panel.append(heading);
+      if (mode === 'map') {
+        buildStarMap(panel);
+        return;
+      }
       const options = element('div', 'menu-options');
       const labels = {
-        start: ['Start game', 'Settings'],
-        menu: ['Resume', 'Restart game', 'Settings'],
+        start: ['Star map', 'Settings'],
+        menu: ['Resume', 'Retry stage', 'Star map', 'Settings'],
         settings: ['Difficulty', 'Music', 'Particles', 'Camera shake and flashes', 'Sound effects', 'Haptics'],
-        gameover: ['Restart']
+        gameover: endOptions.map(([label]) => label)
       }[mode];
       if (mode === 'gameover') {
-        const reached = runComplete ? `All ${STAGES.length} stages cleared` : `Reached stage ${stageIndex + 1} · ${STAGES[stageIndex].name}`;
-        panel.append(element('p', 'gameover-summary', `${reached} · Gold collected: ${player.gold}`));
+        const stage = STAGES[stageIndex];
+        const next = STAGES[stageIndex + 1];
+        const summary = {
+          dead: playMode === 'quickplay' ? `Quickplay · ${stage.name}` : `Reached stage ${stageIndex + 1} · ${stage.name}`,
+          quickplay: `${stage.name} cleared · campaign progress unchanged`,
+          cleared: `${stage.name} cleared · ${next?.name} unlocked`,
+          complete: `All ${STAGES.length} stages cleared`
+        }[endKind] || stage.name;
+        panel.append(element('p', 'gameover-summary', `${summary} · Gold: ${player.gold}`));
       }
       labels.forEach((label, index) => addMenuRow(options, label, index, mode === 'settings'));
       panel.append(options);
@@ -3737,13 +4091,15 @@
 
       if (mode === 'start') {
         menuRows[0].row.disabled = !artReady;
-        menuRows[0].name.textContent = artReady ? 'Start game' : 'Loading sprites…';
+        menuRows[0].name.textContent = artReady ? 'Star map' : 'Loading sprites…';
       } else if (mode === 'settings') {
         const effectText = SETTINGS.effects === 'system' ? (effectsReduced() ? 'System · Reduced' : 'System · Full') :
           SETTINGS.effects === 'full' ? 'Full' : 'Reduced';
         const hapticText = hapticsSupported ? (SETTINGS.haptics ? 'On' : 'Off') : (SETTINGS.haptics ? 'On · not supported' : 'Off');
         const values = [SETTINGS.difficulty, AUDIO_LEVEL_NAMES[SETTINGS.musicLevel], SETTINGS.particles ? 'On' : 'Off', effectText, AUDIO_LEVEL_NAMES[SETTINGS.sfxLevel], hapticText];
         menuRows.forEach(({ value }, i) => { value.textContent = values[i]; });
+      } else if (mode === 'map') {
+        syncStarMap();
       } else if (mode === 'shop') {
         shopGold.textContent = `${player.gold} gold`;
         shopStatus.textContent = shopNotice;
