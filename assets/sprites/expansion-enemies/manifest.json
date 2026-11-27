@@ -1,0 +1,622 @@
+{
+  "version": 1,
+  "coordinates": "rect and points use source pixels. rect = [x,y,w,h]; origin, muzzle, and contact are [x,y] relative to the frame top left; drawScale is logical world units per source pixel.",
+  "enemies": {
+    "cybercity-police": {
+      "name": "CyberCity Police",
+      "level": "cyberpunk-city",
+      "sheet": "cybercity-police.webp",
+      "size": [
+        1536,
+        1024
+      ],
+      "facing": "right",
+      "drawScale": 0.16,
+      "specialAttack": {
+        "id": "breach-pulse",
+        "event": "projectile",
+        "clip": "special",
+        "triggerFrame": 2
+      },
+      "clips": {
+        "idle": [
+          {
+            "rect": [
+              185,
+              1,
+              173,
+              332
+            ],
+            "origin": [
+              64,
+              325
+            ],
+            "ms": 360
+          }
+        ],
+        "walk": [
+          {
+            "rect": [
+              650,
+              5,
+              219,
+              328
+            ],
+            "origin": [
+              112,
+              321
+            ],
+            "ms": 145
+          },
+          {
+            "rect": [
+              1181,
+              8,
+              195,
+              324
+            ],
+            "origin": [
+              98,
+              318
+            ],
+            "ms": 145
+          }
+        ],
+        "special": [
+          {
+            "rect": [
+              123,
+              385,
+              260,
+              282
+            ],
+            "origin": [
+              125,
+              275
+            ],
+            "muzzle": [
+              250,
+              83
+            ],
+            "ms": 210
+          },
+          {
+            "rect": [
+              620,
+              367,
+              265,
+              299
+            ],
+            "origin": [
+              126,
+              292
+            ],
+            "muzzle": [
+              256,
+              67
+            ],
+            "ms": 230
+          },
+          {
+            "rect": [
+              1150,
+              373,
+              253,
+              292
+            ],
+            "origin": [
+              120,
+              286
+            ],
+            "muzzle": [
+              217,
+              30
+            ],
+            "ms": 85
+          },
+          {
+            "rect": [
+              125,
+              705,
+              242,
+              303
+            ],
+            "origin": [
+              119,
+              297
+            ],
+            "ms": 300
+          }
+        ],
+        "hurt": [
+          {
+            "rect": [
+              643,
+              702,
+              209,
+              305
+            ],
+            "origin": [
+              109,
+              299
+            ],
+            "ms": 115
+          }
+        ],
+        "downed": [
+          {
+            "rect": [
+              1063,
+              900,
+              436,
+              107
+            ],
+            "origin": [
+              215,
+              101
+            ],
+            "ms": 430
+          }
+        ]
+      }
+    },
+    "cybercity-thug": {
+      "name": "CyberCity Thug",
+      "level": "cyberpunk-city",
+      "sheet": "cybercity-thug.webp",
+      "size": [
+        1536,
+        1024
+      ],
+      "facing": "right",
+      "drawScale": 0.165,
+      "specialAttack": {
+        "id": "shock-dash",
+        "event": "melee-dash",
+        "clip": "special",
+        "triggerFrame": 2
+      },
+      "clips": {
+        "idle": [
+          {
+            "rect": [
+              159,
+              0,
+              169,
+              336
+            ],
+            "origin": [
+              86,
+              329
+            ],
+            "ms": 360
+          }
+        ],
+        "walk": [
+          {
+            "rect": [
+              632,
+              4,
+              261,
+              332
+            ],
+            "origin": [
+              126,
+              326
+            ],
+            "ms": 145
+          },
+          {
+            "rect": [
+              1155,
+              0,
+              256,
+              336
+            ],
+            "origin": [
+              125,
+              330
+            ],
+            "ms": 145
+          }
+        ],
+        "special": [
+          {
+            "rect": [
+              128,
+              390,
+              245,
+              272
+            ],
+            "origin": [
+              116,
+              266
+            ],
+            "ms": 160
+          },
+          {
+            "rect": [
+              617,
+              355,
+              276,
+              306
+            ],
+            "origin": [
+              136,
+              300
+            ],
+            "ms": 220
+          },
+          {
+            "rect": [
+              1063,
+              379,
+              419,
+              280
+            ],
+            "origin": [
+              244,
+              274
+            ],
+            "contact": [
+              400,
+              77
+            ],
+            "ms": 120
+          },
+          {
+            "rect": [
+              106,
+              714,
+              339,
+              299
+            ],
+            "origin": [
+              139,
+              293
+            ],
+            "ms": 390
+          }
+        ],
+        "hurt": [
+          {
+            "rect": [
+              653,
+              681,
+              228,
+              332
+            ],
+            "origin": [
+              119,
+              326
+            ],
+            "ms": 115
+          }
+        ],
+        "downed": [
+          {
+            "rect": [
+              1050,
+              871,
+              469,
+              136
+            ],
+            "origin": [
+              233,
+              130
+            ],
+            "ms": 430
+          }
+        ]
+      }
+    },
+    "jungle-dinosaur": {
+      "name": "Jungle Dinosaur",
+      "level": "jungle-planet",
+      "sheet": "jungle-dinosaur.webp",
+      "size": [
+        1536,
+        1024
+      ],
+      "facing": "right",
+      "drawScale": 0.26,
+      "specialAttack": {
+        "id": "pounce-bite",
+        "event": "melee-pounce",
+        "clip": "special",
+        "triggerFrame": 2
+      },
+      "clips": {
+        "idle": [
+          {
+            "rect": [
+              15,
+              84,
+              470,
+              216
+            ],
+            "origin": [
+              251,
+              210
+            ],
+            "ms": 360
+          }
+        ],
+        "walk": [
+          {
+            "rect": [
+              528,
+              87,
+              473,
+              210
+            ],
+            "origin": [
+              258,
+              204
+            ],
+            "ms": 145
+          },
+          {
+            "rect": [
+              1034,
+              91,
+              485,
+              205
+            ],
+            "origin": [
+              256,
+              199
+            ],
+            "ms": 145
+          }
+        ],
+        "special": [
+          {
+            "rect": [
+              3,
+              451,
+              494,
+              189
+            ],
+            "origin": [
+              260,
+              183
+            ],
+            "ms": 200
+          },
+          {
+            "rect": [
+              511,
+              451,
+              480,
+              192
+            ],
+            "origin": [
+              244,
+              185
+            ],
+            "ms": 240
+          },
+          {
+            "rect": [
+              1025,
+              421,
+              506,
+              168
+            ],
+            "origin": [
+              239,
+              162
+            ],
+            "contact": [
+              486,
+              59
+            ],
+            "ms": 150
+          },
+          {
+            "rect": [
+              9,
+              807,
+              473,
+              172
+            ],
+            "origin": [
+              252,
+              166
+            ],
+            "ms": 480
+          }
+        ],
+        "hurt": [
+          {
+            "rect": [
+              521,
+              759,
+              433,
+              221
+            ],
+            "origin": [
+              247,
+              215
+            ],
+            "ms": 115
+          }
+        ],
+        "downed": [
+          {
+            "rect": [
+              1031,
+              868,
+              490,
+              111
+            ],
+            "origin": [
+              248,
+              105
+            ],
+            "ms": 430
+          }
+        ]
+      }
+    },
+    "jungle-dark-elf": {
+      "name": "Dark Elf Laser Ranger",
+      "level": "jungle-planet",
+      "sheet": "jungle-dark-elf.webp",
+      "size": [
+        1536,
+        1024
+      ],
+      "facing": "right",
+      "drawScale": 0.16,
+      "specialAttack": {
+        "id": "violet-lance",
+        "event": "laser",
+        "clip": "special",
+        "triggerFrame": 2
+      },
+      "clips": {
+        "idle": [
+          {
+            "rect": [
+              166,
+              0,
+              215,
+              338
+            ],
+            "origin": [
+              85,
+              331
+            ],
+            "ms": 360
+          }
+        ],
+        "walk": [
+          {
+            "rect": [
+              636,
+              5,
+              239,
+              331
+            ],
+            "origin": [
+              125,
+              325
+            ],
+            "ms": 145
+          },
+          {
+            "rect": [
+              1143,
+              7,
+              254,
+              329
+            ],
+            "origin": [
+              128,
+              323
+            ],
+            "ms": 145
+          }
+        ],
+        "special": [
+          {
+            "rect": [
+              92,
+              400,
+              315,
+              269
+            ],
+            "origin": [
+              183,
+              263
+            ],
+            "muzzle": [
+              306,
+              90
+            ],
+            "ms": 220
+          },
+          {
+            "rect": [
+              582,
+              395,
+              347,
+              274
+            ],
+            "origin": [
+              180,
+              268
+            ],
+            "muzzle": [
+              335,
+              71
+            ],
+            "ms": 300
+          },
+          {
+            "rect": [
+              1090,
+              392,
+              342,
+              277
+            ],
+            "origin": [
+              182,
+              271
+            ],
+            "muzzle": [
+              331,
+              58
+            ],
+            "ms": 100
+          },
+          {
+            "rect": [
+              101,
+              700,
+              297,
+              315
+            ],
+            "origin": [
+              153,
+              308
+            ],
+            "ms": 410
+          }
+        ],
+        "hurt": [
+          {
+            "rect": [
+              637,
+              692,
+              240,
+              322
+            ],
+            "origin": [
+              105,
+              317
+            ],
+            "ms": 115
+          }
+        ],
+        "downed": [
+          {
+            "rect": [
+              1022,
+              863,
+              504,
+              135
+            ],
+            "origin": [
+              268,
+              129
+            ],
+            "ms": 430
+          }
+        ]
+      }
+    }
+  }
+}
