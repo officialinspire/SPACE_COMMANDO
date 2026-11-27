@@ -110,6 +110,12 @@
   const slab = (x, y, width, role = 'floor') => ({ type: 'slab', role, x, y, width, height: SLAB });
   const catwalk = (x, y, width) => ({ type: 'catwalk', role: 'catwalk', x, y, width, height: CATWALK });
   const cover = (type, x, y, width, height) => ({ type, role: 'cover', x, y, width, height });
+  // Stage art can fix each cover type's width-to-height ratio so the drawn
+  // sprite fills its collision box without distortion.
+  const coverWidth = (c, type, width, height) => {
+    const aspect = c.coverAspect?.[type];
+    return aspect ? Math.max(20, Math.min(76, Math.round(height * aspect))) : width;
+  };
   const wall = (x, top, bottom) => ({ type: 'wall', role: 'wall', x, y: top, width: WALL, height: bottom - top });
 
   function samplePoints(list, x0, x1, y, step, keepOut) {
@@ -159,8 +165,8 @@
     let x = x0 + 70 + rng() * 60;
     while (x < mx - 90) {
       const type = types[Math.floor(rng() * types.length)];
-      const w = Math.round(32 + rng() * 32);
       const h = Math.round(20 + rng() * 8);
+      const w = coverWidth(c, type, Math.round(32 + rng() * 32), h);
       const underShelf = shelf && x + w > shelf.x - 4 && x < shelf.x + shelf.width + 4;
       // Cover under the shelf must keep standing headroom below it.
       const limit = underShelf ? (G - shelf.y) - shelf.height - HEADROOM : Infinity;
@@ -168,7 +174,7 @@
         solids.push(cover(type, Math.round(x), G - h, w, h));
         keepOut.push([x - 4, x + w + 4]);
         if (!underShelf && type === 'crate' && rng() < 0.45) {
-          solids.push(cover('crate', Math.round(x + 4), G - h - 22, w - 8, 22));
+          solids.push(cover('crate', Math.round(x + 4), G - h - 22, Math.min(w - 8, coverWidth(c, 'crate', w - 8, 22)), 22));
         }
       }
       x += w + 96 + rng() * 150;
@@ -196,10 +202,12 @@
     const ladders = [ladder(sx, D1, G), ladder(sx, D2, D1)];
     const keepOut = [[sx - 60, sx + LADDER_WIDTH + 60], [x1 - WALL - 40, x1]];
     if (rng() < 0.6) {
-      const w = Math.round(34 + rng() * 20);
+      const raw = Math.round(34 + rng() * 20);
       const h = Math.round(20 + rng() * 6);
+      const type = rng() < 0.5 ? 'shield' : 'barricade';
+      const w = coverWidth(c, type, raw, h);
       const px = Math.round(sx + 110 + rng() * Math.max(0, x1 - WALL - 90 - w - (sx + 110)));
-      solids.push(cover(rng() < 0.5 ? 'shield' : 'barricade', px, D2 - h, w, h));
+      solids.push(cover(type, px, D2 - h, w, h));
       keepOut.push([px - 4, px + w + 4]);
     }
     const encounters = [];
@@ -248,12 +256,14 @@
     const pieces = variant === 'hatch' ? 3 : 1 + Math.floor(rng() * 2);
     let px = gs + gw + 70 + rng() * 40;
     for (let i = 0; i < pieces && px < x1 - 90; i++) {
-      const w = Math.round(32 + rng() * 26);
+      const raw = Math.round(32 + rng() * 26);
       const h = Math.round(20 + rng() * 7);
+      const type = rng() < 0.5 ? 'barricade' : 'shield';
+      const w = coverWidth(c, type, raw, h);
       const blocked = keepOut.some(([a, b]) => px + w > a && px < b) ||
         catwalks.some(cw => px + w > cw.x && px < cw.x + cw.width && cw.y + cw.height > D2 - h - HEADROOM);
       if (!blocked) {
-        solids.push(cover(rng() < 0.5 ? 'barricade' : 'shield', Math.round(px), D2 - h, w, h));
+        solids.push(cover(type, Math.round(px), D2 - h, w, h));
         keepOut.push([px - 4, px + w + 4]);
       }
       px += w + 80 + rng() * 120;
@@ -262,6 +272,59 @@
     samplePoints(encounters, x0 + 20, x1 - 40, D2, 100, keepOut);
     samplePoints(encounters, x0 + 30, x1 - WALL - 50, D1, 110, [[lx - 40, lx + 56]]);
     return { kind: variant === 'bridge' ? 'catwalkBridge' : 'hatchGallery', x0, x1, entry: point(x0 + 10, D2), exit: point(x1 - 10, D2), solids, ladders, encounters };
+  }
+
+  // A stage start: open floor at the entry with a little cover ahead.
+  function buildStart(c, rng, x0, x1) {
+    const G = c.deckY[0];
+    const type = rng() < 0.5 ? 'crate' : 'barricade';
+    const h = Math.round(20 + rng() * 6);
+    const w = coverWidth(c, type, Math.round(36 + rng() * 20), h);
+    const px = Math.round(x0 + 340 + rng() * 120);
+    const encounters = [];
+    samplePoints(encounters, x0 + 300, x1 - 40, G, 105, [[px - 4, px + w + 4]]);
+    return { kind: 'start', x0, x1, entry: point(100, G), exit: point(x1 - 10, G), solids: [cover(type, px, G - h, w, h)], ladders: [], encounters };
+  }
+
+  // Terraces: two staggered ledges climb from the floor to a middle-deck
+  // shelf, with a ladder as a second way up. The first ledge is high enough
+  // to walk under; each rise stays well inside jump height.
+  function buildTerraces(c, rng, x0, x1, safe) {
+    const G = c.deckY[0];
+    const D1 = c.deckY[1];
+    const solids = [];
+    const keepOut = [];
+    const r1 = Math.round(safe ? 54 : 52 + rng() * 8);
+    const r2 = Math.round(safe ? 44 : 40 + rng() * 6);
+    let sx = Math.round(x0 + 150 + rng() * 60);
+    let y = G;
+    for (const rise of [r1, r2]) {
+      y -= rise;
+      const w = Math.round(110 + rng() * 40);
+      solids.push({ ...catwalk(sx, y, w), type: 'terrace' });
+      keepOut.push([sx - 20, sx + w + 20]);
+      sx += w + Math.round(44 + rng() * 36);
+    }
+    const shelfStart = sx;
+    solids.push(slab(shelfStart, D1, x1 - shelfStart));
+    const lx = Math.round(shelfStart + 60 + rng() * Math.max(0, Math.min(220, x1 - shelfStart - 160)));
+    const ladders = [ladder(lx, D1, G)];
+    keepOut.push([lx - 60, lx + LADDER_WIDTH + 60]);
+    // Floor cover before the first ledge and under the shelf.
+    for (const [a, b] of [[x0 + 40, solids[0].x - 40], [shelfStart + 20, x1 - 60]]) {
+      if (b - a < 80 || rng() < 0.25) continue;
+      const type = rng() < 0.5 ? 'crate' : 'barricade';
+      const h = Math.round(20 + rng() * 6);
+      const w = coverWidth(c, type, Math.round(34 + rng() * 22), h);
+      const px = Math.round(a + rng() * Math.max(0, b - a - w));
+      if (keepOut.some(([p, q]) => px + w > p && px < q)) continue;
+      solids.push(cover(type, px, G - h, w, h));
+      keepOut.push([px - 4, px + w + 4]);
+    }
+    const encounters = [];
+    samplePoints(encounters, x0 + 30, x1 - 40, G, 105, keepOut);
+    samplePoints(encounters, shelfStart + 20, x1 - 40, D1, 110, [[lx - 40, lx + 56]]);
+    return { kind: 'terraces', x0, x1, entry: point(x0 + 10, G), exit: point(x1 - 10, D1), solids, ladders, encounters };
   }
 
   // The last-resort connector: continuous decks at the entry and exit
@@ -279,6 +342,9 @@
         ladders.push(ladder(x0 + 200, D1, G));
       }
       ladders.push(ladder(x0 + 200, D2, D1));
+    } else if (exitY === D1) {
+      solids.push(slab(x0 + 120, D1, x1 - x0 - 120));
+      ladders.push(ladder(x0 + 200, D1, G));
     }
     const encounters = [];
     samplePoints(encounters, x0 + 30, x1 - 60, exitY, 110, [[x0 + 140, x0 + 276]]);
@@ -516,6 +582,47 @@
   // ---------------------------------------------------------------------------
   // Station assembly
 
+  // Room order per stage. Every stage climbs from the lower deck to the
+  // upper deck and ends at the world's right edge.
+  const STAGE_PLANS = {
+    // Orbital station: the authored corridor, cargo bay, shaft and upper rooms.
+    station: [
+      { kind: 'opening', width: 900 },
+      { kind: 'cargoBay', width: 1050 },
+      { kind: 'ladderShaft', width: 500 },
+      { kind: 'upper', variant: 'bridge', width: 850 },
+      { kind: 'upper', width: 850 },
+      { kind: 'upper' }
+    ],
+    // CyberCity: street level, access ladders up the block, rooftop catwalks.
+    cyber: [
+      { kind: 'start', width: 600 },
+      { kind: 'cargoBay', width: 1050 },
+      { kind: 'ladderShaft', width: 500 },
+      { kind: 'upper', variant: 'bridge', width: 950 },
+      { kind: 'upper', width: 950 },
+      { kind: 'upper' }
+    ],
+    // Jungle Planet: root ledges up to the middle deck, vine ladders and canopy routes.
+    jungle: [
+      { kind: 'start', width: 600 },
+      { kind: 'terraces', width: 1000 },
+      { kind: 'ladderShaft', width: 500 },
+      { kind: 'upper', variant: 'bridge', width: 950 },
+      { kind: 'upper', variant: 'bridge', width: 950 },
+      { kind: 'upper' }
+    ],
+    // Desert Temple Ruins: sandstone terraces, then ladder passages between halls.
+    desert: [
+      { kind: 'start', width: 600 },
+      { kind: 'terraces', width: 1000 },
+      { kind: 'ladderShaft', width: 500 },
+      { kind: 'upper', variant: 'hatch', width: 950 },
+      { kind: 'upper', width: 950 },
+      { kind: 'upper', variant: 'hatch' }
+    ]
+  };
+
   function build(config) {
     const c = {
       ...config,
@@ -529,14 +636,7 @@
     const ladders = [];
     const encounters = [];
     const chunks = [];
-    const plan = [
-      { kind: 'opening', width: 900 },
-      { kind: 'cargoBay', width: 1050 },
-      { kind: 'ladderShaft', width: 500 },
-      { kind: 'upper', variant: 'bridge', width: 850 },
-      { kind: 'upper', width: 850 },
-      { kind: 'upper' }
-    ];
+    const plan = STAGE_PLANS[config.stage || 'station'];
     let x = 0;
     let entry = null;
     plan.forEach((step, index) => {
@@ -545,6 +645,8 @@
       const final = index === plan.length - 1;
       const make = (rng, safe) => {
         if (step.kind === 'opening') return buildOpening(c);
+        if (step.kind === 'start') return buildStart(c, rng, x0, x1);
+        if (step.kind === 'terraces') return buildTerraces(c, rng, x0, x1, safe);
         if (step.kind === 'cargoBay') return buildCargoBay(c, rng, x0, safe);
         if (step.kind === 'ladderShaft') return buildShaft(c, rng, x0);
         const variant = step.variant || (rng() < 0.5 ? 'bridge' : 'hatch');
@@ -569,7 +671,8 @@
         if (result.ok) chosen = { chunk: fallback, result, source: 'fallback' };
         else {
           const prevY = entry.y;
-          const plain = buildPlain(c, step.kind, x0, x1, prevY, step.kind === 'cargoBay' ? G : c.deckY[2]);
+          const exitY = { cargoBay: G, start: G, terraces: c.deckY[1] }[step.kind] ?? c.deckY[2];
+          const plain = buildPlain(c, step.kind, x0, x1, prevY, exitY);
           const plainResult = validate(c, solids, plain, entry, final);
           attempts.push({ attempt: 'plain', ok: plainResult.ok, reasons: plainResult.reasons });
           chosen = { chunk: plain, result: plainResult, source: 'plain' };
@@ -676,7 +779,7 @@
     return { seed, solids, ladders, surfaces, accessible, dropSurfaces, regions, navEdges, encounters: placed, chunks, report, start, goal, graph };
   }
 
-  const api = { build, moveBody, steer, overlaps, jumpHeight, extractSurfaces, surfaceUnder, shortestPath, mulberry32, SLAB, CATWALK, WALL, LADDER_WIDTH, HEADROOM };
+  const api = { build, STAGE_PLANS, moveBody, steer, overlaps, jumpHeight, extractSurfaces, surfaceUnder, shortestPath, mulberry32, SLAB, CATWALK, WALL, LADDER_WIDTH, HEADROOM };
   root.SpaceStation = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
