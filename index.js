@@ -393,12 +393,17 @@
     const width = canvas.width;
     const height = canvas.height;
     const worldWidth = 5000; // world extends horizontally
-    const groundY = height - 32;
+    // Three decks: lower (the continuous station floor), middle and upper.
+    // Deck spacing exceeds jump height, so ladders are the way up.
+    const worldHeight = 560;
+    const DECK_Y = [528, 388, 248];
+    const groundY = DECK_Y[0];
+    const physicsWorld = { width: worldWidth, groundY };
     const viewWidth = width / CAMERA.zoom;
     const viewHeight = height / CAMERA.zoom;
-    const restViewY = height - viewHeight;
+    const maxViewY = worldHeight - viewHeight;
     // Unshaken view in world units. Gameplay checks read this directly.
-    const camera = { x: 0, y: restViewY, look: 1, lookVelocity: 0, lead: 0, yVelocity: 0 };
+    const camera = { x: 0, y: maxViewY, look: 1, lookVelocity: 0, lead: 0, yVelocity: 0, support: groundY };
 
     // Initialise background music once per session.  Creating audio
     // elements inside init() ensures they are tied to the document
@@ -893,7 +898,6 @@
     // and a color string. Particles are spawned when enemies are destroyed
     // to create a simple explosion effect.
     let particles = [];
-    const OPENING_END = 710;
     const FIRST_ATTACK_GRACE = 850;
     const RANGED = {
       robot: { windup: 420, speed: 4.1, damage: 8, recovery: 1900 },
@@ -924,52 +928,71 @@
     // Escaping settings returns the player to the correct screen
     let prevSettingsState = 'start';
 
-    // World obstacles and ladders.  Obstacles include crates, barricades
-    // and elevated platforms that the player can jump on or hide behind.
-    // Ladders allow the player to climb up to platforms.  Both arrays are
-    // regenerated on every restart to keep the landscape fresh.
+    // World solids and ladders come from the station layout: deck slabs,
+    // catwalks, bulkheads and cover. The opening corridor is authored and
+    // later rooms vary with a reproducible seed (?seed=N in the page URL
+    // repeats a layout). Everything is rebuilt on restart.
     let obstacles = [];
     let ladders = [];
+    let layout = null;
+    let levelSeed = 0;
+    const urlSeed = Number.parseInt(new URLSearchParams(location.search).get('seed'), 10);
 
     function generateEnvironment() {
-      obstacles = [{ type: 'crate', x: 343, y: groundY - 22, width: 42, height: 22 }];
-      ladders = [];
-
-      // Teach one jump and one clear ladder before the procedural sections.
-      const addPlatform = (x, elevation, span) => {
-        const y = groundY - elevation;
-        obstacles.push({ type: 'platform', x, y, width: span, height: 12 });
-        // These platforms sit above solo jump height, so each has a way up.
-        ladders.push({ type: 'ladder', x: x + span / 2 - 8, y, width: 16, height: elevation });
-      };
-      addPlatform(515, 86, 134);
-      const sectionWidth = (worldWidth - 1000) / 5;
-      for (let i = 0; i < 5; i++) {
-        addPlatform(770 + i * sectionWidth + Math.random() * 260,
-          100 + Math.random() * 60, 100 + Math.random() * 120);
-      }
-
-      const types = ['crate', 'shield', 'barricade'];
-      const slotWidth = (worldWidth - OPENING_END - 110) / 13;
-      for (let i = 0; i < 13; i++) {
-        const span = 32 + Math.random() * 32;
-        const obstacleHeight = 20 + Math.random() * 8;
-        const start = OPENING_END + i * slotWidth;
-        const range = slotWidth - span - 90;
-        const suggested = start + Math.random() * range;
-        const clear = x => ladders.every(ladder => x + span + 43 <= ladder.x ||
-                                                       x >= ladder.x + ladder.width + 43);
-        let x = suggested;
-        if (!clear(x)) {
-          // A ladder spans at most one forbidden interval in a cover slot.
-          x = start;
-          if (!clear(x)) x = start + range;
-          if (!clear(x)) continue;
-        }
-        const type = types[Math.floor(Math.random() * types.length)];
-        obstacles.push({ type, x, y: groundY - obstacleHeight, width: span, height: obstacleHeight });
-      }
+      levelSeed = Number.isFinite(urlSeed) ? urlSeed >>> 0 : (Math.random() * 2 ** 32) >>> 0;
+      layout = window.SpaceStation.build({
+        seed: levelSeed, worldWidth, worldHeight, deckY: DECK_Y,
+        movement: MOVEMENT, body: { width: 32, height: 32 }
+      });
+      obstacles = layout.solids;
+      ladders = layout.ladders;
     }
+
+    // The nav region (structural walkable surface) under a body, projecting
+    // down through cover or air to the highest region below.
+    function regionAt(body) {
+      const centre = body.x + body.width / 2;
+      const feet = body.y + body.height;
+      let best = null;
+      for (const r of layout.regions) {
+        if (r.x0 > centre || r.x1 < centre || r.y < feet - 0.6) continue;
+        if (!best || r.y < best.y) best = r;
+      }
+      return best;
+    }
+
+    // The first nav edge on a route from one region to another.
+    function nextNavEdge(from, to) {
+      if (!from || !to || from === to) return null;
+      const first = new Map([[from.id, null]]);
+      const queue = [from.id];
+      while (queue.length) {
+        const node = queue.shift();
+        if (node === to.id) return first.get(node);
+        for (const edge of layout.navEdges[node]) {
+          if (first.has(edge.to)) continue;
+          first.set(edge.to, first.get(node) || edge);
+          queue.push(edge.to);
+        }
+      }
+      return null;
+    }
+
+    function routeExists(from, to) {
+      return Boolean(from && to && (from === to || nextNavEdge(from, to)));
+    }
+
+    // Lowest solid underside above a point (the ceiling of the room it is in).
+    function ceilingAbove(x, y) {
+      let ceiling = 0;
+      for (const ob of obstacles) {
+        if (ob.role === 'cover' || x < ob.x || x > ob.x + ob.width) continue;
+        const bottom = ob.y + ob.height;
+        if (bottom <= y && bottom > ceiling) ceiling = bottom;
+      }
+      return ceiling;
+    }
+
     // Player stats and physics
     const player = {
       x: 100,
@@ -994,11 +1017,10 @@
       facing: 1,
       animTime: 0
       ,
-      // Ladder flags: onLadder indicates the player is currently within the
-      // bounds of a ladder; isClimbing is true while the player is actively
-      // moving up or down the ladder.  Gravity is suppressed while
-      // climbing.
-      onLadder: false,
+      // The ladder being climbed, if any. isClimbing is true while the
+      // player is on it; gravity and collisions are suppressed only within
+      // that ladder's span.
+      ladder: null,
       isClimbing: false
       ,
       /**
@@ -1067,7 +1089,7 @@
       player.recoilTimer = 0;
       player.facing = 1;
       player.animTime = 0;
-      player.onLadder = false;
+      player.ladder = null;
       player.isClimbing = false;
       player.isDucking = false;
       player.invulnTimer = 0;
@@ -1139,6 +1161,11 @@
         contactDamageTimer: 0,
         preferredRange: 120,
         baseY: 0,
+        // Ladder navigation: the ladder being climbed and its direction.
+        ladder: null,
+        climbDir: 0,
+        navEdge: null,
+        offRouteTimer: 0,
         phase: Math.random() * Math.PI * 2,
         // Horizontal direction: -1 moves left, 1 moves right.  All
         // enemies spawn moving towards the player from the right.  This
@@ -1195,47 +1222,99 @@
         e.health += 1;
         e.maxHealth += 1;
       }
-      const clampX = x => Math.max(32, Math.min(worldWidth - e.width - 32, x));
-      const preferred = clampX(spawnX);
-      const opposite = clampX(player.x - spawnDir * spawnOffset);
       // The frame covers the unshaken view and where the camera is heading,
-      // so an enemy cannot appear inside a view that is still panning.
+      // on both axes, so an enemy cannot appear inside a view that is still
+      // panning or on a deck the camera is moving to.
       const targetX = cameraTargetX();
-      const frameLeft = Math.min(camera.x, targetX) - 40;
-      const frameRight = Math.max(camera.x, targetX) + viewWidth + 40;
+      const targetY = cameraTargetY();
+      const frame = {
+        x0: Math.min(camera.x, targetX) - 40, x1: Math.max(camera.x, targetX) + viewWidth + 40,
+        y0: Math.min(camera.y, targetY) - 24, y1: Math.max(camera.y, targetY) + viewHeight + 24
+      };
       const clearance = 16;
-      const clear = x => {
-        if (x + e.width > frameLeft && x < frameRight) return false;
+      const fair = (x, y) => {
+        if (x + e.width > frame.x0 && x < frame.x1 && y + e.height > frame.y0 && y < frame.y1) return false;
         if (Math.abs(x - player.x) < 196) return false;
-        const zone = { x: x - clearance, y: e.y, width: e.width + clearance * 2, height: e.height };
+        const zone = { x: x - clearance, y, width: e.width + clearance * 2, height: e.height };
         return !obstacles.some(obstacle => rectIntersect(zone, obstacle)) &&
           !enemies.some(enemy => rectIntersect(zone, enemy));
       };
-      // Search only a bounded neighborhood on either side.
-      for (const center of [preferred, opposite]) {
+      const place = (x, y) => {
+        e.x = x;
+        e.y = y;
+        e.baseY = y;
+        e.dir = x < player.x ? 1 : -1;
+        e.onGround = type !== 'ghost';
+        enemies.push(e);
+        openingEnemyPending = false;
+        return true;
+      };
+      if (teach) {
+        // The introductory zombie walks in along the opening corridor.
+        const y = groundY - e.height;
         for (let offset = 0; offset <= 256; offset += 32) {
-          const x = [clampX(center - offset), clampX(center + offset)].find(clear);
-          if (x === undefined) continue;
-          e.x = x;
-          e.dir = x < player.x ? 1 : -1;
-          e.onGround = type !== 'ghost';
-          enemies.push(e);
-          openingEnemyPending = false;
-          return true;
+          const x = Math.min(worldWidth - e.width - 32, spawnX + offset);
+          if (fair(x, y)) return place(x, y);
         }
+        return false;
       }
-      return false;
+      // Later enemies use the station's encounter points. Walkers need a
+      // ladder or drop route to the player's deck; ghosts fly but stay in
+      // the room's clear height.
+      const playerRegion = regionAt(player);
+      let best = null;
+      for (const point of layout.encounters) {
+        const dx = point.x - player.x;
+        if (Math.abs(dx) > 1400) continue;
+        let y = point.y - e.height;
+        if (type === 'ghost') {
+          const low = point.y - e.height - 12;
+          const high = ceilingAbove(point.x + e.width / 2, point.y) + 26;
+          y = Math.max(Math.min(high, low), Math.min(low, point.y - e.height - 90 - Math.random() * 140));
+        } else if (!routeExists(layout.regions[point.region], playerRegion)) continue;
+        if (!fair(point.x, y)) continue;
+        const score = Math.abs(dx - spawnDir * spawnOffset) + Math.abs(point.y - player.y) * 0.5 + Math.random() * 60;
+        if (!best || score < best.score) best = { x: point.x, y, score };
+      }
+      return best ? place(best.x, best.y) : false;
     }
 
     /**
      * Spawn gold and ammo pickups at an enemy's location. Always drops
      * gold and randomly drops an ammo crate for a random weapon type.
      */
+    // Drops fall from the enemy and settle 8 units above an accessible floor
+    // or catwalk (never on cover), the way they rested on the old deck.
+    function dropPickup(enemy, pickup) {
+      const startY = enemy.y + enemy.height - 20;
+      const centre = pickup.x + pickup.width / 2;
+      let best = null;
+      for (const surface of layout.dropSurfaces) {
+        if (surface.y < startY + 19.5) continue;
+        const reachX = Math.max(0, surface.x0 + 6 - centre, centre - (surface.x1 - 6));
+        // Prefer the first surface directly below, then the nearest one.
+        const score = reachX ? 10000 + reachX + (surface.y - startY) * 0.1 : surface.y;
+        if (!best || score < best.score) best = { surface, score };
+      }
+      if (!best) {
+        for (const surface of layout.dropSurfaces) {
+          const reachX = Math.max(0, surface.x0 - centre, centre - surface.x1) + Math.abs(surface.y - startY);
+          if (!best || reachX < best.score) best = { surface, score: reachX };
+        }
+      }
+      const surface = best.surface;
+      pickup.x = clamp(pickup.x, surface.x0, surface.x1 - pickup.width);
+      pickup.restY = surface.y - 20;
+      pickup.y = Math.min(startY, pickup.restY);
+      pickup.vy = 0;
+      pickups.push(pickup);
+    }
+
     function spawnPickups(enemy) {
       const goldByType = { zombie: [4, 7], ghost: [6, 10], robot: [5, 8], alien: [5, 9] };
       const [goldMin, goldMax] = goldByType[enemy.type] || [4, 7];
       const goldCount = goldMin + Math.floor(Math.random() * (goldMax - goldMin + 1));
-      pickups.push({ x: enemy.x, y: groundY - 20, width:12, height:12, type:'gold', value: goldCount });
+      dropPickup(enemy, { x: enemy.x, width:12, height:12, type:'gold', value: goldCount });
 
       const ammoDropChance = {
         easy:   { zombie: 0.7, ghost: 0.0, robot: 0.8, alien: 0.75 },
@@ -1247,13 +1326,13 @@
         const table = ENEMY_DROP_TABLES[enemy.type];
         const key = weightedChoice(table);
         if (key && WEAPONS[key]) {
-          pickups.push({ x: enemy.x + 16, y: groundY - 20, width:12, height:12, type:'ammo', ammoType:key, value: WEAPONS[key].ammoDrop });
+          dropPickup(enemy, { x: enemy.x + 16, width:12, height:12, type:'ammo', ammoType:key, value: WEAPONS[key].ammoDrop });
         }
       }
 
       const healthDropChance = SETTINGS.difficulty === 'easy' ? 0.22 : (SETTINGS.difficulty === 'hard' ? 0.1 : 0.16);
       if (Math.random() < healthDropChance) {
-        pickups.push({ x: enemy.x + 8, y: groundY - 20, width:12, height:12, type:'health', value: 5 });
+        dropPickup(enemy, { x: enemy.x + 8, width:12, height:12, type:'health', value: 5 });
       }
     }
 
@@ -1464,7 +1543,7 @@
         }
         b.x += b.vx;
         b.y += b.vy;
-        if (b.x < 0 || b.x > worldWidth || b.y < -50 || b.y > height + 50) {
+        if (b.x < 0 || b.x > worldWidth || b.y < -50 || b.y > worldHeight + 50) {
           projectiles.splice(i, 1);
         }
       }
@@ -1528,16 +1607,25 @@
       if (wasGrounded) coyoteTime = MOVEMENT.coyoteMs;
 
       const bottom = player.y + player.height;
-      const ladder = ladders.find(lad =>
-        player.x + player.width > lad.x && player.x < lad.x + lad.width &&
-        bottom >= lad.y && player.y < lad.y + lad.height
-      );
-      player.onLadder = Boolean(ladder);
+      const touching = lad => player.x + player.width > lad.x && player.x < lad.x + lad.width;
+      // Up+Fire aims upward and Down+Fire crouch-fires, so neither climbs.
+      const wantsUp = up && !aimingUp;
+      const wantsDown = down && !up && !held('z') && !shootTap;
+      // Ladders have explicit endpoints: up takes a ladder that continues
+      // above the feet, down one that continues below them, which is how
+      // the player descends from an upper landing.
+      let ladder = player.isClimbing ? player.ladder : null;
+      if (!ladder && wantsUp) ladder = ladders.find(lad => touching(lad) && bottom > lad.top + 0.5 && bottom <= lad.bottom + 0.5);
+      if (!ladder && wantsDown) ladder = ladders.find(lad => touching(lad) && bottom >= lad.top - 0.5 && bottom < lad.bottom - 0.5);
       const stand = { x: player.x, y: bottom - player.baseHeight, width: player.width, height: player.baseHeight };
       const canStand = !player.isDucking || !obstacles.some(obstacle => rectIntersect(stand, obstacle));
-      // Up+Fire aims upward. Down on the ground stays available for cover.
-      const climbIntent = !aimingUp && (up || (down && !held('z') && !shootTap && bottom < groundY));
-      player.isClimbing = Boolean(canStand && ladder && left === right && (climbIntent || player.isClimbing));
+      const climbIntent = wantsUp || (down && !held('z') && !shootTap);
+      // Stepping sideways off a ladder is only allowed where the body is clear
+      // of solids, so the player can never let go inside a deck slab.
+      const embedded = player.isClimbing && obstacles.some(obstacle => rectIntersect(player, obstacle));
+      const letGo = left !== right && !embedded;
+      player.isClimbing = Boolean(canStand && ladder && !letGo && (player.isClimbing || wantsUp || wantsDown));
+      player.ladder = player.isClimbing ? ladder : null;
       if (player.isClimbing) {
         jumpBuffer = 0;
         coyoteTime = 0;
@@ -1553,14 +1641,8 @@
       } else {
         const direction = Number(right) - Number(left);
         const speed = player.isDucking ? MOVEMENT.crouchSpeed : MOVEMENT.runSpeed;
-        const targetSpeed = direction * speed;
         if (direction) player.facing = direction;
-        const change = targetSpeed - player.vx;
-        const slowing = !direction || Math.sign(player.vx) === direction && Math.abs(player.vx) > speed;
-        const acceleration = wasGrounded
-          ? (slowing ? MOVEMENT.groundBrake : MOVEMENT.groundAccel)
-          : (slowing ? MOVEMENT.airBrake : MOVEMENT.airAccel);
-        player.vx += Math.sign(change) * Math.min(Math.abs(change), acceleration);
+        window.SpaceStation.steer(player, direction, speed, wasGrounded, MOVEMENT);
         if (jumpBuffer > 0 && coyoteTime > 0 && canStand) {
           player.vy = -MOVEMENT.jumpSpeed;
           jumpBuffer = 0;
@@ -1576,44 +1658,29 @@
         if (SETTINGS.sfx) window.combatAudio?.play(key + 'Reload', 'reload', 0.42);
       }
 
-      player.onGround = false;
-      const prevX = player.x;
-      player.x = Math.max(0, Math.min(worldWidth - player.width, player.x + player.vx));
-      if (!player.isClimbing) {
-        for (const ob of obstacles) {
-          if (!rectIntersect(player, ob)) continue;
-          if (prevX + player.width <= ob.x) player.x = ob.x - player.width;
-          else if (prevX >= ob.x + ob.width) player.x = ob.x + ob.width;
-          else continue;
-          player.vx = 0;
+      if (player.isClimbing) {
+        // Within the ladder span collisions are skipped: the only solid the
+        // validated climb column crosses is the landing slab at the top.
+        player.onGround = false;
+        const target = ladder.x + ladder.width / 2 - player.width / 2;
+        player.x += clamp(target - player.x, -2, 2);
+        player.y += player.vy;
+        const feet = player.y + player.height;
+        if (player.vy < 0 && feet <= ladder.top) {
+          player.y = ladder.top - player.height;
+          player.isClimbing = false;
+          player.ladder = null;
+          player.onGround = true;
+          player.vy = 0;
+        } else if (player.vy > 0 && feet >= ladder.bottom) {
+          player.y = ladder.bottom - player.height;
+          player.isClimbing = false;
+          player.ladder = null;
+          player.onGround = true;
+          player.vy = 0;
         }
-      }
-
-      const prevY = player.y;
-      player.y += player.vy;
-      if (player.isClimbing && up && climbIntent && player.y + player.height <= ladder.y) {
-        player.y = ladder.y - player.height;
-        player.isClimbing = false;
-        player.onGround = true;
-        player.vy = 0;
-      } else if (!player.isClimbing) {
-        for (const ob of obstacles) {
-          if (player.x + player.width <= ob.x || player.x >= ob.x + ob.width) continue;
-          if (prevY + player.height <= ob.y && player.y + player.height >= ob.y) {
-            player.y = ob.y - player.height;
-            player.vy = 0;
-            player.onGround = true;
-          } else if (prevY >= ob.y + ob.height && player.y < ob.y + ob.height) {
-            player.y = ob.y + ob.height;
-            player.vy = 0;
-          }
-        }
-      }
-      if (player.y + player.height >= groundY) {
-        player.y = groundY - player.height;
-        player.vy = 0;
-        player.onGround = true;
-        if (down) player.isClimbing = false;
+      } else {
+        window.SpaceStation.moveBody(player, obstacles, physicsWorld);
       }
 
       const cooldown = player.shootCooldown - dt;
@@ -1693,10 +1760,14 @@
       const rising = !player.isClimbing && player.vy < 0;
       const head = rising ? player.y - player.vy * player.vy / (2 * MOVEMENT.gravity) : player.y;
       const feet = player.y + player.height;
-      let y = Math.min(restViewY, head - CAMERA.headroom);
+      // Rest with the supporting deck where the lower deck sat at the old
+      // single-deck framing. The support only changes on landing or while
+      // climbing, so ordinary jumps stay inside the dead zone.
+      const rest = clamp(camera.support + 32 - viewHeight, 0, maxViewY);
+      let y = Math.min(rest, head - CAMERA.headroom);
       y = Math.max(y, nextLanding() + CAMERA.footroom - viewHeight);
       y = Math.min(y, head - 24);
-      return clamp(Math.max(y, feet + 8 - viewHeight), 0, restViewY);
+      return clamp(Math.max(y, feet + 8 - viewHeight), 0, maxViewY);
     }
 
     function snapCamera() {
@@ -1704,11 +1775,13 @@
       camera.lookVelocity = 0;
       camera.lead = 0;
       camera.yVelocity = 0;
+      camera.support = player.y + player.height;
       camera.x = cameraTargetX();
       camera.y = cameraTargetY();
     }
 
     function updateCamera(dt) {
+      if (player.onGround || player.isClimbing) camera.support = player.y + player.height;
       [camera.look, camera.lookVelocity] = smoothDamp(camera.look, camera.lookVelocity, player.facing, CAMERA.turnMs, dt);
       const leadTarget = clamp(player.vx / MOVEMENT.runSpeed, -1, 1) * CAMERA.lead;
       camera.lead += (leadTarget - camera.lead) * settle(dt, CAMERA.leadMs);
@@ -1719,7 +1792,7 @@
       camera.x = clamp(camera.x, centre + 24 - viewWidth, centre - 24);
       camera.y = clamp(camera.y, player.y + player.height + 4 - viewHeight, player.y + player.height - 52);
       camera.x = clamp(camera.x, 0, worldWidth - viewWidth);
-      camera.y = clamp(camera.y, 0, restViewY);
+      camera.y = clamp(camera.y, 0, maxViewY);
     }
 
     // True when a rectangle is inside the unshaken view, shrunk by inset.
@@ -1756,7 +1829,10 @@
       updateCamera(dt);
       if (!wasGrounded && player.onGround) lastLanding = elapsedTime;
       fallenSprites = fallenSprites.filter(enemy => elapsedTime - enemy.at < ENEMY_FALL[enemy.type]);
-      // Update enemies against the unshaken view.
+      // Update enemies against the unshaken view. Walkers route to the
+      // player's deck by ladders and safe drops.
+      const playerRegion = regionAt(player);
+      const playerCeiling = ceilingAbove(player.x + player.width / 2, player.y);
       for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
         e.animTime += dt;
@@ -1791,14 +1867,38 @@
           }
           e.phase += dt * 0.0017;
           const bob = Math.sin(e.phase * 4) * 22;
-          const hover = absDx < 154 ? playerMidY - e.height / 2 - 8 : groundY - e.height - 115;
+          // Ghosts phase through decks toward the player's level, hovering
+          // below the ceiling of the player's room.
+          const farHover = camera.support - e.height - 115;
+          const hover = Math.max(playerCeiling + 26, absDx < 154 ? playerMidY - e.height / 2 - 8 : farHover);
           if (!closeWindup) e.baseY += (hover - e.baseY) * 0.032;
           if (!closeWindup) e.x += wantsStrike ? closeAttack.rush * e.targetDir : e.speed * e.dir;
-          e.y = e.baseY + bob;
-          if (e.y > groundY - e.height - 12) e.y = groundY - e.height - 12;
+          e.y = clamp(e.baseY + bob, 4, groundY - e.height - 12);
+        } else if (e.ladder) {
+          // Climbing follows the ladder's own span, then steps off at its end.
+          const lad = e.ladder;
+          e.x = lad.x + lad.width / 2 - e.width / 2;
+          e.y += e.climbDir * (e.type === 'alien' ? 1.7 : (e.type === 'robot' ? 1.35 : 1.2));
+          e.vy = 0;
+          e.onGround = false;
+          const feet = e.y + e.height;
+          const end = e.climbDir < 0 ? (feet <= lad.top ? lad.top : null) : (feet >= lad.bottom ? lad.bottom : null);
+          if (end !== null) {
+            e.y = end - e.height;
+            e.ladder = null;
+            e.navEdge = null;
+            e.onGround = true;
+            e.pathRecalcTimer = 0;
+          }
         } else {
           if (e.pathRecalcTimer <= 0) {
-            if (e.type === 'zombie') {
+            const region = regionAt(e);
+            e.navEdge = e.onGround && region !== playerRegion ? nextNavEdge(region, playerRegion) : null;
+            e.offRoute = region !== playerRegion && !e.navEdge;
+            if (e.navEdge) {
+              const goal = e.navEdge.kind === 'drop' ? e.navEdge.x + e.navEdge.dir * 30 : e.navEdge.x;
+              e.dir = goal > e.x + e.width / 2 ? 1 : -1;
+            } else if (e.type === 'zombie') {
               e.dir = dx < 0 ? -1 : 1;
             } else {
               const prefer = e.preferredRange;
@@ -1808,63 +1908,66 @@
             }
             e.pathRecalcTimer = 180 + Math.random() * 180;
           }
-          if (e.changeDirTimer <= 0 && Math.random() < 0.25) {
+          if (!e.navEdge && e.changeDirTimer <= 0 && Math.random() < 0.25) {
             e.dir *= -1;
             e.changeDirTimer = 1000 + Math.random() * 1000;
           }
 
           if (!braced && !closeWindup) {
-            e.x += wantsStrike ? closeAttack.rush * e.targetDir : e.speed * e.dir;
-          }
-
-          let climbing = false;
-          if (ranged && !braced) {
-            for (let li = 0; li < ladders.length; li++) {
-              const lad = ladders[li];
-              const closeToLadder = Math.abs((e.x + e.width / 2) - (lad.x + lad.width / 2)) < 18;
-              const inVerticalSpan = e.y + e.height > lad.y && e.y < lad.y + lad.height;
-              const wantVertical = Math.abs(playerMidY - enemyMidY) > 30;
-              if (closeToLadder && inVerticalSpan && wantVertical) {
-                e.x = lad.x + lad.width / 2 - e.width / 2;
-                const climbSpeed = e.type === 'alien' ? 1.7 : 1.35;
-                e.vy = playerMidY < enemyMidY ? -climbSpeed : climbSpeed;
-                climbing = true;
-                break;
+            const ladderEdge = e.navEdge?.kind === 'ladder' ? e.navEdge : null;
+            if (ladderEdge) {
+              const offset = ladderEdge.x - (e.x + e.width / 2);
+              e.x += clamp(offset, -e.speed, e.speed);
+              if (Math.abs(offset) < 1.5 && e.onGround) {
+                e.ladder = ladderEdge.ladder;
+                e.climbDir = ladderEdge.dir;
               }
+            } else {
+              e.x += wantsStrike ? closeAttack.rush * e.targetDir : e.speed * e.dir;
             }
           }
 
-          if (!climbing) e.vy += 0.25;
-          e.y += e.vy;
-          e.onGround = false;
-          let hop = false;
+          if (!e.ladder) {
+            e.vy += 0.25;
+            e.y += e.vy;
+            e.onGround = false;
+            let hop = false;
 
-          for (let oi = 0; oi < obstacles.length; oi++) {
-            const ob = obstacles[oi];
-            if (prevY + e.height <= ob.y && e.y + e.height >= ob.y && e.x + e.width > ob.x && e.x < ob.x + ob.width) {
-              e.y = ob.y - e.height;
+            for (let oi = 0; oi < obstacles.length; oi++) {
+              const ob = obstacles[oi];
+              const overX = e.x + e.width > ob.x && e.x < ob.x + ob.width;
+              if (overX && prevY + e.height <= ob.y && e.y + e.height >= ob.y) {
+                e.y = ob.y - e.height;
+                e.vy = 0;
+                e.onGround = true;
+              } else if (overX && prevY >= ob.y + ob.height && e.y < ob.y + ob.height) {
+                // Hops stop against deck undersides.
+                e.y = ob.y + ob.height;
+                e.vy = 0;
+              }
+              if (rectIntersect(e, ob)) {
+                // Zombies and aliens hop low cover; bulkheads turn everyone back.
+                const canHop = ob.role === 'cover' && wasEnemyGrounded && !braced && !closeWindup &&
+                  (e.type === 'zombie' || e.type === 'alien');
+                if (prevX + e.width <= ob.x) {
+                  e.x = ob.x - e.width;
+                  if (canHop) hop = true;
+                  else e.dir = -1;
+                } else if (prevX >= ob.x + ob.width) {
+                  e.x = ob.x + ob.width;
+                  if (canHop) hop = true;
+                  else e.dir = 1;
+                }
+              }
+            }
+
+            if (!e.onGround && e.y + e.height >= groundY) {
+              e.y = groundY - e.height;
               e.vy = 0;
               e.onGround = true;
             }
-            if (rectIntersect(e, ob)) {
-              if (prevX + e.width <= ob.x) {
-                e.x = ob.x - e.width;
-                if (wasEnemyGrounded && !braced && !closeWindup && (e.type === 'zombie' || e.type === 'alien')) hop = true;
-                else e.dir = -1;
-              } else if (prevX >= ob.x + ob.width) {
-                e.x = ob.x + ob.width;
-                if (wasEnemyGrounded && !braced && !closeWindup && (e.type === 'zombie' || e.type === 'alien')) hop = true;
-                else e.dir = 1;
-              }
-            }
+            if (hop) e.vy = -5.6;
           }
-
-          if (!e.onGround && e.y + e.height >= groundY) {
-            e.y = groundY - e.height;
-            e.vy = 0;
-            e.onGround = true;
-          }
-          if (hop) e.vy = -5.6;
         }
 
         const visible = inCameraView(e, 20);
@@ -1917,7 +2020,10 @@
         }
         e.x = Math.max(0, Math.min(worldWidth - e.width, e.x));
 
-        if (e.x + e.width < player.x - width * 2 || e.x > player.x + width * 3) {
+        // Walkers with no route to the player's deck give up their slot once
+        // they have been out of view for a while.
+        e.offRouteTimer = e.offRoute && !e.ladder && !inCameraView(e) ? e.offRouteTimer + dt : 0;
+        if (e.x + e.width < player.x - width * 2 || e.x > player.x + width * 3 || e.offRouteTimer > 4000) {
           enemies.splice(i, 1);
           continue;
         }
@@ -1989,16 +2095,22 @@
             const baseDamage = e.type === 'zombie' ? 5 : (e.type === 'ghost' ? 4 : (e.type === 'robot' ? 6 : 5));
             if (damagePlayer(baseDamage)) {
               const push = e.type === 'robot' ? 12 : 9;
+              const pushedFrom = player.x;
               player.x = Math.max(0, Math.min(worldWidth - player.width, player.x + (player.x < e.x ? -push : push)));
+              if (!player.isClimbing && obstacles.some(ob => rectIntersect(player, ob))) player.x = pushedFrom;
               e.contactDamageTimer = closeAttack?.recovery || 780;
             }
           }
         }
       }
       if (gameState !== 'play') return;
-      // Pickups vs player
+      // Pickups settle onto their surface, then are collected on contact.
       for (let i=pickups.length-1; i>=0; i--) {
         const p = pickups[i];
+        if (p.y < p.restY) {
+          p.vy = Math.min(9, p.vy + MOVEMENT.gravity);
+          p.y = Math.min(p.restY, p.y + p.vy);
+        }
         if (rectIntersect(p, player)) {
           if (p.type === 'gold') {
             player.gold += p.value;
@@ -2199,7 +2311,7 @@
     // barely change while the near truss tracks the foreground.
     function drawStation(view) {
       const screenX = view.x * CAMERA.zoom;
-      const rise = (restViewY - view.y) * CAMERA.zoom;
+      const rise = (maxViewY - view.y) * CAMERA.zoom;
       if (!station.distant) {
         if (bgLoaded) drawLayer(legacyBackground.image, screenX * 0.12);
         else {
@@ -2254,39 +2366,84 @@
         y + h >= view.y - margin && y <= view.y + viewHeight + margin;
     }
 
+    // Tile a terrain texture along a long solid so it never stretches.
+    function drawTiled(type, x, y, w, h, tileWidth) {
+      for (let tx = x, tile = 0; tx < x + w; tx += tileWidth, tile++) {
+        const span = Math.min(tileWidth, x + w - tx) + 0.5;
+        drawTerrainTile(type, tx, y, span, h, tile % 2 !== 0);
+      }
+    }
+
+    // Bulkheads reuse the deck plating turned on end.
+    function drawWall(ob) {
+      if (!station.terrain) return;
+      const [sx, sy, sw, sh] = TERRAIN.deckBody;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(ob.x, ob.y, ob.width, ob.height);
+      ctx.clip();
+      ctx.translate(ob.x + ob.width, ob.y);
+      ctx.rotate(Math.PI / 2);
+      for (let ty = 0; ty < ob.height; ty += 96) {
+        ctx.drawImage(station.terrain, sx, sy, sw, sh, ty, 0, 96.5, ob.width);
+      }
+      ctx.restore();
+    }
+
     // Drawn in world units under the camera transform.
     function drawTerrain(view) {
       const left = view.x;
       const right = view.x + viewWidth;
+      const deckDepth = worldHeight - groundY;
       ctx.fillStyle = '#101b2b';
-      ctx.fillRect(left, groundY, viewWidth, height - groundY);
+      ctx.fillRect(left, groundY, viewWidth, deckDepth);
       const tileWidth = 128;
       for (let tile = Math.floor(left / tileWidth); tile * tileWidth < right; tile++) {
         // A half-unit overlap hides antialiased seams between scaled tiles.
         const x = tile * tileWidth;
-        drawTerrainTile('deckBody', x, groundY + 6, tileWidth + 0.5, height - groundY - 6, tile % 2 !== 0);
+        drawTerrainTile('deckBody', x, groundY + 6, tileWidth + 0.5, deckDepth - 6, tile % 2 !== 0);
         drawTerrainTile('deckCap', x, groundY, tileWidth + 0.5, 7, tile % 2 !== 0);
       }
-      if (left < 51) drawTerrainTile('deckEnd', 0, groundY, 51, height - groundY, true);
-      if (right > worldWidth - 51) drawTerrainTile('deckEnd', worldWidth - 51, groundY, 51, height - groundY);
+      if (left < 51) drawTerrainTile('deckEnd', 0, groundY, 51, deckDepth, true);
+      if (right > worldWidth - 51) drawTerrainTile('deckEnd', worldWidth - 51, groundY, 51, deckDepth);
 
+      for (const ob of obstacles) {
+        if (ob.role !== 'wall' || !onScreen(view, ob.x, ob.y, ob.width, ob.height)) continue;
+        ctx.fillStyle = '#1a2738';
+        ctx.fillRect(ob.x, ob.y, ob.width, ob.height);
+        drawWall(ob);
+        ctx.fillStyle = 'rgba(178,205,224,0.4)';
+        ctx.fillRect(ob.x, ob.y, 1 / CAMERA.zoom, ob.height);
+        ctx.fillRect(ob.x + ob.width - 1 / CAMERA.zoom, ob.y, 1 / CAMERA.zoom, ob.height);
+      }
+      // Ladders run between their endpoints; the rails rise above the top
+      // landing to mark where the player can climb back down.
       for (const ladder of ladders) {
-        if (!onScreen(view, ladder.x, ladder.y, ladder.width, ladder.height)) continue;
+        const top = ladder.top - 12;
+        const span = ladder.bottom - top;
+        if (!onScreen(view, ladder.x, top, ladder.width, span)) continue;
         const x = ladder.x;
-        if (drawTerrainTile('ladder', x, ladder.y, ladder.width, ladder.height)) continue;
+        if (drawTerrainTile('ladder', x, top, ladder.width, span)) continue;
         ctx.fillStyle = '#65788a';
-        ctx.fillRect(x, ladder.y, 3, ladder.height);
-        ctx.fillRect(x + ladder.width - 3, ladder.y, 3, ladder.height);
-        for (let rung = 4; rung < ladder.height; rung += 8) {
-          ctx.fillRect(x + 3, ladder.y + rung, ladder.width - 6, 2);
+        ctx.fillRect(x, top, 3, span);
+        ctx.fillRect(x + ladder.width - 3, top, 3, span);
+        for (let rung = 4; rung < span; rung += 8) {
+          ctx.fillRect(x + 3, top + rung, ladder.width - 6, 2);
         }
       }
       for (const obstacle of obstacles) {
+        if (obstacle.role === 'wall' || obstacle.type === 'deck') continue;
         if (!onScreen(view, obstacle.x, obstacle.y, obstacle.width, obstacle.height)) continue;
         const x = obstacle.x;
-        ctx.fillStyle = TERRAIN_COLOR[obstacle.type];
+        ctx.fillStyle = TERRAIN_COLOR[obstacle.type] || TERRAIN_COLOR.platform;
         ctx.fillRect(x, obstacle.y, obstacle.width, obstacle.height);
-        drawTerrainTile(obstacle.type, x, obstacle.y, obstacle.width, obstacle.height);
+        if (obstacle.type === 'slab' || obstacle.type === 'catwalk') {
+          // Long decks tile the catwalk truss with a deck cap on top.
+          drawTiled('platform', x, obstacle.y, obstacle.width, obstacle.height, 128);
+          if (obstacle.type === 'slab') drawTiled('deckCap', x, obstacle.y, obstacle.width, 4, 128);
+        } else {
+          drawTerrainTile(obstacle.type, x, obstacle.y, obstacle.width, obstacle.height);
+        }
         ctx.fillStyle = 'rgba(178,205,224,0.66)';
         ctx.fillRect(x, obstacle.y, obstacle.width, 1 / CAMERA.zoom);
       }
