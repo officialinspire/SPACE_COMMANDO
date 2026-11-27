@@ -59,6 +59,9 @@
   let bank;
   let output;
   let fireBus;
+  let master;
+  // Sound-effects volume (0-1) from the game's settings.
+  let masterLevel = 1;
   let unlocked = false;
   const fetchBytes = path => fetch(new URL(path, document.baseURI))
     .then(response => response.ok ? response.arrayBuffer() : null).catch(() => null);
@@ -88,7 +91,10 @@
         output.ratio.value = 12;
         output.attack.value = 0.003;
         output.release.value = 0.12;
-        output.connect(context.destination);
+        master = context.createGain();
+        master.gain.value = masterLevel;
+        output.connect(master);
+        master.connect(context.destination);
         fireBus = context.createGain();
         fireBus.connect(output);
         bankBytes.then(bytes => bytes && decode(bytes)).then(buffer => { bank = buffer; }, () => {});
@@ -169,6 +175,11 @@
 
   window.combatAudio = {
     play,
+    // Sound-effects volume, applied after the limiter.
+    setVolume(level) {
+      masterLevel = Math.max(0, Math.min(1, level));
+      if (master) master.gain.setValueAtTime(masterLevel, context.currentTime);
+    },
     // Which source a cue would use right now: 'clip', 'bank' or null.
     source: name => clips[name] ? 'clip' : (bank && cues[name] ? 'bank' : null),
     // Active voices, optionally for one group (diagnostics and tests).

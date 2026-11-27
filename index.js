@@ -197,20 +197,26 @@
   // last frame is the recovery. The values below tune behaviour only.
   //   body      physics box [w, h]; hurt projectile hit area [w, h] from the art
   //   economy   existing family whose gold, ammo and health drops they use
-  //   audio     existing family whose warn, attack, hurt and defeat cues they use
+  //   audio     existing family whose cues they use when a cue set has no entry
+  //   cues      per-event cue names: field-sfx clips where a recording fits the
+  //             attack (carbine, laser, armour damage), bank cues otherwise
   const EXPANSION = {
     'cybercity-police': { stage: 'cyber', kind: 'projectile', body: [32, 32], hurt: [28, 50], health: 4, speed: 0.9,
       preferredRange: 230, reach: 520, damage: 7, shotSpeed: 4.6, firstDelay: [1200, 700], cooldown: [1900, 900],
-      economy: 'robot', audio: 'robot', climbs: true },
+      economy: 'robot', audio: 'robot', climbs: true,
+      cues: { Warn: 'robotWarn', Attack: 'rifleFire', Hurt: 'robotHurt', Down: 'robotDown' } },
     'cybercity-thug': { stage: 'cyber', kind: 'dash', body: [32, 32], hurt: [30, 52], health: 4, speed: 1.15,
       preferredRange: 36, reach: 70, damage: 7, dashSpeed: 8.5, firstDelay: [600, 600], cooldown: [1400, 600],
-      economy: 'zombie', audio: 'zombie', climbs: true, hops: true },
+      economy: 'zombie', audio: 'zombie', climbs: true, hops: true,
+      cues: { Warn: 'zombieWarn', Attack: 'robotAttack', Hurt: 'zombieHurt', Down: 'zombieDown' } },
     'jungle-dinosaur': { stage: 'jungle', kind: 'pounce', body: [64, 40], hurt: [84, 52], health: 7, speed: 1.0,
       preferredRange: 40, reach: 190, damage: 9, pounce: [4.2, -4.6], firstDelay: [700, 600], cooldown: [1800, 700],
-      vulnerable: 2, economy: 'alien', audio: 'alien', climbs: false, hops: true },
+      vulnerable: 2, economy: 'alien', audio: 'alien', climbs: false, hops: true,
+      cues: { Warn: 'alienWarn', Attack: 'alienAttack', Hurt: 'alienHurt', Down: 'alienDown' } },
     'jungle-dark-elf': { stage: 'jungle', kind: 'laser', body: [32, 32], hurt: [28, 50], health: 3, speed: 1.05,
       preferredRange: 210, reach: 520, damage: 8, firstDelay: [1100, 700], cooldown: [2100, 900],
-      economy: 'robot', audio: 'alien', climbs: true }
+      economy: 'robot', audio: 'alien', climbs: true,
+      cues: { Warn: 'ghostWarn', Attack: 'laserFire', Hurt: 'ghostHurt', Down: 'ghostDown' } }
   };
   for (const type of Object.keys(EXPANSION)) ENEMY_FALL[type] = 700;
   const expansionArt = {};
@@ -376,8 +382,13 @@
     effects: 'system',
     sfx: true,
     haptics: true,
-    musicVolume: 0.6
+    musicVolume: 0.6,
+    // Independent levels: 0 Off, 1 Low, 2 Medium, 3 High (the original mix).
+    musicLevel: 3,
+    sfxLevel: 3
   };
+  const AUDIO_LEVELS = [0, 0.35, 0.7, 1];
+  const AUDIO_LEVEL_NAMES = ['Off', 'Low', 'Medium', 'High'];
 
   const SETTING_KEYS = ['difficulty', 'audio', 'particles', 'effects', 'sfx', 'haptics'];
   const hapticsSupported = typeof navigator.vibrate === 'function';
@@ -398,13 +409,13 @@
             fallback: 'menu_background_music.mp3', fallbackTail: 0, fallbackGain: 1 },
     play: { src: 'Space Station_ Level 1 Ambient.mp3', tail: 1.67, gain: 0.59,
             fallback: 'game-background-music.mp3', fallbackTail: 6.9, fallbackGain: 1 },
-    // Stage themes fall back to the station theme if they fail to load.
+    // Stage themes fall back to the original game music if they fail to load.
     cyber: { src: 'Cyber City_ Urban Warfare.mp3', tail: 2.72, gain: 0.8,
-             fallback: 'Space Station_ Level 1 Ambient.mp3', fallbackTail: 1.67, fallbackGain: 0.59 },
+             fallback: 'game-background-music.mp3', fallbackTail: 6.9, fallbackGain: 1 },
     jungle: { src: 'Jungle Planet_ Level Theme.mp3', tail: 1.81, gain: 0.78,
-              fallback: 'Space Station_ Level 1 Ambient.mp3', fallbackTail: 1.67, fallbackGain: 0.59 },
+              fallback: 'game-background-music.mp3', fallbackTail: 6.9, fallbackGain: 1 },
     desert: { src: 'Desert Ruins_ Ancient Temple.mp3', tail: 1.25, gain: 0.68,
-              fallback: 'Space Station_ Level 1 Ambient.mp3', fallbackTail: 1.67, fallbackGain: 0.59 }
+              fallback: 'game-background-music.mp3', fallbackTail: 6.9, fallbackGain: 1 }
   };
   const MUSIC_FADE_MS = 700;
 
@@ -435,6 +446,7 @@
     if (a) {
       a.loop = false;
       a.volume = 0.6;
+      a.baseVolume = 0.6;
     }
   });
 
@@ -447,7 +459,15 @@
   };
   const nextShotVoice = { pistol: 0, rifle: 0, shotgun: 0, laser: 0 };
   for (const key of ['rifle', 'laser']) {
-    shotVoices[key].forEach(voice => { voice.volume = key === 'rifle' ? 0.28 : 0.22; });
+    shotVoices[key].forEach(voice => { voice.volume = voice.baseVolume = key === 'rifle' ? 0.28 : 0.22; });
+  }
+
+  // Apply the Sound effects level to Web Audio cues and the HTML clips.
+  function applySfxLevel() {
+    const level = AUDIO_LEVELS[SETTINGS.sfxLevel];
+    window.combatAudio?.setVolume(level);
+    const clips = [jumpSfx, selectSfx, playerDamageSfx, enemyDeathSfx, ...Object.values(shotVoices).flat()];
+    for (const clip of clips) clip.volume = (clip.baseVolume ?? 0.6) * level;
   }
 
   function playShot(key) {
@@ -565,7 +585,7 @@
       musicLast = now;
       const wanted = wantedMusic();
       for (const track of Object.values(music)) {
-        const target = track.name === wanted ? Math.min(1, track.gain * SETTINGS.musicVolume) : 0;
+        const target = track.name === wanted ? Math.min(1, track.gain * SETTINGS.musicVolume * AUDIO_LEVELS[SETTINGS.musicLevel]) : 0;
         const step = dt / MUSIC_FADE_MS;
         // A track that is not playing yet (blocked or buffering) waits at zero, so it still fades in.
         if (target > track.level && !track.audio.paused) track.level = Math.min(target, track.level + step);
@@ -812,17 +832,22 @@
             if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') idx = (idx + difficulties.length - 1) % difficulties.length;
             else idx = (idx + 1) % difficulties.length;
             SETTINGS.difficulty = difficulties[idx];
-          } else if (key === 'audio') {
-            // Toggle music; the music director follows on the next frame.
-            SETTINGS.audio = !SETTINGS.audio;
+          } else if (key === 'audio' || key === 'sfx') {
+            // Music and Sound effects step independently through Off/Low/Medium/High.
+            const levelKey = key === 'audio' ? 'musicLevel' : 'sfxLevel';
+            const step = e.key === 'ArrowLeft' ? -1 : 1;
+            SETTINGS[levelKey] = (SETTINGS[levelKey] + step + AUDIO_LEVELS.length) % AUDIO_LEVELS.length;
+            SETTINGS[key] = SETTINGS[levelKey] > 0;
+            if (key === 'sfx') {
+              applySfxLevel();
+              if (!SETTINGS.sfx) {
+                stopEffects();
+                selectSfx.pause();
+              }
+            }
+            // The music director follows the music level on the next frame.
           } else if (key === 'particles') {
             SETTINGS.particles = !SETTINGS.particles;
-          } else if (key === 'sfx') {
-            SETTINGS.sfx = !SETTINGS.sfx;
-            if (!SETTINGS.sfx) {
-              stopEffects();
-              selectSfx.pause();
-            }
           } else if (key === 'haptics') {
             if (SETTINGS.haptics) clearShotFeedback();
             SETTINGS.haptics = !SETTINGS.haptics;
@@ -2130,8 +2155,9 @@
       const pan = Math.max(-0.72, Math.min(0.72, offset / 330));
       const gain = (ENEMY_CUE_LEVEL[cue] ?? 0.42) / (1 + Math.abs(offset) / 720);
       const group = cue === 'Hurt' ? 'hurt' : (cue === 'Move' ? 'move' : 'enemy');
-      const voice = EXPANSION[enemy.type]?.audio || enemy.type;
-      if (!window.combatAudio?.play(voice + cue, group, gain, pan) && cue === 'Down') {
+      const def = EXPANSION[enemy.type];
+      const name = def?.cues?.[cue] ?? (def?.audio || enemy.type) + cue;
+      if (!window.combatAudio?.play(name, group, gain, pan) && cue === 'Down') {
         playLegacyEffect(enemyDeathSfx);
       }
     }
@@ -3716,7 +3742,7 @@
         const effectText = SETTINGS.effects === 'system' ? (effectsReduced() ? 'System · Reduced' : 'System · Full') :
           SETTINGS.effects === 'full' ? 'Full' : 'Reduced';
         const hapticText = hapticsSupported ? (SETTINGS.haptics ? 'On' : 'Off') : (SETTINGS.haptics ? 'On · not supported' : 'Off');
-        const values = [SETTINGS.difficulty, SETTINGS.audio ? 'On' : 'Off', SETTINGS.particles ? 'On' : 'Off', effectText, SETTINGS.sfx ? 'On' : 'Off', hapticText];
+        const values = [SETTINGS.difficulty, AUDIO_LEVEL_NAMES[SETTINGS.musicLevel], SETTINGS.particles ? 'On' : 'Off', effectText, AUDIO_LEVEL_NAMES[SETTINGS.sfxLevel], hapticText];
         menuRows.forEach(({ value }, i) => { value.textContent = values[i]; });
       } else if (mode === 'shop') {
         shopGold.textContent = `${player.gold} gold`;
