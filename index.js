@@ -190,6 +190,50 @@
   const ENEMY_COLOR = { zombie: '#00aa00', ghost: '#aaaaff', robot: '#ff8844', alien: '#55ff55' };
   const ENEMY_FALL = { zombie: 540, ghost: 440, robot: 540, alien: 540 };
 
+  // Expansion enemies (assets/sprites/expansion-enemies/manifest.json). Frame
+  // rectangles, origins, muzzles, contact points, draw scale and the special
+  // clip's frame timing come from the manifest. Frames 0 and 1 of the special
+  // clip are the windup, triggerFrame (2) resolves the attack once, and the
+  // last frame is the recovery. The values below tune behaviour only.
+  //   body      physics box [w, h]; hurt projectile hit area [w, h] from the art
+  //   economy   existing family whose gold, ammo and health drops they use
+  //   audio     existing family whose warn, attack, hurt and defeat cues they use
+  const EXPANSION = {
+    'cybercity-police': { stage: 'cyber', kind: 'projectile', body: [32, 32], hurt: [28, 50], health: 4, speed: 0.9,
+      preferredRange: 230, reach: 520, damage: 7, shotSpeed: 4.6, firstDelay: [1200, 700], cooldown: [1900, 900],
+      economy: 'robot', audio: 'robot', climbs: true },
+    'cybercity-thug': { stage: 'cyber', kind: 'dash', body: [32, 32], hurt: [30, 52], health: 4, speed: 1.15,
+      preferredRange: 36, reach: 70, damage: 7, dashSpeed: 8.5, firstDelay: [600, 600], cooldown: [1400, 600],
+      economy: 'zombie', audio: 'zombie', climbs: true, hops: true },
+    'jungle-dinosaur': { stage: 'jungle', kind: 'pounce', body: [64, 40], hurt: [84, 52], health: 7, speed: 1.0,
+      preferredRange: 40, reach: 190, damage: 9, pounce: [4.2, -4.6], firstDelay: [700, 600], cooldown: [1800, 700],
+      vulnerable: 2, economy: 'alien', audio: 'alien', climbs: false, hops: true },
+    'jungle-dark-elf': { stage: 'jungle', kind: 'laser', body: [32, 32], hurt: [28, 50], health: 3, speed: 1.05,
+      preferredRange: 210, reach: 520, damage: 8, firstDelay: [1100, 700], cooldown: [2100, 900],
+      economy: 'robot', audio: 'alien', climbs: true }
+  };
+  for (const type of Object.keys(EXPANSION)) ENEMY_FALL[type] = 700;
+  const expansionArt = {};
+  const expansionManifestURL = new URL('assets/sprites/expansion-enemies/manifest.json', document.baseURI);
+  fetch(expansionManifestURL).then(r => r.ok ? r.json() : null).then(manifest => {
+    for (const [type, entry] of Object.entries(manifest?.enemies || {})) {
+      if (!EXPANSION[type] || !entry.clips?.special || !entry.specialAttack) continue;
+      const sheet = loadSpriteImage(new URL(entry.sheet, expansionManifestURL));
+      sheet.ready.then(() => {
+        const special = entry.clips.special;
+        const trigger = entry.specialAttack.triggerFrame;
+        const at = special.slice(0, trigger).reduce((sum, f) => sum + f.ms, 0);
+        expansionArt[type] = {
+          image: sheet.image, scale: entry.drawScale, clips: entry.clips, trigger,
+          // Windup ends and the attack resolves here; recovery follows the trigger frame.
+          triggerAt: at, triggerEnd: at + special[trigger].ms,
+          total: special.reduce((sum, f) => sum + f.ms, 0)
+        };
+      }, () => {});
+    }
+  }).catch(() => {});
+
+
   // Packed records contain x, y, width, height, origin x/y, duration, and optional muzzle x/y.
   function clipFrame(atlas, name, time = 0, loop = false) {
     const frames = atlases[atlas]?.clips[name];
@@ -1137,6 +1181,8 @@
       shotFlashes = [];
       particles = [];
       fallenSprites = [];
+      beams = [];
+      slashes = [];
       damageOverlayTimer = 0;
       openingEnemyPending = index === 0;
       spawnCooldown = index === 0 ? 900 : 1800;
@@ -1191,7 +1237,7 @@
     }
 
     // The first nav edge on a route from one region to another.
-    function nextNavEdge(from, to) {
+    function nextNavEdge(from, to, ladders = true) {
       if (!from || !to || from === to) return null;
       const first = new Map([[from.id, null]]);
       const queue = [from.id];
@@ -1199,7 +1245,7 @@
         const node = queue.shift();
         if (node === to.id) return first.get(node);
         for (const edge of layout.navEdges[node]) {
-          if (first.has(edge.to)) continue;
+          if (first.has(edge.to) || (!ladders && edge.kind === 'ladder')) continue;
           first.set(edge.to, first.get(node) || edge);
           queue.push(edge.to);
         }
@@ -1207,8 +1253,8 @@
       return null;
     }
 
-    function routeExists(from, to) {
-      return Boolean(from && to && (from === to || nextNavEdge(from, to)));
+    function routeExists(from, to, ladders = true) {
+      return Boolean(from && to && (from === to || nextNavEdge(from, to, ladders)));
     }
 
     // Lowest solid underside above a point (the ceiling of the room it is in).
@@ -1292,6 +1338,8 @@
       floatingTexts = [];
       shotFlashes = [];
       particles = [];
+      beams = [];
+      slashes = [];
       screenShakeTimer = 0;
       screenShakeStrength = 0;
       cameraShakeX = 0;
@@ -1361,12 +1409,22 @@
         alien: 0.11 + progress * 0.17
       };
       const teach = openingEnemyPending && elapsedTime < 4000 && player.x < 464;
-      const type = teach ? 'zombie' : weightedChoice([
+      // CyberCity and Jungle Planet field their own pair once its art has
+      // loaded; the ramp shifts from the melee to the ranged member like the
+      // original roster. Station and Desert Temple Ruins keep the original four.
+      const stageId = STAGES[stageIndex].id;
+      const local = Object.keys(EXPANSION).filter(t => EXPANSION[t].stage === stageId && expansionArt[t]);
+      const melee = local.find(t => ['dash', 'pounce'].includes(EXPANSION[t].kind));
+      const shooter = local.find(t => ['projectile', 'laser'].includes(EXPANSION[t].kind));
+      const type = teach ? 'zombie' : (melee && shooter ? weightedChoice([
+        { item: melee, weight: 0.6 - progress * 0.2 },
+        { item: shooter, weight: 0.4 + progress * 0.2 }
+      ]) : weightedChoice([
         { item: 'zombie', weight: typeWeights.zombie },
         { item: 'ghost', weight: typeWeights.ghost },
         { item: 'robot', weight: typeWeights.robot },
         { item: 'alien', weight: typeWeights.alien }
-      ]) || 'zombie';
+      ])) || 'zombie';
       const spawnDir = Math.random() < 0.65 ? 1 : -1;
       const spawnOffset = width + 140 + Math.random() * 280;
       const spawnX = teach ? Math.max(680, player.x + 240) : player.x + spawnDir * spawnOffset;
@@ -1446,6 +1504,17 @@
         e.speed = 1.2;
         e.preferredRange = 190;
         e.shootTimer = 1000 + Math.random() * 700;
+      } else if (EXPANSION[type]) {
+        const def = EXPANSION[type];
+        [e.width, e.height] = def.body;
+        e.y = groundY - e.height;
+        e.health = def.health;
+        e.maxHealth = def.health;
+        e.speed = def.speed * (0.92 + Math.random() * 0.16);
+        e.preferredRange = def.preferredRange;
+        // shootTimer is the special's cooldown for these enemies.
+        e.shootTimer = def.firstDelay[0] + Math.random() * def.firstDelay[1];
+        e.special = null;
       }
       // Modify enemy health based on difficulty settings.  On easy
       // difficulty reduce hit points by one (minimum 1).  On hard
@@ -1507,7 +1576,13 @@
           const low = point.y - e.height - 12;
           const high = ceilingAbove(point.x + e.width / 2, point.y) + 26;
           y = Math.max(Math.min(high, low), Math.min(low, point.y - e.height - 90 - Math.random() * 140));
-        } else if (!routeExists(layout.regions[point.region], playerRegion)) continue;
+        } else {
+          const region = layout.regions[point.region];
+          // Wide bodies need the whole footprint on the surface; non-climbers
+          // need a route without ladders.
+          if (point.x < region.x0 + 4 || point.x + e.width > region.x1 - 4) continue;
+          if (!routeExists(region, playerRegion, EXPANSION[type]?.climbs ?? true)) continue;
+        }
         if (!fair(point.x, y)) continue;
         const score = Math.abs(dx - spawnDir * spawnOffset) + Math.abs(point.y - player.y) * 0.5 + Math.random() * 60;
         if (!best || score < best.score) best = { x: point.x, y, score };
@@ -1548,7 +1623,9 @@
 
     function spawnPickups(enemy) {
       const goldByType = { zombie: [4, 7], ghost: [6, 10], robot: [5, 8], alien: [5, 9] };
-      const [goldMin, goldMax] = goldByType[enemy.type] || [4, 7];
+      // Expansion enemies use an existing family's drops, keeping the economy.
+      const family = EXPANSION[enemy.type]?.economy || enemy.type;
+      const [goldMin, goldMax] = goldByType[family] || [4, 7];
       const goldCount = goldMin + Math.floor(Math.random() * (goldMax - goldMin + 1));
       dropPickup(enemy, { x: enemy.x, width:12, height:12, type:'gold', value: goldCount });
 
@@ -1558,8 +1635,8 @@
         hard:   { zombie: 0.54, ghost: 0.0, robot: 0.64, alien: 0.58 }
       };
       const difficultyTable = ammoDropChance[SETTINGS.difficulty] || ammoDropChance.normal;
-      if (Math.random() < (difficultyTable[enemy.type] ?? 0.6)) {
-        const table = ENEMY_DROP_TABLES[enemy.type];
+      if (Math.random() < (difficultyTable[family] ?? 0.6)) {
+        const table = ENEMY_DROP_TABLES[family];
         const key = weightedChoice(table);
         if (key && WEAPONS[key]) {
           dropPickup(enemy, { x: enemy.x + 16, width:12, height:12, type:'ammo', ammoType:key, value: WEAPONS[key].ammoDrop });
@@ -1611,7 +1688,7 @@
 
     function spawnHitSparks(x, y, weapon) {
       if (!SETTINGS.particles) return;
-      const tint = weapon === 'laser' ? '#9dfdff' : (weapon === 'shotgun' ? '#ffd8a0' : '#fff59a');
+      const tint = { laser: '#9dfdff', shotgun: '#ffd8a0', police: '#6fc8ff', elf: '#c58bff', thug: '#ffb36b' }[weapon] || '#fff59a';
       const count = weapon === 'shotgun' ? 8 : 5;
       for (let i = 0; i < count; i++) {
         const angle = Math.random() * Math.PI * 2;
@@ -2053,7 +2130,8 @@
       const pan = Math.max(-0.72, Math.min(0.72, offset / 330));
       const gain = (ENEMY_CUE_LEVEL[cue] ?? 0.42) / (1 + Math.abs(offset) / 720);
       const group = cue === 'Hurt' ? 'hurt' : (cue === 'Move' ? 'move' : 'enemy');
-      if (!window.combatAudio?.play(enemy.type + cue, group, gain, pan) && cue === 'Down') {
+      const voice = EXPANSION[enemy.type]?.audio || enemy.type;
+      if (!window.combatAudio?.play(voice + cue, group, gain, pan) && cue === 'Down') {
         playLegacyEffect(enemyDeathSfx);
       }
     }
@@ -2063,6 +2141,217 @@
       if (elapsedTime - (enemy.hurtCueAt ?? -Infinity) < HURT_CUE_GAP_MS) return;
       enemy.hurtCueAt = elapsedTime;
       playEnemyCue(enemy, 'Hurt');
+    }
+
+    // ---------------------------------------------------------------------
+    // Expansion enemy specials
+
+    let beams = [];
+    let slashes = [];
+
+    // The special-clip frame for an elapsed time, and its index.
+    function specialFrame(type, t) {
+      const frames = expansionArt[type].clips.special;
+      for (let i = 0; i < frames.length; i++) {
+        if (t < frames[i].ms) return [frames[i], i];
+        t -= frames[i].ms;
+      }
+      return [frames.at(-1), frames.length - 1];
+    }
+
+    // A frame point (muzzle or contact) in world units, mirrored with facing.
+    function framePoint(e, frame, point, facing) {
+      const art = expansionArt[e.type];
+      return {
+        x: e.x + e.width / 2 + (point[0] - frame.origin[0]) * art.scale * facing,
+        y: e.y + e.height + (point[1] - frame.origin[1]) * art.scale
+      };
+    }
+
+    // The muzzle of the nearest special frame that has one.
+    function specialMuzzle(e, facing, index) {
+      const frames = expansionArt[e.type].clips.special;
+      for (let i = index; i >= 0; i--) if (frames[i].muzzle) return framePoint(e, frames[i], frames[i].muzzle, facing);
+      const first = frames.find(f => f.muzzle);
+      return first ? framePoint(e, first, first.muzzle, facing) : { x: e.x + e.width / 2 + facing * e.width / 2, y: e.y + e.height * 0.35 };
+    }
+
+    // First solid crossing a horizontal shot from x0 toward x1 at height y.
+    function firstSolidAlong(x0, x1, y) {
+      const left = Math.min(x0, x1);
+      const right = Math.max(x0, x1);
+      let hit = null;
+      for (const ob of obstacles) {
+        if (y < ob.y || y > ob.y + ob.height || ob.x + ob.width < left || ob.x > right) continue;
+        const face = x1 > x0 ? ob.x : ob.x + ob.width;
+        const edge = x1 > x0 ? Math.max(face, x0) : Math.min(face, x0);
+        if (!hit || Math.abs(edge - x0) < Math.abs(hit - x0)) hit = edge;
+      }
+      return hit;
+    }
+
+    // Distance along a segment to the first solid it crosses, or null.
+    function solidOnSegment(x0, y0, x1, y1) {
+      const length = Math.hypot(x1 - x0, y1 - y0);
+      const steps = Math.max(1, Math.ceil(length / 3));
+      for (let i = 1; i <= steps; i++) {
+        const x = x0 + (x1 - x0) * i / steps;
+        const y = y0 + (y1 - y0) * i / steps;
+        if (x < 0 || x > worldWidth) return length * i / steps;
+        for (const ob of obstacles) {
+          if (x >= ob.x && x <= ob.x + ob.width && y >= ob.y && y <= ob.y + ob.height) return length * i / steps;
+        }
+      }
+      return null;
+    }
+
+    // Ranged specials aim from the muzzle at the player's centre, within a
+    // shallow angle, and need that whole line free of solids.
+    const AIM_SLOPE = 0.5;
+    function shotLine(muzzle, dir) {
+      const tx = player.x + player.width / 2;
+      const ty = player.y + player.height / 2;
+      const run = (tx - muzzle.x) * dir;
+      if (run < 8 || Math.abs(ty - muzzle.y) > run * AIM_SLOPE) return null;
+      const blocked = solidOnSegment(muzzle.x, muzzle.y, tx, ty);
+      const length = Math.hypot(tx - muzzle.x, ty - muzzle.y);
+      return { clear: blocked === null, tx, ty, ux: (tx - muzzle.x) / length, uy: (ty - muzzle.y) / length, length };
+    }
+    const shotLineClear = (muzzle, dir) => Boolean(shotLine(muzzle, dir)?.clear);
+
+    function specialDamage(def) {
+      if (SETTINGS.difficulty === 'easy') return Math.max(1, def.damage - 2);
+      if (SETTINGS.difficulty === 'hard') return def.damage + 2;
+      return def.damage;
+    }
+
+    function stopSpecialMove(e, x, y) {
+      if (!e.moveVx) return;
+      e.moveVx = 0;
+      spawnHitSparks(x, y, 'enemy');
+    }
+
+    function endSpecial(e, def) {
+      e.special = null;
+      e.moveVx = 0;
+      e.shootTimer = def.cooldown[0] + Math.random() * def.cooldown[1];
+    }
+
+    // One melee contact zone per attack; it can only hurt the player once.
+    function meleeHit(e, def, zone) {
+      if (e.special.hit || !rectIntersect(zone, player)) return;
+      e.special.hit = true;
+      if (damagePlayer(specialDamage(def))) {
+        const push = 14 * e.special.dir;
+        const from = player.x;
+        player.x = clamp(player.x + push, 0, worldWidth - player.width);
+        if (!player.isClimbing && obstacles.some(ob => rectIntersect(player, ob))) player.x = from;
+      }
+    }
+
+    // Runs in the fixed simulation step. Start: grace over, cooldown done,
+    // standing, visible in the unshaken view, on the player's level and in
+    // reach; ranged attacks also need a clear shot line.
+    function updateSpecial(e, dt, visible, dx, absDx, dy) {
+      const def = EXPANSION[e.type];
+      const art = expansionArt[e.type];
+      if (!art) return;
+      if (!e.special) {
+        e.shootTimer = Math.max(0, e.shootTimer - dt);
+        if (e.shootTimer || e.spawnGrace || !visible || !e.onGround || e.ladder) return;
+        const dir = dx < 0 ? -1 : 1;
+        const ranged = def.kind === 'projectile' || def.kind === 'laser';
+        if (ranged) {
+          if (absDx > def.reach || Math.abs(dy) > 55 || !shotLineClear(specialMuzzle(e, dir, 0), dir)) return;
+        } else {
+          const gap = dir > 0 ? player.x - (e.x + e.width) : e.x - (player.x + player.width);
+          if (gap > def.reach || gap < -8 || Math.abs(dy) > 30) return;
+          if (firstSolidAlong(e.x + e.width / 2, player.x + player.width / 2, e.y + e.height - 10) !== null) return;
+        }
+        e.special = { kind: def.kind, t: 0, dir, fired: false, hit: false, airborne: false };
+        e.targetDir = dir;
+        e.dir = dir;
+        playEnemyCue(e, 'Warn');
+        return;
+      }
+      const sp = e.special;
+      const wasFired = sp.fired;
+      // A pounce holds its trigger frame until it lands.
+      if (!(sp.kind === 'pounce' && sp.fired && sp.airborne)) sp.t += dt;
+      if (!sp.fired) {
+        const ranged = sp.kind === 'projectile' || sp.kind === 'laser';
+        // Windup tells cancel when the enemy leaves the view, is knocked off
+        // its feet, or cover comes between it and the player.
+        const [, index] = specialFrame(e.type, Math.min(sp.t, art.triggerAt - 1));
+        if (!visible || !e.onGround || (ranged && !shotLineClear(specialMuzzle(e, sp.dir, index), sp.dir))) {
+          e.special = null;
+          e.shootTimer = 360;
+          return;
+        }
+        if (sp.t < art.triggerAt) return;
+        // The trigger frame resolves exactly once.
+        sp.fired = true;
+        resolveSpecial(e, def, art, sp);
+      }
+      if (sp.kind === 'dash' && sp.t < art.triggerEnd) {
+        const [frame] = specialFrame(e.type, sp.t);
+        const contact = frame.contact ? framePoint(e, frame, frame.contact, sp.dir) : { x: e.x + (sp.dir > 0 ? e.width : 0), y: e.y + e.height / 2 };
+        meleeHit(e, def, { x: Math.min(contact.x, e.x + e.width / 2), y: contact.y - 10, width: Math.abs(contact.x - (e.x + e.width / 2)) + 6, height: 20 });
+        if (SETTINGS.particles && Math.random() < 0.6) spawnHitSparks(contact.x, contact.y, 'thug');
+      } else if (sp.kind === 'dash') e.moveVx = 0;
+      if (sp.kind === 'pounce' && sp.fired) {
+        if (wasFired && sp.airborne && e.onGround) {
+          // Landing: the bite closes and a vulnerable recovery begins.
+          sp.airborne = false;
+          e.moveVx = 0;
+          sp.t = art.triggerEnd;
+          sp.vulnerable = true;
+        }
+        if (sp.airborne) {
+          const frame = art.clips.special[art.trigger];
+          const jaw = framePoint(e, frame, frame.contact, sp.dir);
+          meleeHit(e, def, { x: jaw.x - 14, y: jaw.y - 11, width: 28, height: 22 });
+        }
+      }
+      if (sp.t >= art.total) endSpecial(e, def);
+    }
+
+    function resolveSpecial(e, def, art, sp) {
+      const frame = art.clips.special[art.trigger];
+      playEnemyCue(e, 'Attack');
+      if (sp.kind === 'projectile' || sp.kind === 'laser') {
+        const muzzle = framePoint(e, frame, frame.muzzle, sp.dir);
+        // Aim is taken when the trigger frame starts; the windup checks kept the line clear.
+        const aim = shotLine(muzzle, sp.dir) || { ux: sp.dir, uy: 0 };
+        if (sp.kind === 'projectile') {
+          // One blue pulse from the carbine muzzle; it flies and can be blocked like any shot.
+          enemyBullets.push({ x: muzzle.x - 5, y: muzzle.y - 2, vx: aim.ux * def.shotSpeed, vy: aim.uy * def.shotSpeed,
+            width: 10, height: 4, damage: specialDamage(def), kind: 'police', origin: { x: e.x + e.width / 2, y: muzzle.y } });
+          spawnHitSparks(muzzle.x, muzzle.y, 'police');
+        } else {
+          // One brief violet lance: it ends at the first solid or at the player.
+          let reach = def.reach;
+          const wall = solidOnSegment(muzzle.x, muzzle.y, muzzle.x + aim.ux * reach, muzzle.y + aim.uy * reach);
+          if (wall !== null) reach = wall;
+          let hit = false;
+          for (let d = 0; d <= reach; d += 3) {
+            const point = { x: muzzle.x + aim.ux * d, y: muzzle.y + aim.uy * d, width: 1, height: 1 };
+            if (rectIntersect(point, player)) { reach = d; hit = true; break; }
+          }
+          if (hit) damagePlayer(specialDamage(def));
+          const end = { x: muzzle.x + aim.ux * reach, y: muzzle.y + aim.uy * reach };
+          beams.push({ x0: muzzle.x, y0: muzzle.y, x1: end.x, y1: end.y, life: frame.ms, maxLife: frame.ms, hit });
+          spawnHitSparks(end.x, end.y, 'elf');
+        }
+      } else if (sp.kind === 'dash') {
+        e.moveVx = sp.dir * def.dashSpeed;
+      } else if (sp.kind === 'pounce') {
+        e.moveVx = sp.dir * def.pounce[0];
+        e.vy = def.pounce[1];
+        e.onGround = false;
+        sp.airborne = true;
+        slashes.push({ e, life: 260, maxLife: 260 });
+      }
     }
 
     function updateGame(dt) {
@@ -2094,7 +2383,8 @@
         const ranged = RANGED[e.type];
         const closeAttack = CLOSE_ATTACK[e.type];
         const wantsStrike = closeAttack && e.attackTimer > 115;
-        const braced = ranged && (e.queuedShot || e.attackTimer > 75);
+        // Expansion specials hold the enemy in place except for their own dash or pounce.
+        const braced = (ranged && (e.queuedShot || e.attackTimer > 75)) || Boolean(e.special);
         const closeWindup = closeAttack && e.windupTimer > 0;
         if (e.attackTimer > 0) e.attackTimer = Math.max(0, e.attackTimer - dt);
         if (e.contactDamageTimer > 0) e.contactDamageTimer = Math.max(0, e.contactDamageTimer - dt);
@@ -2146,7 +2436,8 @@
         } else {
           if (e.pathRecalcTimer <= 0) {
             const region = regionAt(e);
-            e.navEdge = e.onGround && region !== playerRegion ? nextNavEdge(region, playerRegion) : null;
+            const climbs = EXPANSION[e.type]?.climbs ?? true;
+            e.navEdge = e.onGround && region !== playerRegion ? nextNavEdge(region, playerRegion, climbs) : null;
             e.offRoute = region !== playerRegion && !e.navEdge;
             if (e.navEdge) {
               const goal = e.navEdge.kind === 'drop' ? e.navEdge.x + e.navEdge.dir * 30 : e.navEdge.x;
@@ -2166,7 +2457,16 @@
             e.changeDirTimer = 1000 + Math.random() * 1000;
           }
 
-          if (!braced && !closeWindup) {
+          if (e.moveVx) {
+            // Dash: stop at a ledge rather than running off it.
+            if (e.special?.kind === 'dash' && e.onGround) {
+              const lead = e.moveVx > 0 ? e.x + e.width + e.moveVx : e.x + e.moveVx;
+              const feet = e.y + e.height;
+              const supported = feet >= groundY - 0.5 || obstacles.some(ob => Math.abs(ob.y - feet) < 0.6 && lead >= ob.x && lead <= ob.x + ob.width);
+              if (!supported) e.moveVx = 0;
+            }
+            e.x += e.moveVx;
+          } else if (!braced && !closeWindup) {
             const ladderEdge = e.navEdge?.kind === 'ladder' ? e.navEdge : null;
             if (ladderEdge) {
               const offset = ladderEdge.x - (e.x + e.width / 2);
@@ -2201,15 +2501,17 @@
               if (rectIntersect(e, ob)) {
                 // Zombies and aliens hop low cover; bulkheads turn everyone back.
                 const canHop = ob.role === 'cover' && wasEnemyGrounded && !braced && !closeWindup &&
-                  (e.type === 'zombie' || e.type === 'alien');
+                  (e.type === 'zombie' || e.type === 'alien' || EXPANSION[e.type]?.hops);
                 if (prevX + e.width <= ob.x) {
                   e.x = ob.x - e.width;
-                  if (canHop) hop = true;
+                  if (canHop && !e.special) hop = true;
                   else e.dir = -1;
+                  stopSpecialMove(e, ob.x, e.y + e.height / 2);
                 } else if (prevX >= ob.x + ob.width) {
                   e.x = ob.x + ob.width;
-                  if (canHop) hop = true;
+                  if (canHop && !e.special) hop = true;
                   else e.dir = 1;
+                  stopSpecialMove(e, ob.x + ob.width, e.y + e.height / 2);
                 }
               }
             }
@@ -2223,6 +2525,7 @@
           }
         }
 
+        e.walking = e.onGround && !e.special && Math.abs(e.x - prevX) > 0.15;
         if (e.type === 'robot') {
           const moving = Boolean(e.ladder) || (e.onGround && Math.abs(e.x - prevX) > 0.2);
           const since = elapsedTime - (e.stepCueAt ?? -Infinity);
@@ -2235,7 +2538,9 @@
         }
 
         const visible = inCameraView(e, 20);
-        if (ranged) {
+        if (EXPANSION[e.type]) {
+          updateSpecial(e, dt, visible, dx, absDx, playerMidY - enemyMidY);
+        } else if (ranged) {
           if (e.queuedShot) {
             e.windupTimer = Math.max(0, e.windupTimer - dt);
             if (!visible || !e.onGround) {
@@ -2292,12 +2597,22 @@
           continue;
         }
       }
-      advanceProjectiles(bullets, enemies, (b, hit) => {
+      // Expansion enemies are hit on an area sized from their art; the
+      // original four keep their collision boxes.
+      const targets = enemies.map(e => {
+        const def = EXPANSION[e.type];
+        if (!def) return e;
+        const [w, h] = def.hurt;
+        return { x: e.x + e.width / 2 - w / 2, y: e.y + e.height - h, width: w, height: h, enemy: e };
+      });
+      advanceProjectiles(bullets, targets, (b, hit) => {
         spawnHitSparks(hit.x, hit.y, b.weapon);
-        const enemy = hit.target;
+        const enemy = hit.target.enemy || hit.target;
         const index = enemies.indexOf(enemy);
         if (index < 0) return;
-        enemy.health -= b.damage;
+        // A dinosaur caught in its landing recovery takes extra damage.
+        const vulnerable = enemy.special?.vulnerable ? EXPANSION[enemy.type].vulnerable : 1;
+        enemy.health -= b.damage * vulnerable;
         enemy.hitTimer = 170;
         if (enemy.health > 0) playEnemyHurt(enemy);
         const direction = Math.sign(b.vx) || (player.x < enemy.x ? 1 : -1);
@@ -2356,7 +2671,8 @@
         if (rectIntersect(e, player)) {
           const closeAttack = CLOSE_ATTACK[e.type];
           const inStrike = e.attackTimer > 115 && (player.x - e.x) * e.targetDir >= -6;
-          if (!e.spawnGrace && e.contactDamageTimer <= 0 && (!closeAttack || inStrike)) {
+          // Expansion enemies only hurt through their specials.
+          if (!EXPANSION[e.type] && !e.spawnGrace && e.contactDamageTimer <= 0 && (!closeAttack || inStrike)) {
             const baseDamage = e.type === 'zombie' ? 5 : (e.type === 'ghost' ? 4 : (e.type === 'robot' ? 6 : 5));
             if (damagePlayer(baseDamage)) {
               const push = e.type === 'robot' ? 12 : 9;
@@ -2399,6 +2715,12 @@
         const f = shotFlashes[i];
         f.life -= dt;
         if (f.life <= 0) shotFlashes.splice(i, 1);
+      }
+      for (const list of [beams, slashes]) {
+        for (let i = list.length - 1; i >= 0; i--) {
+          list[i].life -= dt;
+          if (list[i].life <= 0) list.splice(i, 1);
+        }
       }
       for (let i = floatingTexts.length - 1; i >= 0; i--) {
         const t = floatingTexts[i];
@@ -2523,7 +2845,41 @@
       return { frame, kick: shot && !player.hitFlashTimer && !player.isClimbing && gameState !== 'gameover' ? recoil : 0 };
     }
 
+    // Expansion poses: the special clip while attacking (windup, trigger,
+    // recovery), hurt while flinching, walk while moving, idle otherwise.
+    function expansionPose(enemy) {
+      const art = expansionArt[enemy.type];
+      const sp = enemy.special;
+      const facing = sp ? sp.dir : (enemy.dir || 1);
+      if (sp) return { frame: specialFrame(enemy.type, sp.t)[0], facing };
+      if (enemy.hitTimer > 0) return { frame: art.clips.hurt[0], facing };
+      if (enemy.walking) {
+        const walk = art.clips.walk;
+        const cycle = walk.reduce((sum, f) => sum + f.ms, 0);
+        let t = (enemy.animTime / (enemy.animVariance || 1)) % cycle;
+        for (const f of walk) { if (t < f.ms) return { frame: f, facing }; t -= f.ms; }
+      }
+      return { frame: art.clips.idle[0], facing };
+    }
+
+    // Draw an expansion frame with its origin on the feet; mirroring flips
+    // the anchor offsets with the sprite.
+    function drawExpansionFrame(type, frame, footX, footY, facing) {
+      const art = expansionArt[type];
+      if (!art || !frame) return false;
+      const [sx, sy, w, h] = frame.rect;
+      const [ox, oy] = frame.origin;
+      ctx.save();
+      ctx.translate(footX, footY);
+      ctx.scale(facing, 1);
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(art.image, sx, sy, w, h, -ox * art.scale, -oy * art.scale, w * art.scale, h * art.scale);
+      ctx.restore();
+      return true;
+    }
+
     function enemySprite(enemy) {
+      if (EXPANSION[enemy.type] && expansionArt[enemy.type]) return expansionPose(enemy);
       const get = (name, time, loop) => clipFrame('enemies', enemy.type + name, time, loop);
       const ranged = RANGED[enemy.type];
       const attacking = enemy.windupTimer > 0 || enemy.attackTimer > 0;
@@ -2876,6 +3232,74 @@
     const WORLD_OVERSCAN = RENDER_OFFSET_CAP / CAMERA.zoom + 1;
     const BACKGROUND_OVERSCAN = 1 + 2 * (RENDER_OFFSET_CAP + 1) / height;
 
+    function drawExpansionEnemy(e) {
+      const { frame, facing } = expansionPose(e);
+      const art = expansionArt[e.type];
+      const footX = e.x + e.width / 2;
+      const footY = e.y + e.height;
+      const top = footY - frame.origin[1] * art.scale;
+      const healthPct = Math.max(0, e.health) / e.maxHealth;
+      const barW = Math.max(28, EXPANSION[e.type].hurt[0] * 0.7);
+      ctx.fillStyle = 'rgba(50,50,50,0.8)';
+      ctx.fillRect(footX - barW / 2, top - 7, barW, 4);
+      ctx.fillStyle = healthPct > 0.5 ? '#33cc33' : (healthPct > 0.25 ? '#ddbb00' : '#cc3333');
+      ctx.fillRect(footX - barW / 2, top - 7, barW * healthPct, 4);
+      const sp = e.special;
+      // Windup tell: the ranged pair show a charging aim line toward the player.
+      if (sp && !sp.fired && (sp.kind === 'projectile' || sp.kind === 'laser')) {
+        const [, index] = specialFrame(e.type, sp.t);
+        const muzzle = specialMuzzle(e, sp.dir, index);
+        const line = shotLine(muzzle, sp.dir);
+        const charge = Math.min(1, sp.t / art.triggerAt);
+        if (line) {
+          const reach = 26 + charge * 34;
+          ctx.strokeStyle = sp.kind === 'laser' ? `rgba(197,139,255,${0.25 + charge * 0.55})` : `rgba(111,200,255,${0.25 + charge * 0.55})`;
+          ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.moveTo(muzzle.x, muzzle.y); ctx.lineTo(muzzle.x + line.ux * reach, muzzle.y + line.uy * reach); ctx.stroke();
+        }
+        ctx.fillStyle = sp.kind === 'laser' ? `rgba(214,170,255,${0.35 + charge * 0.6})` : `rgba(160,220,255,${0.35 + charge * 0.6})`;
+        ctx.beginPath(); ctx.arc(muzzle.x, muzzle.y, 1.5 + charge * 2.2, 0, Math.PI * 2); ctx.fill();
+      }
+      drawExpansionFrame(e.type, frame, footX, footY, facing);
+      // A pulsing glow marks the dinosaur's vulnerable landing.
+      if (sp?.vulnerable) {
+        ctx.globalAlpha = 0.25 + Math.sin(performance.now() / 70) * 0.12;
+        ctx.fillStyle = '#ffe27a';
+        ctx.fillRect(footX - 36, footY - 46, 72, 46);
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // Violet lances and bite arcs, drawn in code.
+    function drawSpecialEffects(view) {
+      for (const b of beams) {
+        const t = b.life / b.maxLife;
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = `rgba(160,90,255,${0.35 * t})`;
+        ctx.lineWidth = 7;
+        ctx.beginPath(); ctx.moveTo(b.x0, b.y0); ctx.lineTo(b.x1, b.y1); ctx.stroke();
+        ctx.strokeStyle = `rgba(230,200,255,${0.9 * t})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(b.x0, b.y0); ctx.lineTo(b.x1, b.y1); ctx.stroke();
+        ctx.fillStyle = `rgba(214,170,255,${0.8 * t})`;
+        ctx.beginPath(); ctx.arc(b.x1, b.y1, 3 + (1 - t) * 4, 0, Math.PI * 2); ctx.fill();
+        ctx.lineCap = 'butt';
+      }
+      for (const s of slashes) {
+        const e = s.e;
+        if (!enemies.includes(e) || !e.special) continue;
+        const art = expansionArt[e.type];
+        const frame = art.clips.special[art.trigger];
+        const jaw = framePoint(e, frame, frame.contact, e.special.dir);
+        const t = s.life / s.maxLife;
+        ctx.strokeStyle = `rgba(255,236,200,${0.8 * t})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(jaw.x - e.special.dir * 6, jaw.y, 12, e.special.dir > 0 ? -1.1 : Math.PI - 0.9, e.special.dir > 0 ? 0.9 : Math.PI + 1.1);
+        ctx.stroke();
+      }
+    }
+
     function drawGame() {
       const reduced = effectsReduced();
       const view = renderView();
@@ -2937,7 +3361,8 @@
 
       // Draw enemies. Sprites extend past the collision box, hence the margin.
       enemies.forEach(e => {
-        if (!onScreen(view, e.x, e.y, e.width, e.height, 72)) return;
+        if (!onScreen(view, e.x, e.y, e.width, e.height, 90)) return;
+        if (EXPANSION[e.type] && expansionArt[e.type]) { drawExpansionEnemy(e); return; }
         const px = e.x;
         const { frame, facing } = enemySprite(e);
         const originY = enemyOrigin(e);
@@ -2971,7 +3396,11 @@
         }
       });
       for (const enemy of fallenSprites) {
-        if (!onScreen(view, enemy.x, enemy.y, enemy.width, enemy.height, 72)) continue;
+        if (!onScreen(view, enemy.x, enemy.y, enemy.width, enemy.height, 90)) continue;
+        if (EXPANSION[enemy.type] && expansionArt[enemy.type]) {
+          drawExpansionFrame(enemy.type, expansionArt[enemy.type].clips.downed[0], enemy.x + enemy.width / 2, enemy.y + enemy.height, enemy.facing);
+          continue;
+        }
         const frame = clipFrame('enemies', enemy.type + 'Down', elapsedTime - enemy.at);
         drawSprite('enemies', frame, enemy.x + enemy.width / 2, enemyOrigin(enemy), enemy.facing);
       }
@@ -3025,8 +3454,20 @@
         ctx.globalAlpha = 1;
       });
       // Draw enemy bullets
+      drawSpecialEffects(view);
       enemyBullets.forEach(b => {
         if (!onScreen(view, b.x, b.y, b.width, b.height, 4)) return;
+        if (b.kind === 'police') {
+          // Blue breach pulse with a short glowing tail along its flight.
+          const cx = b.x + b.width / 2, cy = b.y + b.height / 2, sp = Math.hypot(b.vx, b.vy) || 1;
+          ctx.strokeStyle = 'rgba(80,170,255,0.45)';
+          ctx.lineWidth = 5;
+          ctx.beginPath(); ctx.moveTo(cx - b.vx / sp * 14, cy - b.vy / sp * 14); ctx.lineTo(cx, cy); ctx.stroke();
+          ctx.strokeStyle = '#bfe6ff';
+          ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(cx - b.vx / sp * 7, cy - b.vy / sp * 7); ctx.lineTo(cx + b.vx / sp * 3, cy + b.vy / sp * 3); ctx.stroke();
+          return;
+        }
         ctx.fillStyle = 'rgba(255,92,92,0.35)';
         ctx.fillRect(b.x - 1, b.y - 1, b.width + 2, b.height + 2);
         ctx.fillStyle = b.kind === 'alien' ? '#ffc75b' : '#ff6668';
