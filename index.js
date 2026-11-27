@@ -169,12 +169,19 @@
     headroom: 64,      // dead zone above the collision top: sprite (16) + HUD band (41) + margin
     footroom: 22       // dead zone: keep this much space below the next landing
   };
+  // Per-round feedback. recoil/duration drive the shoulder recoil pose;
+  // kick/kickMs drive a short camera kick opposite the shot (canvas px);
+  // pulse is the haptic length in ms (one pulse per round, not per pellet).
   const SHOT_FEEDBACK = {
-    pistol:  { recoil: 1.4, duration: 85,  trail: 9 },
-    rifle:   { recoil: 1.8, duration: 70,  trail: 13 },
-    shotgun: { recoil: 3.2, duration: 125, trail: 6 },
-    laser:   { recoil: 0.65, duration: 48, trail: 24 }
+    pistol:  { recoil: 1.4, duration: 85,  trail: 9,  kick: 1.5, kickMs: 85,  pulse: 12 },
+    rifle:   { recoil: 1.8, duration: 70,  trail: 13, kick: 1.2, kickMs: 65,  pulse: 8 },
+    shotgun: { recoil: 3.2, duration: 125, trail: 6,  kick: 3.5, kickMs: 130, pulse: 28 },
+    laser:   { recoil: 0.65, duration: 48, trail: 24, kick: 0.6, kickMs: 50,  pulse: 6 }
   };
+  // Combined kick and shake never move the world more than this (canvas px);
+  // the background is drawn with matching overscan so edges stay covered.
+  const RENDER_OFFSET_CAP = 5;
+  const HAPTIC_MIN_GAP_MS = 70;
 
   const ENEMY_DROP_TABLES = {
     zombie: [
@@ -240,10 +247,12 @@
     particles: true,
     effects: 'system',
     sfx: true,
+    haptics: true,
     musicVolume: 0.6
   };
 
-  const SETTING_KEYS = ['difficulty', 'audio', 'particles', 'effects', 'sfx'];
+  const SETTING_KEYS = ['difficulty', 'audio', 'particles', 'effects', 'sfx', 'haptics'];
+  const hapticsSupported = typeof navigator.vibrate === 'function';
   const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
 
   function effectsReduced() {
@@ -478,6 +487,71 @@
       accumulator = 0;
       lastTime = null;
       stopEffects();
+      clearShotFeedback();
+    }
+
+    // Shot feedback: camera kicks and haptic pulses. Kicks age with
+    // simulation time and are drawn as a render offset, so they never
+    // touch the camera, aim, collision or projectiles.
+    let shotKicks = [];
+    let lastPulseAt = -Infinity;
+
+    function clearShotFeedback() {
+      shotKicks = [];
+      lastPulseAt = -Infinity;
+      // A frozen shake would otherwise hold the world off-centre behind menus.
+      screenShakeTimer = 0;
+      cameraShakeX = 0;
+      cameraShakeY = 0;
+      if (hapticsSupported && SETTINGS.haptics) {
+        try { navigator.vibrate(0); } catch {}
+      }
+    }
+
+    function canPulse() {
+      // Browsers only allow vibration after the page has had a user gesture.
+      return hapticsSupported && SETTINGS.haptics && (navigator.userActivation?.hasBeenActive ?? true);
+    }
+
+    function pulse(ms, force = false) {
+      if (!canPulse()) return;
+      // Rate-limited in game time, which follows the fixed simulation steps.
+      const now = elapsedTime;
+      if (!force && now - lastPulseAt < HAPTIC_MIN_GAP_MS) return;
+      lastPulseAt = now;
+      try { navigator.vibrate(ms); } catch {}
+    }
+
+    function addShotKick(key, dirX, dirY) {
+      const feedback = SHOT_FEEDBACK[key];
+      // The view kicks opposite the shot, like the shoulder recoil.
+      shotKicks.push({ x: -dirX, y: -dirY, amp: feedback.kick, ms: feedback.kickMs, age: 0 });
+      // The shotgun fires one stronger pulse per shell.
+      pulse(feedback.pulse, key === 'shotgun');
+    }
+
+    function updateShotKicks(dt) {
+      for (let i = shotKicks.length - 1; i >= 0; i--) {
+        shotKicks[i].age += dt;
+        if (shotKicks[i].age >= shotKicks[i].ms) shotKicks.splice(i, 1);
+      }
+    }
+
+    // World render offset in canvas px: kicks plus damage/impact shake,
+    // capped in magnitude. Reduced effects suppress both.
+    function renderOffset(reduced) {
+      if (reduced) return { x: 0, y: 0 };
+      let x = cameraShakeX;
+      let y = 0;
+      for (const k of shotKicks) {
+        const left = 1 - k.age / k.ms;
+        const amount = k.amp * left * left; // same ease as the shoulder recoil
+        x += k.x * amount;
+        y += k.y * amount;
+      }
+      const length = Math.hypot(x, y);
+      const scale = length > RENDER_OFFSET_CAP ? RENDER_OFFSET_CAP / length : 1;
+      return { x: x * scale, y: y * scale };
     }
 
     /**
@@ -635,11 +709,15 @@
               stopEffects();
               selectSfx.pause();
             }
+          } else if (key === 'haptics') {
+            if (SETTINGS.haptics) clearShotFeedback();
+            SETTINGS.haptics = !SETTINGS.haptics;
           } else {
             const modes = ['system', 'reduced', 'full'];
             const step = e.key === 'ArrowLeft' ? -1 : 1;
             SETTINGS.effects = modes[(modes.indexOf(SETTINGS.effects) + step + modes.length) % modes.length];
           }
+          clearShotFeedback();
           // Play selection sound when adjusting a setting
           playLegacyEffect(selectSfx);
         } else if (e.key === 'Escape') {
@@ -759,7 +837,8 @@
           if (setForButton.size === 1) btn.classList.add('pressed');
           pressGameplayKey(touchKeys, keyName);
 
-          if ((pointerType === 'touch' || pointerType === 'pen') && navigator.vibrate) navigator.vibrate(10);
+          // Fire is confirmed by the per-round shot pulse instead.
+          if ((pointerType === 'touch' || pointerType === 'pen') && keyName !== 'z' && canPulse()) navigator.vibrate(10);
 
           if (menuKeys.has(keyName) && setForButton.size === 1) {
             handleMenuInput({ key: keyName, repeat: false });
@@ -1588,6 +1667,7 @@
       const kind = key === 'shotgun' || key === 'laser' ? key : 'default';
       addShotFlash(muzzle.x, muzzle.y, dirX, dirY, kind);
       spawnMuzzleParticles(muzzle.x, muzzle.y, dirX, dirY, kind);
+      addShotKick(key, dirX, dirY);
       playShot(key);
     }
 
@@ -1825,6 +1905,8 @@
       player.hitFlashTimer = Math.max(0, player.hitFlashTimer - dt);
       player.recoilTimer = Math.max(0, player.recoilTimer - dt);
       const wasGrounded = player.onGround;
+      // Age kicks before this tick's shots so a new kick shows at full strength.
+      updateShotKicks(dt);
       updatePlayer(dt);
       updateCamera(dt);
       if (!wasGrounded && player.onGround) lastLanding = elapsedTime;
@@ -2362,6 +2444,7 @@
 
     // Rectangle test against the drawn view, expanded by margin, for culling.
     function onScreen(view, x, y, w, h, margin = 0) {
+      margin += WORLD_OVERSCAN;
       return x + w >= view.x - margin && x <= view.x + viewWidth + margin &&
         y + h >= view.y - margin && y <= view.y + viewHeight + margin;
     }
@@ -2392,11 +2475,12 @@
 
     // Drawn in world units under the camera transform.
     function drawTerrain(view) {
-      const left = view.x;
-      const right = view.x + viewWidth;
-      const deckDepth = worldHeight - groundY;
+      const left = view.x - WORLD_OVERSCAN;
+      const right = view.x + viewWidth + WORLD_OVERSCAN;
+      // The lower deck runs past the world bottom to fill the overscan.
+      const deckDepth = worldHeight - groundY + WORLD_OVERSCAN;
       ctx.fillStyle = '#101b2b';
-      ctx.fillRect(left, groundY, viewWidth, deckDepth);
+      ctx.fillRect(left, groundY, right - left, deckDepth);
       const tileWidth = 128;
       for (let tile = Math.floor(left / tileWidth); tile * tileWidth < right; tile++) {
         // A half-unit overlap hides antialiased seams between scaled tiles.
@@ -2449,21 +2533,33 @@
       }
     }
 
-    // The drawn view adds screen shake (in canvas pixels) to the camera.
-    function renderView(reduced) {
-      const shake = reduced ? 0 : cameraShakeX / CAMERA.zoom;
-      return { x: clamp(camera.x + shake, 0, worldWidth - viewWidth), y: camera.y };
+    // The drawn view is the unshaken camera. Shake and shot kicks are a
+    // separate screen-space render offset (see renderOffset).
+    function renderView() {
+      return { x: camera.x, y: camera.y };
     }
+
+    // Overscan that keeps the frame edges covered under the largest offset.
+    const WORLD_OVERSCAN = RENDER_OFFSET_CAP / CAMERA.zoom + 1;
+    const BACKGROUND_OVERSCAN = 1 + 2 * (RENDER_OFFSET_CAP + 1) / height;
 
     function drawGame() {
       const reduced = effectsReduced();
-      const view = renderView(reduced);
+      const view = renderView();
+      const offset = renderOffset(reduced);
       const zoom = CAMERA.zoom;
+      // The background moves with the offset and is drawn slightly enlarged
+      // about the centre so its edges never show.
+      ctx.save();
+      ctx.translate(width / 2 + offset.x, height / 2 + offset.y);
+      ctx.scale(BACKGROUND_OVERSCAN, BACKGROUND_OVERSCAN);
+      ctx.translate(-width / 2, -height / 2);
       drawStation(view);
+      ctx.restore();
       // One transform maps world units to canvas pixels for everything in the
       // world. The HUD and overlays below are drawn after it is removed.
       ctx.save();
-      ctx.setTransform(zoom, 0, 0, zoom, -view.x * zoom, -view.y * zoom);
+      ctx.setTransform(zoom, 0, 0, zoom, offset.x - view.x * zoom, offset.y - view.y * zoom);
       drawTerrain(view);
       // Draw pickups
       pickups.forEach(p => {
@@ -2626,7 +2722,7 @@
       floatingTexts.forEach(t => {
         ctx.globalAlpha = Math.max(0, t.life / t.maxLife);
         ctx.fillStyle = t.color;
-        ctx.fillText(t.text, (t.x - view.x) * zoom, (t.y - view.y) * zoom);
+        ctx.fillText(t.text, (t.x - view.x) * zoom + offset.x, (t.y - view.y) * zoom + offset.y);
       });
       ctx.globalAlpha = 1;
       ctx.textAlign = 'left';
@@ -2784,7 +2880,7 @@
       const labels = {
         start: ['Start game', 'Settings'],
         menu: ['Resume', 'Restart game', 'Settings'],
-        settings: ['Difficulty', 'Music', 'Particles', 'Camera shake and flashes', 'Sound effects'],
+        settings: ['Difficulty', 'Music', 'Particles', 'Camera shake and flashes', 'Sound effects', 'Haptics'],
         gameover: ['Restart']
       }[mode];
       if (mode === 'gameover') {
@@ -2818,7 +2914,8 @@
       } else if (mode === 'settings') {
         const effectText = SETTINGS.effects === 'system' ? (effectsReduced() ? 'System · Reduced' : 'System · Full') :
           SETTINGS.effects === 'full' ? 'Full' : 'Reduced';
-        const values = [SETTINGS.difficulty, SETTINGS.audio ? 'On' : 'Off', SETTINGS.particles ? 'On' : 'Off', effectText, SETTINGS.sfx ? 'On' : 'Off'];
+        const hapticText = hapticsSupported ? (SETTINGS.haptics ? 'On' : 'Off') : (SETTINGS.haptics ? 'On · not supported' : 'Off');
+        const values = [SETTINGS.difficulty, SETTINGS.audio ? 'On' : 'Off', SETTINGS.particles ? 'On' : 'Off', effectText, SETTINGS.sfx ? 'On' : 'Off', hapticText];
         menuRows.forEach(({ value }, i) => { value.textContent = values[i]; });
       } else if (mode === 'shop') {
         shopGold.textContent = `${player.gold} gold`;
