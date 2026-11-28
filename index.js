@@ -424,17 +424,27 @@
   };
   // World camera. The 800×450 canvas shows a zoomed window onto the world;
   // the HUD and screen overlays are drawn afterwards without the zoom.
+  // At 1.75× the 800×450 canvas shows 457×257 world units: the player's
+  // deck, the next deck's surface with ~85 units of standing room above it,
+  // and 64% of the width ahead of the player (~310 units with lead).
   const CAMERA = {
-    zoom: 1.4,
-    anchor: 0.39,      // player centre as a fraction of view width when facing right
-    lead: 24,          // world units of extra look-ahead at full run speed
+    zoom: 1.75,
+    anchor: 0.36,      // player centre as a fraction of view width when facing right (64% ahead)
+    lead: 28,          // world units of extra look-ahead at full run speed
     leadMs: 240,       // lead smoothing time constant
-    turnMs: 420,       // critically damped settle when the player turns
+    turnMs: 380,       // critically damped settle when the player turns
+    turnHoldMs: 140,   // a facing must hold this long before the view swings (quick turns don't pump)
     followXMs: 60,     // horizontal follow time constant
     followYMs: 150,    // vertical settle time
-    headroom: 64,      // dead zone above the collision top: sprite (16) + HUD band (41) + margin
-    footroom: 22       // dead zone: keep this much space below the next landing
+    fallFollowMs: 105, // vertical settle time while falling toward a lower landing
+    hudPx: 56,         // screen-space HUD band (canvas px); converted to world units by the zoom
+    footroom: 22,      // dead zone: keep this much space below the next landing
+    supportDeadband: 40 // landings closer than this to the resting deck (cover tops) don't move the view
   };
+  // Dead zone above the collision top: sprite overhang (16), the screen-space
+  // band (HUD, plus the objective panel when it sits over the playfield) in
+  // world units, and a margin, for a band height in canvas px.
+  CAMERA.headroomFor = bandPx => Math.round(16 + bandPx / CAMERA.zoom + 10);
   // Per-round feedback. recoil/duration drive the shoulder recoil pose;
   // kick/kickMs drive a short camera kick opposite the shot (canvas px);
   // pulse is the haptic length in ms (one pulse per round, not per pellet).
@@ -670,7 +680,9 @@
     const viewHeight = height / CAMERA.zoom;
     const maxViewY = worldHeight - viewHeight;
     // Unshaken view in world units. Gameplay checks read this directly.
-    const camera = { x: 0, y: maxViewY, look: 1, lookVelocity: 0, lead: 0, yVelocity: 0, support: groundY };
+    // Canvas px from the top covered by screen-space UI over the playfield.
+    let screenBandPx = CAMERA.hudPx;
+    const camera = { x: 0, y: maxViewY, look: 1, lookVelocity: 0, lead: 0, yVelocity: 0, support: groundY, facing: 1, facingFor: 0 };
 
     // Music tracks start with metadata only and stream once they play.
     const music = {};
@@ -1882,7 +1894,13 @@
         interactButton.hidden = !v;
         interactButton.setAttribute('aria-label', v ? `Interact: ${v}` : 'Interact');
       });
-      if (!show) return;
+      if (!show) { screenBandPx = CAMERA.hudPx; return; }
+      // When the objective panel covers the top of the playfield (it sits
+      // above it in portrait), the camera keeps the player's head below it.
+      const canvasBox = canvas.getBoundingClientRect();
+      const panelBox = objectivePanel.getBoundingClientRect();
+      const panelBottom = (panelBox.bottom - canvasBox.top) * height / canvasBox.height;
+      screenBandPx = panelBox.top >= canvasBox.top && panelBottom > CAMERA.hudPx ? Math.min(height * 0.4, panelBottom) : CAMERA.hudPx;
       const step = story.data.steps[story.step];
       setCached('objective', step?.text || '', v => { objectiveText.textContent = v; });
       const parts = [];
@@ -2270,8 +2288,10 @@
         ...guests
       ])) || 'zombie';
       const spawnDir = Math.random() < 0.65 ? 1 : -1;
-      const spawnOffset = width + 140 + Math.random() * 280;
-      const spawnX = teach ? Math.max(680, player.x + 240) : player.x + spawnDir * spawnOffset;
+      // Distances keep the gap beyond the view edge the zoom-1.40 camera had,
+      // so enemies arrive on screen as quickly at any zoom.
+      const spawnOffset = viewWidth * (1 - CAMERA.anchor) + 590 + Math.random() * 280;
+      const spawnX = teach ? Math.max(camera.x + viewWidth + 110, player.x + 240) : player.x + spawnDir * spawnOffset;
       const e = {
         type: type,
         x: 0,
@@ -2899,6 +2919,27 @@
       return landing;
     }
 
+    // Where the current arc comes down, assuming the player keeps their
+    // horizontal speed: the first surface top the feet cross on the way down.
+    // Framing this instead of the floor straight below keeps a hop over a
+    // gap, or onto cover, from dipping the view toward the floor beneath.
+    function predictedLanding() {
+      let x = player.x, y = player.y + player.height, vy = player.vy;
+      for (let t = 0; t < 120; t++) {
+        vy += MOVEMENT.gravity;
+        const next = y + vy;
+        x = clamp(x + player.vx, 0, worldWidth - player.width);
+        if (vy > 0) {
+          for (const ob of obstacles) {
+            if (ob.y >= y - 0.01 && ob.y <= next && x + player.width > ob.x && x < ob.x + ob.width) return ob.y;
+          }
+        }
+        if (next >= groundY) return groundY;
+        y = next;
+      }
+      return nextLanding();
+    }
+
     function cameraTargetX() {
       const anchor = 0.5 - (0.5 - CAMERA.anchor) * camera.look;
       const x = player.x + player.width / 2 - viewWidth * anchor + camera.lead;
@@ -2917,14 +2958,21 @@
       // single-deck framing. The support only changes on landing or while
       // climbing, so ordinary jumps stay inside the dead zone.
       const rest = clamp(camera.support + 32 - viewHeight, 0, maxViewY);
-      let y = Math.min(rest, head - CAMERA.headroom);
-      y = Math.max(y, nextLanding() + CAMERA.footroom - viewHeight);
+      let y = Math.min(rest, head - CAMERA.headroomFor(screenBandPx));
+      // In the air the view frames where the arc lands, but never below the
+      // take-off deck until the apex: rising past a crate's side can stall
+      // the horizontal speed and briefly point the prediction into a gap.
+      const airborne = !player.onGround && !player.isClimbing;
+      const landing = !airborne ? nextLanding() : (player.vy < 0 ? Math.min(predictedLanding(), camera.support) : predictedLanding());
+      y = Math.max(y, landing + CAMERA.footroom - viewHeight);
       y = Math.min(y, head - 24);
       return clamp(Math.max(y, feet + 8 - viewHeight), 0, maxViewY);
     }
 
     function snapCamera() {
       camera.look = player.facing;
+      camera.facing = player.facing;
+      camera.facingFor = CAMERA.turnHoldMs;
       camera.lookVelocity = 0;
       camera.lead = 0;
       camera.yVelocity = 0;
@@ -2934,12 +2982,23 @@
     }
 
     function updateCamera(dt) {
-      if (player.onGround || player.isClimbing) camera.support = player.y + player.height;
-      [camera.look, camera.lookVelocity] = smoothDamp(camera.look, camera.lookVelocity, player.facing, CAMERA.turnMs, dt);
+      // The resting deck follows landings and climbs, but not hops onto
+      // cover or other small steps, so short hops don't pump the view.
+      const feet = player.y + player.height;
+      if (player.isClimbing || (player.onGround && Math.abs(feet - camera.support) >= CAMERA.supportDeadband)) camera.support = feet;
+      // The view swings only after a turn has held briefly.
+      if (player.facing !== camera.facing) {
+        camera.facingFor += dt;
+        if (camera.facingFor >= CAMERA.turnHoldMs) camera.facing = player.facing;
+      } else camera.facingFor = 0;
+      [camera.look, camera.lookVelocity] = smoothDamp(camera.look, camera.lookVelocity, camera.facing, CAMERA.turnMs, dt);
       const leadTarget = clamp(player.vx / MOVEMENT.runSpeed, -1, 1) * CAMERA.lead;
       camera.lead += (leadTarget - camera.lead) * settle(dt, CAMERA.leadMs);
       camera.x += (cameraTargetX() - camera.x) * settle(dt, CAMERA.followXMs);
-      [camera.y, camera.yVelocity] = smoothDamp(camera.y, camera.yVelocity, cameraTargetY(), CAMERA.followYMs, dt);
+      // Falls are followed a little faster so the landing below reads sooner.
+      const targetY = cameraTargetY();
+      const falling = !player.onGround && !player.isClimbing && player.vy > 0 && targetY > camera.y;
+      [camera.y, camera.yVelocity] = smoothDamp(camera.y, camera.yVelocity, targetY, falling ? CAMERA.fallFollowMs : CAMERA.followYMs, dt);
       // Hard limits: the whole player always stays in frame.
       const centre = player.x + player.width / 2;
       camera.x = clamp(camera.x, centre + 24 - viewWidth, centre - 24);
@@ -3797,7 +3856,9 @@
     // Reflection gives identical edge samples at every repeat, including the planet
     // horizon and translucent trusses. Each panel overlaps its neighbour by one
     // pixel so fractional scroll positions never open a seam.
-    function drawLayer(image, scroll, scale = 1, top = 0, cropHeight = height) {
+    // cropHeight limits a layer's height from its top (the ceiling truss);
+    // other layers are never clipped, since a lifted layer starts above the canvas.
+    function drawLayer(image, scroll, scale = 1, top = 0, cropHeight = Infinity) {
       const tileWidth = width * scale;
       const tileHeight = image.height * tileWidth / image.width;
       let tile = Math.floor(scroll / tileWidth);
