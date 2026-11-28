@@ -66,4 +66,5 @@ These files ship with the game, but no record in the repository names their crea
 
   The READMEs under `assets/characters/` describe frame layouts but not creators or licences.
 - **Intro video:** `inspiresoftwareintro.mp4` has no creator or licence record.
+- **Stage approach films:** the four clips in `assets/cinematics/` that play on stage entry (station, jungle, CyberCity, desert) were supplied as Google Veo generations. There's no further creator or licence record.
 - **Project name:** the repository owner appears as "OFFICIAL INSPIRE" and "officialinspire". The credits use "teamInspire" as directed; confirm the preferred form.

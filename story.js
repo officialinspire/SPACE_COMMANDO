@@ -169,6 +169,18 @@
     }
   };
 
+  // Stage-entry films. A fresh campaign entry (not a checkpoint, retry or
+  // Quickplay) plays the stage's clip, then the stage's own opening. Keyed
+  // by stable stage ID; a stage without an entry keeps its original flow.
+  // `captions` time any spoken dialogue ({ start, end, speaker, text } in
+  // seconds). None of these clips has speech, only score and effects.
+  const FILMS = {
+    station: { src: 'assets/cinematics/station-hangar-approach.mp4', title: 'Approach: the derelict station', captions: [] },
+    jungle: { src: 'assets/cinematics/jungle-flyover.mp4', title: 'Approach: the jungle world', captions: [] },
+    cyber: { src: 'assets/cinematics/cyber-megacity.mp4', title: 'Approach: CyberCity', captions: [] },
+    desert: { src: 'assets/cinematics/desert-temple-approach.mp4', title: 'Approach: the desert temple', captions: [] }
+  };
+
   // Story sound cues. `clip` is a cleared field recording (see
   // assets/audio/field-sfx/README.md), played with an optional rate,
   // low-pass and repeats; `synth` is an original recipe in combat-audio.js.
@@ -314,5 +326,5 @@
     }
   };
 
-  root.SpaceStory = { SPEAKERS, LINES, SCENES, STAGES, SFX, DOOR_SFX };
+  root.SpaceStory = { SPEAKERS, LINES, SCENES, STAGES, SFX, DOOR_SFX, FILMS };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -54,6 +54,17 @@
           <button id="scene-skip" class="system-button" type="button">Skip scene</button>
         </div>
       </div>
+      <div id="stage-film" class="stage-film" role="dialog" aria-modal="true" aria-labelledby="film-title" hidden>
+        <video class="film-video" playsinline webkit-playsinline preload="none" disablepictureinpicture disableremoteplayback aria-hidden="true"></video>
+        <h2 id="film-title" class="visually-hidden"></h2>
+        <div class="scene-caption film-caption" aria-live="polite" aria-atomic="true" hidden>
+          <img class="caption-portrait" alt="" hidden>
+          <p><strong class="caption-speaker"></strong> <span class="caption-text"></span></p>
+        </div>
+        <div class="scene-actions">
+          <button id="film-skip" class="system-button" type="button">Skip</button>
+        </div>
+      </div>
       <div id="intro-layer" class="intro-layer" hidden>
         <video id="intro-video" src="inspiresoftwareintro.mp4" playsinline muted preload="metadata"></video>
         <button id="skip-intro" class="system-button" type="button">Skip intro</button>

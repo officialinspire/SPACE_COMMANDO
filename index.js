@@ -744,6 +744,7 @@
     //   pause, pause settings,
     //   game over                the stage theme, ducked (retry continues it)
     //   shop                     the stage theme, ducked less
+    //   stage-entry film         nothing (the clip has its own sound)
     //   cutscene                 its cue (dock, escape, reveal), keyed per opening
     //   stage clear              the stage's clear cue (station: crash landing;
     //                            CyberCity: the launch cue carries on), else menu
@@ -878,6 +879,8 @@
       if (document.body.dataset.boot !== 'ready' || !SETTINGS.audio || !SETTINGS.musicLevel || document.hidden) return null;
       const stageTrack = { name: STAGES[stageIndex].music, key: `stage:${musicEntry.stage}` };
       const campaignStory = playMode === 'campaign' ? STORY.STAGES[STAGES[stageIndex].id] : null;
+      // A stage-entry film has its own score; the director stays silent.
+      if (gameState === 'cinematic') return null;
       if (gameState === 'scene') {
         const cue = scene && STORY.SCENES[scene.id].music;
         return cue ? { name: cue, key: `scene:${musicEntry.scene}` } : stageTrack;
@@ -1326,7 +1329,10 @@
           playLegacyEffect(selectSfx);
           endOptions[endSelection][1]();
         }
+      } else if (gameState === 'cinematic') {
+        if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ' || e.key === 'Space') finishFilm('skip');
       } else if (gameState === 'scene') {
+        if (sceneGuarded()) return;
         if (e.key === 'Escape') closeScene(true);
         else if (e.key === 'Enter' || e.key === ' ' || e.key === 'Space' || e.key === 'ArrowRight') advanceScene();
       } else if (gameState === 'map') {
@@ -1718,7 +1724,11 @@
         saveCampaign(campaign);
       }
       enterStage(stageOrder(id), seed);
-      setupStory(sessionEntry.checkpoint);
+      // A fresh campaign entry plays the stage's film first; the opening
+      // (its scene, if any) runs once the film ends, is skipped or fails.
+      const withFilm = Boolean(mode === 'campaign' && !sessionEntry.checkpoint && !retry && STORY.FILMS?.[id]?.src);
+      setupStory(sessionEntry.checkpoint, withFilm);
+      if (withFilm) openFilm(id, openStageOpening);
     }
 
     function continueCampaign() {
@@ -2096,7 +2106,7 @@
       announce(label ? `${label}: ${line.text}` : line.text);
     }
 
-    function setupStory(checkpoint) {
+    function setupStory(checkpoint, deferOpening = false) {
       const data = playMode === 'campaign' && storyPlan ? STORY.STAGES[STAGES[stageIndex].id] : null;
       closeCaption();
       hudCache.clear();
@@ -2126,7 +2136,13 @@
       }
       syncDoors(true);
       beginStep();
-      if (!checkpoint && data.start?.scene) openScene(data.start.scene);
+      if (!checkpoint && !deferOpening) openStageOpening();
+    }
+
+    // The stage's opening: its still-image scene, if it has one.
+    function openStageOpening() {
+      const start = story?.data.start;
+      if (start?.scene) openScene(start.scene);
     }
 
     // A step's timer and hold progress always start fresh, including after
@@ -2414,8 +2430,17 @@
       closed.onDone?.();
     }
 
-    sceneNext.addEventListener('click', advanceScene);
-    sceneSkip.addEventListener('click', () => closeScene(true));
+    // Just after a film closes, a second tap or press meant for the film's
+    // Skip must not also skip or advance the scene it opened.
+    function sceneGuarded() {
+      return performance.now() - filmClosedAt < FILM_HANDOFF_GUARD_MS;
+    }
+    // An ignored tap must not leave focus on Skip either.
+    sceneNext.addEventListener('click', () => { if (!sceneGuarded()) advanceScene(); });
+    sceneSkip.addEventListener('click', () => {
+      if (!sceneGuarded()) closeScene(true);
+      else sceneNext.focus({ preventScroll: true });
+    });
     // Keep keyboard focus inside the open scene.
     document.addEventListener('keydown', e => {
       if (e.key !== 'Tab' || !scene) return;
@@ -2424,6 +2449,131 @@
       const i = items.indexOf(document.activeElement);
       items[(i + (e.shiftKey ? -1 : 1) + items.length) % items.length].focus();
     });
+
+    // ---------------------------------------------------------------------
+    // Stage-entry films. The video loads only when its entry starts and is
+    // released when it closes. Combat, objectives and timers stay paused
+    // (the state is not 'play'). Ending, Skip, an error, a blocked start or
+    // a stall all close it the same way, and the stage opening runs once.
+    const filmLayer = document.getElementById('stage-film');
+    const filmVideo = filmLayer.querySelector('.film-video');
+    const filmTitle = document.getElementById('film-title');
+    const filmCaption = filmLayer.querySelector('.film-caption');
+    const filmSkip = document.getElementById('film-skip');
+    // No first frame after this long (slow network, missing file that never
+    // errors) or no progress for this long while visible: carry on.
+    const FILM_START_MS = 8000;
+    const FILM_STALL_MS = 5000;
+    const FILM_HANDOFF_GUARD_MS = 400;
+    let film = null;
+    let filmClosedAt = -Infinity;
+    const filmLog = [];
+
+    // The clip carries score and effects, so it follows the louder of the
+    // Music and Sound effects levels; both off plays it muted.
+    function filmVolume() {
+      const musicLevel = SETTINGS.audio ? AUDIO_LEVELS[SETTINGS.musicLevel] : 0;
+      const sfxLevel = SETTINGS.sfx ? AUDIO_LEVELS[SETTINGS.sfxLevel] : 0;
+      return 0.8 * Math.max(musicLevel, sfxLevel);
+    }
+
+    function openFilm(id, onDone) {
+      const data = STORY.FILMS[id];
+      stopStorySfx();
+      resetGameplayInput();
+      const now = performance.now();
+      film = { id, data, onDone, progressAt: now, lastTime: -1, started: false, caption: null };
+      gameState = 'cinematic';
+      filmTitle.textContent = data.title;
+      filmCaption.hidden = true;
+      const volume = filmVolume();
+      filmVideo.volume = Math.min(1, volume);
+      filmVideo.muted = volume === 0;
+      filmVideo.src = data.src;
+      filmLayer.hidden = false;
+      gameContainer.inert = true;
+      menuLayer.inert = true;
+      syncMenu();
+      filmSkip.focus({ preventScroll: true });
+      playFilm();
+    }
+
+    function playFilm() {
+      if (!film || document.hidden) return;
+      const current = film;
+      filmVideo.play()?.catch(err => {
+        if (film !== current) return;
+        // Paused by a tab hide before it started: resumes on return.
+        if (err?.name === 'AbortError') return;
+        // Sound not allowed without a gesture: try once more, muted.
+        if (err?.name === 'NotAllowedError' && !filmVideo.muted) {
+          filmVideo.muted = true;
+          playFilm();
+          return;
+        }
+        finishFilm(err?.name === 'NotAllowedError' ? 'blocked' : 'error');
+      });
+    }
+
+    function finishFilm(reason) {
+      if (!film) return;
+      const done = film;
+      film = null;
+      filmClosedAt = performance.now();
+      filmLog.push({ id: done.id, reason, at: Math.round(filmVideo.currentTime * 1000) / 1000 });
+      filmVideo.pause();
+      filmVideo.removeAttribute('src');
+      filmVideo.load();
+      filmLayer.hidden = true;
+      filmCaption.hidden = true;
+      gameContainer.inert = false;
+      menuLayer.inert = false;
+      if (filmLayer.contains(document.activeElement)) document.activeElement.blur();
+      gameState = 'play';
+      resetGameplayInput();
+      syncMenu();
+      done.onDone?.();
+    }
+
+    // Called each frame while a film is up: stall watch and captions.
+    function updateFilm(now) {
+      if (document.hidden) { film.progressAt = now; return; }
+      const t = filmVideo.currentTime;
+      if (t !== film.lastTime) {
+        film.lastTime = t;
+        film.progressAt = now;
+        if (t > 0) film.started = true;
+      } else if (now - film.progressAt > (film.started ? FILM_STALL_MS : FILM_START_MS)) {
+        finishFilm(film.started ? 'stall' : 'timeout');
+        return;
+      }
+      const cue = (film.data.captions || []).find(c => t >= c.start && t < c.end) || null;
+      if (cue !== film.caption) {
+        film.caption = cue;
+        filmCaption.hidden = !cue;
+        if (cue) fillCaption(filmCaption, { speaker: cue.speaker, text: cue.text });
+      }
+    }
+
+    filmVideo.addEventListener('ended', () => finishFilm('ended'));
+    filmVideo.addEventListener('error', () => { if (film && filmVideo.getAttribute('src')) finishFilm('error'); });
+    filmSkip.addEventListener('click', () => finishFilm('skip'));
+    // A hidden tab pauses the film; it resumes where it was on return.
+    document.addEventListener('visibilitychange', () => {
+      if (!film) return;
+      if (document.hidden) filmVideo.pause();
+      else { film.progressAt = performance.now(); playFilm(); }
+    });
+    document.addEventListener('keydown', e => {
+      // A held Enter or Space (the press that chose Continue, or Next)
+      // must not click straight through a film or a scene.
+      if (e.repeat && (film || scene) && (e.key === 'Enter' || e.key === ' ')) e.preventDefault();
+      if (e.key === 'Tab' && film) {
+        e.preventDefault();
+        filmSkip.focus();
+      }
+    }, true);
+    window.commandoFilm = { log: filmLog, open: () => film && { id: film.id, src: film.data.src, started: film.started }, video: filmVideo };
 
     function drawStory(view) {
       if (!story) return;
@@ -5152,7 +5302,7 @@
       menuLayer.classList.toggle('title-art', mode === 'start');
       menuLayer.classList.toggle('map-layer', mode === 'map');
       menuLayer.classList.remove('map-fallback');
-      menuLayer.hidden = mode === 'play' || mode === 'boot' || mode === 'scene';
+      menuLayer.hidden = mode === 'play' || mode === 'boot' || mode === 'scene' || mode === 'cinematic';
       if (menuLayer.hidden) return;
 
       const panel = element('section', mode === 'shop' ? 'menu-panel shop-panel' : (mode === 'map' ? 'menu-panel map-panel' : 'menu-panel'));
@@ -5278,7 +5428,7 @@
       if (changed) {
         menuMode = mode;
         buildMenu(mode);
-        document.body.toggleAttribute('data-playing', mode === 'play' || mode === 'scene');
+        document.body.toggleAttribute('data-playing', mode === 'play' || mode === 'scene' || mode === 'cinematic');
         document.body.dataset.state = mode;
       }
       if (menuLayer.hidden) return;
@@ -5336,6 +5486,7 @@
       } else {
         accumulator = 0;
       }
+      if (gameState === 'cinematic' && film) updateFilm(now);
       if (gameState === 'scene' && scene && !document.hidden && windowFocused) {
         scene.left -= frameMs;
         if (scene.left <= 0) advanceScene();
