@@ -128,6 +128,17 @@
       quickplay: { health: 100, gold: 120, weapon: 'laser', owned: ['pistol', 'rifle', 'shotgun', 'laser'], clip: { pistol: 12, rifle: 50, shotgun: 5, laser: 30 }, reserve: { pistol: 24, rifle: 60, shotgun: 15, laser: 30 } } }
   ];
   const stageById = id => STAGES.find(stage => stage.id === id);
+
+  // Credits roll (no story spoilers: it is also reachable from the title).
+  const CREDITS = [
+    ['SPACE COMMANDO', ['A game by INSPIRE.']],
+    ['Music', ['Space Commando: Main Menu', 'Space Station: Level 1 Ambient', 'Jungle Planet: Level Theme',
+      'Cyber City: Urban Warfare', 'Desert Ruins: Ancient Temple', 'Orbital Station (Ambient Cutscene)',
+      'Jungle Planet: Emergency Crash Landing', 'CyberCity Escape (Cloudline Break)', 'Desolate Desert Ruins',
+      'Iron and Sand (Instrumental Credits)']],
+    ['Sound effects', ['CC0 recordings by morganpurkis, pgi, DeltaCode, NoonerBear, qubodup, Sojan, CVLTIV8R, gmoney514093, saangosu and SergeyIonov on Freesound, and by Kenney and Ogrebane on OpenGameArt.']],
+    ['Type', ['Barlow Condensed by The Barlow Project Authors, SIL Open Font License 1.1.']]
+  ];
   const stageOrder = id => STAGES.findIndex(stage => stage.id === id);
 
   // Campaign progress: versioned unlocks, clears and the last stage entry
@@ -571,11 +582,23 @@
   };
   // Stage themes that can't play at all fall back to the menu theme.
   for (const name of ['play', 'cyber', 'jungle', 'desert']) MUSIC_TRACKS[name].instead = 'menu';
-  const MUSIC_FADE_MS = 700;
+  // Fades are linear in gain from wherever the track is now, so any fade
+  // can be reversed or cancelled mid-way. A fade-in only advances while the
+  // track is actually playing. At most one track fades in and one fades out;
+  // anything older is cut in `cutMs`.
+  const MUSIC_FADE = { inMs: 900, outMs: 700, cutMs: 120 };
+  // A track that hasn't started playing within this long (stalled or never
+  // decodes) is treated as unavailable and its stand-in plays instead.
+  const MUSIC_START_TIMEOUT_MS = 10000;
+  // Changes to the Music level ease with this time constant.
+  const MUSIC_LEVEL_MS = 150;
   // A track with nothing playable is retried after this long.
   const MUSIC_RETRY_MS = 15000;
-  // Light ducks: pause and shop sit under the menus; major radio beats dip slightly.
-  const MUSIC_DUCK = { pause: 0.45, shop: 0.6, radio: 0.72 };
+  // Ducks scale the active track. Pause, pause settings and game over sit at
+  // 0.45, the shop at 0.6, a major radio beat at 0.72. The duck eases in with
+  // a 120 ms time constant (about 0.35 s to settle) and releases with 300 ms
+  // (about 0.9 s), so leaving a menu swells the music back rather than jumping.
+  const MUSIC_DUCK = { pause: 0.45, shop: 0.6, radio: 0.72, attackMs: 120, releaseMs: 300 };
 
   // -----------------------------------------------------------------------------
   // Sound effects
@@ -684,83 +707,174 @@
     let screenBandPx = CAMERA.hudPx;
     const camera = { x: 0, y: maxViewY, look: 1, lookVelocity: 0, lead: 0, yVelocity: 0, support: groundY, facing: 1, facingFor: 0 };
 
-    // Music tracks start with metadata only and stream once they play.
+    // ---------------------------------------------------------------------
+    // Music director. Each frame turns the screen into one desired state:
+    // a track name and an entry key. A new key for a story cue or a stage
+    // theme starts it from the top; the same key (pause, shop, retry, hidden
+    // tab, mute) continues from where it was.
+    //
+    //   boot / intro             nothing (the intro video has its own sound)
+    //   title, star map,
+    //   title settings           menu theme
+    //   stage gameplay           the stage theme, keyed by stage entry
+    //   pause, pause settings,
+    //   game over                the stage theme, ducked (retry continues it)
+    //   shop                     the stage theme, ducked less
+    //   cutscene                 its cue (dock, escape, reveal), keyed per opening
+    //   stage clear              the stage's clear cue (station: crash landing;
+    //                            CyberCity: the launch cue carries on), else menu
+    //   mission complete         credits (Iron and Sand), keyed per completion
+    //   credits screen           the same credits key, so it never restarts
+    //   quickplay                the stage theme; its clear screen uses menu
+    //
+    // Sources are set only when a track is first wanted, so nothing streams
+    // at boot and only the active tracks download.
     const music = {};
     let musicBlocked = false;
     let musicLast = null;
-    function startTrack(track) {
-      if (track.pending) return;
-      track.pending = true;
-      track.audio.preload = 'auto';
-      const done = () => { track.pending = false; };
-      // Story cues start from the top when they come in from silence.
-      if (track.restart && track.level === 0) {
-        try { track.audio.currentTime = 0; } catch {}
-      }
-      const attempt = track.audio.play();
-      // Autoplay rejection waits for the next gesture instead of retrying
-      // every frame. A missing or undecodable file is handled by 'error'.
-      if (attempt?.then) attempt.then(done, err => { done(); if (err?.name === 'NotAllowedError') musicBlocked = true; });
-      else done();
+    let musicSeq = 0;
+    // The track fading in (or playing) and the one fading out.
+    // `level` eases toward the Music setting, so muting fades rather than cuts.
+    const director = { current: null, outgoing: null, duck: 1, level: null };
+    // Entry keys: a new stage entry, scene opening or end screen gets a new key.
+    const musicEntry = { stage: 0, scene: 0, end: 0, credits: 0 };
+
+    function trackSource(track) {
+      const def = MUSIC_TRACKS[track.name];
+      return track.failed ? def.fallback : def.src;
     }
+
+    function ensureSource(track) {
+      if (track.srcSet) return;
+      track.srcSet = true;
+      track.audio.preload = 'auto';
+      track.audio.src = encodeURI(trackSource(track));
+    }
+
+    // Stop a track now and forget any play request still in flight.
+    function stopTrack(track) {
+      track.token = ++musicSeq;
+      track.pending = false;
+      track.ready = false;
+      track.fade = 0;
+      track.requestedAt = 0;
+      if (!track.audio.paused) track.audio.pause();
+      track.audio.volume = 0;
+    }
+
+    const isActive = track => director.current === track.name || director.outgoing === track.name;
+
+    function startTrack(track) {
+      if (track.pending || !track.audio.paused) return;
+      ensureSource(track);
+      const token = track.token = ++musicSeq;
+      track.pending = true;
+      track.requestedAt ||= performance.now();
+      track.audio.volume = 0;
+      let attempt;
+      try { attempt = track.audio.play(); } catch { attempt = null; }
+      const settle = ok => {
+        if (token !== track.token) return;
+        track.pending = false;
+        // A play that resolves after the track stopped being wanted, or after
+        // the tab was hidden, must not start it.
+        if (ok && (!isActive(track) || document.hidden)) track.audio.pause();
+      };
+      if (attempt?.then) {
+        attempt.then(() => settle(true), err => {
+          settle(false);
+          // Autoplay rejection waits for the next gesture instead of retrying
+          // every frame. Missing or undecodable files are handled by 'error'.
+          // A blocked start is waiting for a gesture, not failing.
+          if (token === track.token && err?.name === 'NotAllowedError') { musicBlocked = true; track.requestedAt = 0; }
+        });
+      } else settle(true);
+    }
+
+    function markUnavailable(track) {
+      track.unavailableUntil = performance.now() + MUSIC_RETRY_MS;
+      stopTrack(track);
+    }
+
     for (const [name, def] of Object.entries(MUSIC_TRACKS)) {
       const audio = new Audio();
-      audio.preload = 'metadata';
-      const track = { name, audio, level: 0, gain: def.gain, tail: def.tail, restart: Boolean(def.restart),
-        failed: false, pending: false, unavailableUntil: 0 };
+      audio.preload = 'none';
+      const track = { name, audio, fade: 0, duck: 1, gain: def.gain, tail: def.tail, restart: Boolean(def.restart),
+        failed: false, pending: false, ready: false, srcSet: false, token: 0, key: null, requestedAt: 0, unavailableUntil: 0 };
       audio.addEventListener('error', () => {
+        if (!track.srcSet) return;
         if (!track.failed && def.fallback) {
+          // Primary file failed: switch to the legacy fallback and keep going.
           track.failed = true;
           track.gain = def.fallbackGain;
           track.tail = def.fallbackTail;
+          track.pending = false;
+          track.ready = false;
+          track.requestedAt = isActive(track) ? performance.now() : 0;
           audio.src = encodeURI(def.fallback);
           audio.load();
           return;
         }
-        // Nothing playable right now: another track stands in until a retry.
-        track.unavailableUntil = performance.now() + MUSIC_RETRY_MS;
-        track.pending = false;
-        track.level = 0;
+        // Nothing playable right now: its stand-in plays until a retry.
+        markUnavailable(track);
       });
-      // Loop inside the silent tail rather than waiting for the file end.
+      // Fade-ins wait for real playback; buffering holds the fade where it is.
+      audio.addEventListener('playing', () => {
+        if (!isActive(track) || document.hidden) { audio.pause(); return; }
+        track.ready = true;
+        track.requestedAt = 0;
+      });
+      audio.addEventListener('waiting', () => { track.ready = false; });
+      audio.addEventListener('pause', () => { track.ready = false; });
+      // Loop inside the measured silent tail rather than waiting for the file end.
       audio.addEventListener('timeupdate', () => {
         if (track.tail && audio.duration && audio.currentTime >= audio.duration - track.tail + 0.12) audio.currentTime = 0;
       });
       audio.addEventListener('ended', () => {
         audio.currentTime = 0;
-        if (track.level > 0) startTrack(track);
+        // Only the current track loops; a late 'ended' can't revive anything else.
+        if (director.current === name && !document.hidden) startTrack(track);
       });
-      audio.src = encodeURI(def.src);
       music[name] = track;
     }
     for (const event of ['pointerdown', 'keydown']) {
       window.addEventListener(event, () => { musicBlocked = false; }, { capture: true, passive: true });
     }
-    // Hidden tabs pause at once; the director fades back in on return.
+    // Hidden tabs stop everything at once. On return the desired state is
+    // picked up again, continuing from the same positions with a fresh fade.
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) { musicLast = null; return; }
-      for (const track of Object.values(music)) {
-        track.audio.pause();
-        track.level = 0;
-        track.audio.volume = 0;
-      }
+      for (const track of Object.values(music)) stopTrack(track);
+      director.current = null;
+      director.outgoing = null;
     });
 
-    // The track each screen wants. Stage themes follow the stage ID and keep
-    // playing (ducked) under pause, shop and pause settings, so resuming
-    // never restarts them. Scenes and end screens use the story cues.
-    function wantedMusic() {
-      if (document.body.dataset.boot !== 'ready' || !SETTINGS.audio || document.hidden) return null;
-      const stageTrack = STAGES[stageIndex].music;
+    // The desired music state for the current screen.
+    function wantedState() {
+      if (document.body.dataset.boot !== 'ready' || !SETTINGS.audio || !SETTINGS.musicLevel || document.hidden) return null;
+      const stageTrack = { name: STAGES[stageIndex].music, key: `stage:${musicEntry.stage}` };
       const campaignStory = playMode === 'campaign' ? STORY.STAGES[STAGES[stageIndex].id] : null;
-      if (gameState === 'scene') return (scene && STORY.SCENES[scene.id].music) || stageTrack;
-      if (gameState === 'play' || gameState === 'menu' || gameState === 'shop') return stageTrack;
-      if (gameState === 'settings') return prevSettingsState === 'menu' ? stageTrack : 'menu';
-      if (gameState === 'gameover' && campaignStory) {
-        if (endKind === 'complete') return campaignStory.endMusic || 'menu';
-        if (endKind === 'cleared') return campaignStory.clearMusic || 'menu';
+      if (gameState === 'scene') {
+        const cue = scene && STORY.SCENES[scene.id].music;
+        return cue ? { name: cue, key: `scene:${musicEntry.scene}` } : stageTrack;
       }
-      return 'menu';
+      if (gameState === 'play' || gameState === 'menu' || gameState === 'shop') return stageTrack;
+      if (gameState === 'settings') return prevSettingsState === 'menu' ? stageTrack : { name: 'menu', key: 'menu' };
+      if (gameState === 'credits') return { name: 'credits', key: `credits:${musicEntry.credits}` };
+      if (gameState === 'gameover') {
+        if (endKind === 'dead') return stageTrack;
+        if (campaignStory && endKind === 'complete') return { name: campaignStory.endMusic || 'credits', key: `credits:${musicEntry.credits}` };
+        if (campaignStory && endKind === 'cleared' && campaignStory.clearMusic) {
+          // A cue already playing (CyberCity's launch) carries on under its clear screen.
+          const name = campaignStory.clearMusic;
+          return { name, key: director.current === name ? music[name].key : `end:${musicEntry.end}` };
+        }
+      }
+      return { name: 'menu', key: 'menu' };
+    }
+
+    function wantedMusic() {
+      return wantedState()?.name ?? null;
     }
 
     // The wanted track, or the one standing in while it is unavailable. An
@@ -775,8 +889,7 @@
           track.failed = false;
           track.gain = def.gain;
           track.tail = def.tail;
-          track.audio.src = encodeURI(def.src);
-          track.audio.load();
+          track.srcSet = false;
           return name;
         }
         name = MUSIC_TRACKS[name].instead;
@@ -786,29 +899,95 @@
 
     function musicDuck() {
       if (gameState === 'menu' || (gameState === 'settings' && prevSettingsState === 'menu')) return MUSIC_DUCK.pause;
+      if (gameState === 'gameover' && endKind === 'dead') return MUSIC_DUCK.pause;
       if (gameState === 'shop') return MUSIC_DUCK.shop;
       if (gameState === 'play' && story?.caption?.major) return MUSIC_DUCK.radio;
       return 1;
     }
 
-    // Called every frame: fade each track toward its target for the state.
+    // Make `name` the current track. The previous current one becomes the
+    // outgoing track; an older outgoing track is cut.
+    function bringIn(name, key) {
+      const incoming = music[name];
+      // An older outgoing track stops at once: never more than two audible.
+      if (director.outgoing && director.outgoing !== name && director.outgoing !== director.current) {
+        stopTrack(music[director.outgoing]);
+        director.outgoing = null;
+      }
+      if (director.current && director.current !== name) director.outgoing = director.current;
+      if (director.outgoing === name) director.outgoing = null;
+      director.current = name;
+      // A new entry key restarts story cues and stage themes from the top.
+      // Re-entered while still fading out, it simply continues: no cut.
+      if (key !== incoming.key) {
+        const fresh = incoming.restart || name !== 'menu';
+        if (fresh && incoming.key !== null && incoming.fade === 0) {
+          try { incoming.audio.currentTime = 0; } catch {}
+        }
+        incoming.key = key;
+      }
+    }
+
+    // Called every frame: one desired state, at most two audible tracks.
     function updateMusic(now) {
       const dt = musicLast === null ? 0 : Math.min(100, now - musicLast);
       musicLast = now;
-      const wanted = playableMusic(wantedMusic());
-      const duck = musicDuck();
+      const state = wantedState();
+      let name = state ? playableMusic(state.name) : null;
+      // A stand-in keeps its own position instead of restarting.
+      const key = name && name === state?.name ? state.key : (name ? music[name].key ?? 'standin' : null);
+      if (name !== director.current || (name && key !== music[name].key)) {
+        if (name) bringIn(name, key);
+        else {
+          if (director.current) {
+            if (director.outgoing && director.outgoing !== director.current) stopTrack(music[director.outgoing]);
+            director.outgoing = director.current;
+          }
+          director.current = null;
+        }
+      }
+      // Duck: each track eases its own duck, faster down than back up. Only
+      // the current track follows the screen; an outgoing track holds the
+      // duck it had, so handing over never makes it jump louder.
+      const duckTarget = musicDuck();
+      const easeDuck = track => {
+        const tau = duckTarget < track.duck ? MUSIC_DUCK.attackMs : MUSIC_DUCK.releaseMs;
+        track.duck += (duckTarget - track.duck) * (dt ? 1 - Math.exp(-dt / tau) : 0);
+        if (Math.abs(track.duck - duckTarget) < 0.002) track.duck = duckTarget;
+      };
+      // The Music level eases (150 ms time constant); while muting, the last
+      // audible level carries the outgoing fade so it fades instead of cutting.
+      const levelTarget = SETTINGS.audio ? SETTINGS.musicVolume * AUDIO_LEVELS[SETTINGS.musicLevel] : 0;
+      if (director.level === null) director.level = levelTarget;
+      if (levelTarget > 0 || director.current) director.level += (levelTarget - director.level) * (dt ? 1 - Math.exp(-dt / MUSIC_LEVEL_MS) : 0);
+      if (Math.abs(director.level - levelTarget) < 0.002 && levelTarget > 0) director.level = levelTarget;
+      const level = director.level;
       for (const track of Object.values(music)) {
-        const target = track.name === wanted ? Math.min(1, track.gain * duck * SETTINGS.musicVolume * AUDIO_LEVELS[SETTINGS.musicLevel]) : 0;
-        const step = dt / MUSIC_FADE_MS;
-        // A track that is not playing yet (blocked or buffering) waits at zero, so it still fades in.
-        if (target > track.level && !track.audio.paused) track.level = Math.min(target, track.level + step);
-        else if (target < track.level) track.level = Math.max(target, track.level - step);
-        if (target > 0 && track.audio.paused && !musicBlocked && !document.hidden) startTrack(track);
-        track.audio.volume = Math.max(0, Math.min(1, track.level));
-        if (!target && !track.level && !track.audio.paused) track.audio.pause();
+        const role = track.name === director.current ? 'in' : (track.name === director.outgoing ? 'out' : (track.fade > 0 || !track.audio.paused ? 'cut' : null));
+        if (!role) continue;
+        if (role === 'in') {
+          // A track coming in from silence takes the screen's duck at once.
+          if (track.fade === 0) track.duck = duckTarget;
+          else easeDuck(track);
+          director.duck = track.duck;
+          if (track.audio.paused && !track.pending && !musicBlocked && !document.hidden) startTrack(track);
+          // A start that never gets going hands over to the stand-in.
+          if (!track.ready && !musicBlocked && track.requestedAt && now - track.requestedAt > MUSIC_START_TIMEOUT_MS) { markUnavailable(track); continue; }
+          if (track.ready && !track.audio.paused) track.fade = Math.min(1, track.fade + dt / MUSIC_FADE.inMs);
+        } else {
+          // Outgoing fades from its current gain; a stray track is cut quickly.
+          track.fade = Math.max(0, track.fade - dt / (role === 'cut' ? MUSIC_FADE.cutMs : MUSIC_FADE.outMs));
+          if (track.fade === 0) {
+            stopTrack(track);
+            if (role === 'out') director.outgoing = null;
+            continue;
+          }
+        }
+        track.audio.volume = Math.max(0, Math.min(1, track.fade * track.gain * track.duck * level));
       }
     }
-    window.commandoMusic = { tracks: music, wanted: wantedMusic, playing: () => playableMusic(wantedMusic()), duck: musicDuck };
+
+    window.commandoMusic = { tracks: music, director, wanted: wantedMusic, state: wantedState, playing: () => director.current, duck: musicDuck };
 
     // Menu music starts after the intro video ends (see index.html), so the
     // two never overlap.
@@ -1077,8 +1256,8 @@
           gameState = prevSettingsState || 'start';
         }
       } else if (gameState === 'start') {
-        // Start menu options: 0 Start Game, 1 Game Settings
-        const optionsCount = 2;
+        // Start menu options: 0 Star map, 1 Settings, 2 Credits
+        const optionsCount = 3;
         if (e.key === 'ArrowUp') {
           startMenuSelection = (startMenuSelection + optionsCount - 1) % optionsCount;
         } else if (e.key === 'ArrowDown') {
@@ -1092,11 +1271,19 @@
             prevSettingsState = 'start';
             settingsSelection = 0;
             gameState = 'settings';
+          } else if (startMenuSelection === 2) {
+            openCredits('start');
           }
           // Play selection sound on start menu action
           playLegacyEffect(selectSfx);
         }
         // no escape action on start menu
+      } else if (gameState === 'credits') {
+        if (e.key === 'Enter' || e.key === 'Escape') {
+          playLegacyEffect(selectSfx);
+          if (creditsFrom === 'complete') openStarMap();
+          else { gameState = 'start'; startMenuSelection = 2; }
+        }
       } else if (gameState === 'gameover') {
         const count = endOptions.length || 1;
         if (e.key === 'ArrowUp') endSelection = (endSelection + count - 1) % count;
@@ -1483,7 +1670,9 @@
     // Begin a stage in either mode from a known seed and loadout. Campaign
     // entries are saved so Continue and Retry restore exactly this start.
     // A checkpoint resumes the same seed mid-stage with its own loadout.
-    function startStage(mode, id, seed, loadout, elapsed = 0, checkpoint = null) {
+    // A retry continues the stage theme; any other entry starts it fresh.
+    function startStage(mode, id, seed, loadout, elapsed = 0, checkpoint = null, retry = false) {
+      if (!retry) musicEntry.stage++;
       resetRunState();
       playMode = mode;
       applyLoadout(loadout);
@@ -1508,19 +1697,29 @@
     // and one-shot triggers all reset, and any checkpoint is dropped.
     function retryStage() {
       const entry = sessionEntry || { stage: 'station', seed: freshSeed('station'), loadout: defaultLoadout(), elapsed: 0 };
-      startStage(playMode, entry.stage, entry.seed, entry.loadout, entry.elapsed);
+      startStage(playMode, entry.stage, entry.seed, entry.loadout, entry.elapsed, null, Boolean(sessionEntry));
     }
 
     function retryCheckpoint() {
       const entry = sessionEntry;
       if (!entry?.checkpoint) { retryStage(); return; }
-      startStage(playMode, entry.stage, entry.seed, entry.loadout, entry.elapsed, entry.checkpoint);
+      startStage(playMode, entry.stage, entry.seed, entry.loadout, entry.elapsed, entry.checkpoint, true);
     }
 
     function startQuickplay(id) {
       const stage = stageById(id);
       if (!stage || !campaign.unlocked.includes(id)) return;
       startStage('quickplay', id, freshSeed(id), stage.quickplay);
+    }
+
+    // Credits: after Mission complete the credits track carries on; from the
+    // title it starts fresh.
+    let creditsFrom = 'start';
+    function openCredits(from) {
+      if (from !== 'complete') musicEntry.credits++;
+      creditsFrom = from;
+      resetGameplayInput();
+      gameState = 'credits';
     }
 
     function openStarMap() {
@@ -1541,8 +1740,11 @@
           : [['Retry stage', retryStage], ['Star map', openStarMap]],
         quickplay: [['Retry stage', retryStage], ['Star map', openStarMap]],
         cleared: [[`Continue to ${next?.name}`, continueCampaign], ['Star map', openStarMap]],
-        complete: [['Star map', openStarMap]]
+        complete: [['Credits', () => openCredits('complete')], ['Star map', openStarMap]]
       }[kind];
+      // Each clear screen is a new entry for its cue; a completion starts the credits.
+      if (kind === 'cleared') musicEntry.end++;
+      if (kind === 'complete') musicEntry.credits++;
       runComplete = kind === 'complete';
       if (kind !== 'dead') endReason = '';
       closeCaption();
@@ -1967,6 +2169,7 @@
     // Escape) closes and replays the scene's essential lines as captions.
     function openScene(id, onDone = null) {
       const data = STORY.SCENES[id];
+      musicEntry.scene++;
       resetGameplayInput();
       const beats = data.frames.flatMap((frame, f) => frame.lines.map(line => ({ frame: f, line })));
       scene = { id, data, beats, index: -1, left: 0, onDone, returnFocus: document.activeElement };
@@ -4591,6 +4794,7 @@
       if (gameState === 'shop') return menuSelection;
       if (gameState === 'map') return mapRow;
       if (gameState === 'gameover') return endSelection;
+      if (gameState === 'credits') return 0;
       return 0;
     }
 
@@ -4764,7 +4968,7 @@
       const panel = element('section', mode === 'shop' ? 'menu-panel shop-panel' : (mode === 'map' ? 'menu-panel map-panel' : 'menu-panel'));
       const endHeading = { dead: 'Game over', quickplay: 'Quickplay clear', cleared: 'Stage clear', complete: 'Mission complete' }[endKind] || 'Game over';
       const heading = element(mode === 'start' ? 'h1' : 'h2', '', {
-        start: 'SPACE COMMANDO', menu: 'Paused', settings: 'Settings', shop: 'Shop', map: 'Star map',
+        start: 'SPACE COMMANDO', menu: 'Paused', settings: 'Settings', shop: 'Shop', map: 'Star map', credits: 'Credits',
         gameover: endHeading
       }[mode]);
       heading.id = 'menu-heading';
@@ -4804,9 +5008,24 @@
         buildStarMap(panel);
         return;
       }
+      if (mode === 'credits') {
+        panel.classList.add('credits-panel');
+        const roll = element('div', 'credits-roll');
+        for (const [title, lines] of CREDITS) {
+          const section = element('section');
+          section.append(element('h3', '', title));
+          for (const line of lines) section.append(element('p', '', line));
+          roll.append(section);
+        }
+        panel.append(roll);
+        const options = element('div', 'menu-options');
+        addMenuRow(options, creditsFrom === 'complete' ? 'Star map' : 'Back', 0, false).classList.add('primary');
+        panel.append(options);
+        return;
+      }
       const options = element('div', 'menu-options');
       const labels = {
-        start: ['Star map', 'Settings'],
+        start: ['Star map', 'Settings', 'Credits'],
         menu: ['Resume', 'Retry stage', 'Star map', 'Settings'],
         settings: ['Difficulty', 'Music', 'Particles', 'Camera shake and flashes', 'Sound effects', 'Haptics'],
         gameover: endOptions.map(([label]) => label)

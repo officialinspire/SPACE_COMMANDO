@@ -38,3 +38,16 @@ Each special plays its cues once per event through `combat-audio.js`, within the
 ## Music tracks
 
 Music plays through HTML audio elements, separate from these cues, so the Music and Sound effects levels stay independent. Stage themes are chosen by stage ID: menu, `station` (Space Station Level 1 Ambient), `jungle`, `cyber`, `desert`. The story cues are the docking scene (Orbital Station Ambient Cutscene), the CyberCity launch scene and the CyberCity clear screen (CyberCity Escape, Cloudline Break), the archive reveal (Desolate Desert Ruins), the Space Station clear screen (Jungle Planet Emergency Crash Landing), and Mission complete (Iron and Sand, Instrumental Credits). If a story cue can't load, the matching stage theme stands in; if a stage theme and its legacy fallback can't load, the menu theme stands in. Either way the missing track is retried 15 s later the next time it's wanted.
+
+### Director behaviour
+
+Each frame the director turns the screen into one desired track plus an entry key. A new key (a new stage entry, scene opening, clear screen or completion) starts a story cue or stage theme from the top. The same key (pause, Shop, Settings from pause, game over and Retry, a hidden tab, mute and unmute) continues from the same position.
+
+- **Fades:** linear in gain from wherever the track is, so any fade can be cancelled or reversed. Fade-in is 900 ms and only advances once the track is actually playing. Fade-out is 700 ms. At most one track fades in and one fades out; any older one stops.
+- **Ducking:** pause, pause Settings and game over duck the current track to 0.45, the Shop to 0.6, and major radio beats to 0.72. Each track eases its own duck with a 120 ms attack and a 300 ms release time constant. An outgoing track keeps the duck it had.
+- **Music level:** eases over 150 ms, so muting fades out.
+- **Stale playback:** a play request or media event that arrives after a track stopped being wanted, or after the tab was hidden, can't restart it.
+- **Failures:** a track that hasn't started within 10 s hands over to its stand-in and is retried later.
+- **Streaming:** sources are set only when a track is first wanted, so boot fetches no music and only active tracks stream.
+- **Credits:** Mission complete starts Iron and Sand (Instrumental Credits). Its Credits screen continues the same track without restarting it, and Credits opened from the title starts it fresh.
+
