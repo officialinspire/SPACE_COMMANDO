@@ -110,19 +110,19 @@
   //   briefing  map and Quickplay text; it never previews unreached story beats
   //   quickplay the fixed standalone loadout for a Quickplay session
   const STAGES = [
-    { id: 'station', name: 'Space Station', music: 'play', map: [0.453, 0.139],
+    { id: 'station', name: 'Space Station', music: 'play', map: [0.155, 0.364, 0.04, 'right'],
       objective: 'Recover the analyst’s research, then reach the shuttle.',
       briefing: 'Our contact missed a scheduled check-in. The docking cradle still answers, but life-support telemetry is dead.',
       quickplay: { health: 100, gold: 0, weapon: 'pistol', owned: ['pistol'], clip: { pistol: 12 }, reserve: { pistol: 24 } } },
-    { id: 'jungle', name: 'Jungle Planet', env: 'jungle-planet', music: 'jungle', map: [0.529, 0.362],
+    { id: 'jungle', name: 'Jungle Planet', env: 'jungle-planet', music: 'jungle', map: [0.327, 0.633, 0.068, 'below'],
       objective: 'Reach the abandoned research facility and restore its relay.',
       briefing: 'The damaged shuttle could only make the nearest planet. A colonial research site stands empty under the canopy.',
       quickplay: { health: 100, gold: 40, weapon: 'rifle', owned: ['pistol', 'rifle'], clip: { pistol: 12, rifle: 50 }, reserve: { pistol: 24, rifle: 60 } } },
-    { id: 'cyber', name: 'CyberCity', env: 'cyberpunk-city', music: 'cyber', map: [0.472, 0.579],
+    { id: 'cyber', name: 'CyberCity', env: 'cyberpunk-city', music: 'cyber', map: [0.621, 0.345, 0.053, 'right'],
       objective: 'Slip through the freight district and reach an impounded courier.',
       briefing: 'A CyberCity cargo hauler is the only ride off-world. The port says freight inspection. The police are scanning for a beacon.',
       quickplay: { health: 100, gold: 80, weapon: 'shotgun', owned: ['pistol', 'rifle', 'shotgun'], clip: { pistol: 12, rifle: 50, shotgun: 5 }, reserve: { pistol: 24, rifle: 60, shotgun: 15 } } },
-    { id: 'desert', name: 'Ancient Planet Ruins', env: 'desert-temple-ruins', music: 'desert', map: [0.529, 0.815],
+    { id: 'desert', name: 'Ancient Planet Ruins', env: 'desert-temple-ruins', music: 'desert', map: [0.828, 0.591, 0.056, 'below', 'below-end'],
       objective: 'Open the archive, record it and reach extraction.',
       briefing: 'HQ decrypted the analyst’s coordinates to a ruined desert world. Wind cuts across the terraces. Someone may be there first.',
       quickplay: { health: 100, gold: 120, weapon: 'laser', owned: ['pistol', 'rifle', 'shotgun', 'laser'], clip: { pistol: 12, rifle: 50, shotgun: 5, laser: 30 }, reserve: { pistol: 24, rifle: 60, shotgun: 15, laser: 30 } } }
@@ -1984,6 +1984,8 @@
       } else portrait.hidden = true;
       box.querySelector('.caption-speaker').textContent = speaker.label;
       box.querySelector('.caption-text').textContent = line.text;
+      // Each side has its own speaker colour and edge.
+      box.dataset.faction = speaker.faction || 'neutral';
       // A recording's signature tag, so a repeat reads as the same signal.
       let tag = box.querySelector('.caption-signature');
       if (line.signature) {
@@ -4979,7 +4981,7 @@
         chart.classList.add('no-art');
         menuLayer.classList.add('map-fallback');
       });
-      art.src = 'assets/ui/star-map.webp';
+      art.src = 'assets/ui/star-map-wide.webp';
       chart.append(art);
       const svgNS = 'http://www.w3.org/2000/svg';
       const route = document.createElementNS(svgNS, 'svg');
@@ -5005,8 +5007,14 @@
         const item = element('li');
         const row = addMenuRow(item, stage.name, i, true);
         row.classList.add('waypoint');
-        row.style.setProperty('--x', `${stage.map[0] * 100}%`);
-        row.style.setProperty('--y', `${stage.map[1] * 100}%`);
+        // Positions and planet sizes are measured on the map art itself.
+        // `narrow` is the label side on narrow maps, where space is tighter.
+        const [x, y, r, side, narrow = side] = stage.map;
+        row.style.setProperty('--x', `${x * 100}%`);
+        row.style.setProperty('--y', `${y * 100}%`);
+        row.style.setProperty('--r', String(r));
+        row.dataset.side = side;
+        row.dataset.narrow = narrow;
         // The ring frames the planet; only the label carries a background.
         const label = element('span', 'wp-label');
         label.append(...row.childNodes);
@@ -5048,8 +5056,11 @@
         row.setAttribute('aria-pressed', String(i === mapPick));
         const picked = i === mapPick;
         // Every state is written out, not only coloured.
-        value.textContent = (status === 'locked' ? '🔒 ' : status === 'cleared' ? '✓ ' : '') + statusText[status] +
-          (next ? ' · Next' : '') + (picked ? ' · Selected' : '');
+        // The status word always shows; Next and Selected drop on narrow maps,
+        // where the ring and the briefing carry them.
+        const extra = (next ? ' · Next' : '') + (picked ? ' · Selected' : '');
+        value.replaceChildren(element('span', 'wp-status', (status === 'locked' ? '🔒 ' : status === 'cleared' ? '✓ ' : '') + statusText[status]),
+          ...(extra ? [element('span', 'wp-extra', extra)] : []));
         // Spoken state: name, status and, when locked, how to unlock it.
         row.setAttribute('aria-label', `${stage.name}. ${statusText[status]}${next ? ', next campaign stop' : ''}${picked ? ', selected' : ''}. ${status === 'locked' ? unlockCondition(stage) : ''}`.trim());
       });
@@ -5119,6 +5130,19 @@
       heading.id = 'menu-heading';
       panel.setAttribute('aria-labelledby', heading.id);
       menuLayer.append(panel);
+      // A short tactical label above each heading.
+      const kicker = {
+        menu: 'Operation on hold', settings: 'Systems', shop: 'Armory · requisition', map: 'Operation map', credits: 'Roll call',
+        gameover: { dead: 'Mission report · KIA', quickplay: 'Quickplay report', cleared: 'Mission report', complete: 'Operation complete' }[endKind] || 'Mission report'
+      }[mode];
+      if (kicker) panel.append(element('p', 'kicker', kicker));
+      if (mode === 'start') {
+        // Wordmark: a tracked SPACE over a heavy COMMANDO, then a short line.
+        heading.textContent = '';
+        heading.classList.add('wordmark');
+        heading.setAttribute('aria-label', 'SPACE COMMANDO');
+        heading.append(element('span', 'wordmark-top', 'SPACE'), element('span', 'wordmark-main', 'COMMANDO'));
+      }
       if (mode === 'shop') {
         const header = element('div', 'shop-heading');
         shopGold = element('span', 'shop-gold');
@@ -5133,8 +5157,10 @@
             const weapon = WEAPONS[item.key];
             const row = addMenuRow(list, weapon?.name || item.name, column * 4 + i, true);
             row.classList.add('shop-row');
-            const detail = weapon ? `Damage ${weapon.damage} · Mag ${weapon.magazine}` : `+${item.qty} to reserve`;
-            row.append(element('small', '', detail));
+            // Ammo shows its quantity as a chip beside the price.
+            if (!weapon) row.insertBefore(element('span', 'shop-qty', `+${item.qty}`), row.lastChild);
+            const detail = weapon ? `DMG ${weapon.damage} · MAG ${weapon.magazine}${weapon.auto ? ' · AUTO' : ''}` : '';
+            row.append(element('small', 'shop-stats', detail));
           });
           group.append(list);
           grid.append(group);
@@ -5149,6 +5175,7 @@
       }
 
       panel.append(heading);
+      if (mode === 'start') panel.append(element('p', 'title-tagline', 'Orbital breach. Four worlds. One drive.'));
       if (mode === 'map') {
         buildStarMap(panel);
         return;
@@ -5242,9 +5269,13 @@
         shopStatus.textContent = shopNotice;
         SHOP_ITEMS.forEach((item, i) => {
           const owned = item.type === 'weapon' && player.ownedWeapons[item.key];
-          const value = owned ? (player.weapon === item.key ? 'Equipped' : 'Equip') :
-            `${item.cost ?? WEAPONS[item.key].cost} G`;
+          const cost = item.cost ?? WEAPONS[item.key].cost;
+          const state = owned ? (player.weapon === item.key ? 'equipped' : 'owned') : (player.gold >= cost ? 'buy' : 'short');
+          const value = state === 'equipped' ? 'Equipped' : (state === 'owned' ? 'Equip' : `${cost} G`);
+          const { row } = menuRows[i];
+          row.dataset.state = state;
           menuRows[i].value.textContent = value;
+          if (item.type === 'ammo') row.querySelector('.shop-stats').textContent = `In reserve ${player.reserveAmmo[item.ammoType]}`;
         });
       }
       if (changed || moveFocus) {

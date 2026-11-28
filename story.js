@@ -14,20 +14,20 @@
   // Speaker IDs are roles until the cast has names. `signal` is a voice the
   // player can't identify yet; the same recording later plays as `analyst`.
   const SPEAKERS = {
-    commando: { label: 'Commando' },
+    commando: { label: 'Commando', faction: 'commando' },
     // `radio` speakers key up with a squelch at the start of a transmission
     // and release one when it ends; `sfx` plays on each of their lines.
-    'squad-leader': { label: 'Squad Leader', portrait: 'squad-leader', radio: true },
-    squad: { label: 'Squad channel', radio: true },
-    signal: { label: 'Unknown signal' },
-    analyst: { label: 'Analyst · recovered log', portrait: 'analyst' },
-    commander: { label: 'Fleet Commander', portrait: 'commander', radio: true },
-    priestess: { label: 'Dark Elf Priestess', portrait: 'elf-leader' },
-    'police-commander': { label: 'Police Commander', portrait: 'police-commander', radio: true },
-    'thug-leader': { label: 'Thug Leader', portrait: 'thug-leader' },
-    recorder: { label: 'Colonial recorder', sfx: 'playback-glitch' },
-    interference: { label: 'Interference', radio: true },
-    archive: { label: 'Archive', sfx: 'playback-glitch' },
+    'squad-leader': { label: 'Squad Leader', portrait: 'squad-leader', radio: true, faction: 'squad' },
+    squad: { label: 'Squad channel', radio: true, faction: 'squad' },
+    signal: { label: 'Unknown signal', faction: 'signal' },
+    analyst: { label: 'Analyst · recovered log', portrait: 'analyst', faction: 'signal' },
+    commander: { label: 'Fleet Commander', portrait: 'commander', radio: true, faction: 'fleet' },
+    priestess: { label: 'Dark Elf Priestess', portrait: 'elf-leader', faction: 'elf' },
+    'police-commander': { label: 'Police Commander', portrait: 'police-commander', radio: true, faction: 'police' },
+    'thug-leader': { label: 'Thug Leader', portrait: 'thug-leader', faction: 'thug' },
+    recorder: { label: 'Colonial recorder', sfx: 'playback-glitch', faction: 'archive' },
+    interference: { label: 'Interference', radio: true, faction: 'signal' },
+    archive: { label: 'Archive', sfx: 'playback-glitch', faction: 'archive' },
     narration: { label: '' }
   };
 
@@ -142,7 +142,7 @@
       frames: [
         { art: 'assets/story/courier.webp', fallback: 'assets/environments/cyberpunk-city/background.webp', lines: ['escape-sent'],
           sfx: [['courier-ignition', 0], ['ship-fire', 1.0]] },
-        { art: 'assets/story/orbit.webp', fallback: 'assets/ui/star-map.webp', lines: ['escape-stop', 'escape-who', 'escape-anyone'] }
+        { art: 'assets/story/orbit.webp', fallback: 'assets/ui/star-map-wide.webp', lines: ['escape-stop', 'escape-who', 'escape-anyone'] }
       ],
       music: 'escape',
       essential: ['escape-stop']

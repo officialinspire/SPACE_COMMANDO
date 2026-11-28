@@ -16,6 +16,14 @@
   font-weight: 700;
   font-display: swap;
 }
+/* If the woff2 files are missing, a local face scaled toward Barlow
+   Condensed's width keeps labels, prices and the map layout intact. */
+@font-face {
+  font-family: "Barlow Condensed Fallback";
+  src: local("Arial Narrow"), local("Roboto Condensed"), local("Liberation Sans Narrow"), local("DejaVu Sans Condensed"), local("Arial"), local("Liberation Sans"), local("Helvetica");
+  size-adjust: 78%;
+  ascent-override: 92%;
+}
 
 :root {
   color-scheme: dark;
@@ -23,11 +31,11 @@
   color: var(--text);
   background: var(--ink);
   --ink: #080b10;
-  --panel: #13171d;
-  --panel-2: #1b2028;
-  --panel-3: #232a33;
-  --line: #3b444f;
-  --line-soft: #2b323b;
+  --panel: #14171b;
+  --panel-2: #1c2025;
+  --panel-3: #262b31;
+  --line: #3c434c;
+  --line-soft: #2a2f36;
   --text: #eef1f4;
   --muted: #aab4bf;
   --amber: #f4c37b;
@@ -37,7 +45,7 @@
   --cleared: #9cd98f;
   --locked: #7f8a96;
   --danger: #ff9f86;
-  --display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --display: "Barlow Condensed", "Barlow Condensed Fallback", "Arial Narrow", system-ui, sans-serif;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -187,7 +195,19 @@ button:disabled { cursor: wait; opacity: .6; }
   background: linear-gradient(#171c23f7, #11151af7);
   box-shadow: 0 16px 40px #000a, inset 0 1px #ffffff0d;
 }
-.title-art .menu-panel { width: min(100%, 320px); border: 0; padding: 0; background: none; box-shadow: none; }
+.title-art .menu-panel { width: min(100%, 360px); border: 0; padding: 0; background: none; box-shadow: none; }
+/* Tactical corner brackets on every panel (not the title). */
+.menu-layer:not(.title-art) .menu-panel::before, .menu-layer:not(.title-art) .menu-panel::after {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  pointer-events: none;
+}
+.menu-layer:not(.title-art) .menu-panel::before { top: -1px; left: -1px; border-top: 2px solid var(--cyan); border-left: 2px solid var(--cyan); border-top-left-radius: 6px; }
+.menu-layer:not(.title-art) .menu-panel::after { bottom: -1px; right: -1px; border-bottom: 2px solid #5e6b78; border-right: 2px solid #5e6b78; border-bottom-right-radius: 6px; }
+.menu-panel > .kicker { margin: 0 0 2px; font-size: 13px; color: var(--cyan); }
+.menu-panel > .kicker + h2 { margin-top: 0; }
 .menu-panel h1 { font-size: clamp(38px, min(8vw, 17cqh), 76px); margin-bottom: clamp(14px, 4cqh, 26px); }
 .menu-options { display: grid; gap: 5px; }
 .menu-row {
@@ -373,8 +393,15 @@ button:disabled { cursor: wait; opacity: .6; }
 .map-actions .menu-row[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
 .map-notice { margin: 0; font-size: 12.5px; color: var(--amber); }
 .map-notice:empty { display: none; }
-@media (max-width: 640px), (orientation: portrait) {
+/* Portrait stacks map over briefing; landscape phones keep them side by side
+   so Campaign Continue stays on screen. */
+@media (orientation: portrait) {
   .map-body { grid-template-columns: 1fr; }
+}
+@media (orientation: landscape) and (max-width: 760px) {
+  .map-body { grid-template-columns: minmax(0, 1.25fr) minmax(200px, 1fr); gap: 8px; }
+  .map-brief p { font-size: 12.5px; }
+  .map-panel { padding: 8px 10px; }
 }
 
 /* ------------------------------------------------- story overlays (HUD) */
@@ -631,3 +658,168 @@ body[data-touch] .menu-layer, body[data-touch] .story-scene { position: fixed; }
   color: var(--cyan);
 }
 .scene-caption .caption-signature { display: inline-block; margin-left: .6em; }
+
+/* ======================================================= visual pass
+   Title wordmark, map waypoints sized to the art, shop hierarchy and
+   faction captions. */
+
+/* ---------------------------------------------------------- title */
+.wordmark { display: grid; gap: 0; margin: 0 0 6px; }
+.wordmark-top {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: clamp(16px, min(3.2vw, 6cqh), 30px);
+  letter-spacing: .62em;
+  line-height: 1;
+  color: var(--cyan);
+  text-shadow: 0 0 18px #8adddf55;
+}
+.wordmark-main {
+  font-size: clamp(48px, min(10vw, 19cqh), 124px);
+  line-height: .84;
+  letter-spacing: .02em;
+  color: #f6f1e8;
+  text-shadow: 0 4px 26px #000d, 0 0 1px #0008;
+}
+.title-tagline { margin: 2px 0 clamp(14px, 4cqh, 26px); color: #cfd8e0; font-size: clamp(13px, 3.4cqh, 16px); letter-spacing: .02em; }
+.title-art .menu-options { gap: 2px; }
+/* The primary action is a full amber button; the rest read as a quiet list. */
+.title-art .menu-row.primary { min-height: 54px; font-size: 18px; letter-spacing: .02em; margin-bottom: 8px; }
+.title-art .menu-row:not(.primary) { min-height: 44px; background: #0e1114b8; border-color: transparent; }
+.title-art .menu-row:not(.primary)[data-selected="true"] { border-color: var(--cyan); background: #12202ad9; }
+.title-art::after {
+  /* Letterbox shading: cinematic weight top and bottom. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(#000a, #0000 14%, #0000 82%, #000b);
+}
+.title-art .menu-panel { z-index: 1; }
+.launch-panel h1 { font-size: clamp(52px, min(11vw, 22vh), 140px); letter-spacing: .02em; }
+
+/* ------------------------------------------------------ star map */
+/* The ring is sized to the planet it marks (measured on the art), with a
+   44 px minimum for touch; labels sit to the right of or below it. */
+.star-map .waypoint {
+  --ring: max(44px, calc(var(--r) * 2 * 100cqw + 10px));
+  transform: translate(calc(var(--ring) / -2), -50%);
+  align-items: center;
+  max-width: 46%;
+}
+.star-map .waypoint .wp-marker { width: var(--ring); height: var(--ring); }
+.star-map .waypoint[data-side="below"] {
+  flex-direction: column;
+  align-items: center;
+  transform: translate(-50%, calc(var(--ring) / -2));
+  gap: 4px;
+  max-width: 40%;
+}
+.star-map .waypoint[data-side="below"] .wp-label { text-align: center; justify-items: center; }
+.star-map .wp-label { background: #0b0e12e6; border-color: #3a434d; }
+.star-map .wp-label .menu-detail { font-family: var(--display); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.star-map.no-art .waypoint, .star-map.no-art .waypoint[data-side="below"] { transform: none; flex-direction: row; max-width: none; }
+.star-map.no-art .waypoint .wp-marker { width: 28px; height: 28px; }
+/* Selected briefing reads as the active dossier. */
+.map-brief { position: relative; border-top: 2px solid var(--cyan); }
+.map-brief::before {
+  content: "Selected";
+  display: block;
+  margin-bottom: 2px;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+
+/* ------------------------------------------------------------ shop */
+.shop-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: "name qty price" "stats stats price";
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 0;
+  min-height: 52px;
+}
+.shop-row > span:first-child { grid-area: name; font-family: var(--display); font-weight: 700; font-size: 1.12em; letter-spacing: .03em; text-transform: uppercase; }
+.shop-row .shop-stats { grid-area: stats; width: auto; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.shop-row .shop-qty {
+  grid-area: qty;
+  padding: 0 7px;
+  border: 1px solid #4f8e91;
+  border-radius: 10px;
+  font-weight: 750;
+  font-size: 12px;
+  color: var(--cyan);
+  font-variant-numeric: tabular-nums;
+}
+.shop-row .menu-detail {
+  grid-area: price;
+  justify-self: end;
+  min-width: 64px;
+  text-align: right;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 1.2em;
+  letter-spacing: .03em;
+  color: var(--amber);
+  font-variant-numeric: tabular-nums;
+}
+/* Equipped is the cyan state; owned weapons offer Equip; too expensive is muted. */
+.shop-row[data-state="equipped"] { border-color: #4f8e91; background: #12202a; }
+.shop-row[data-state="equipped"] .menu-detail { color: var(--cyan); font-size: .95em; }
+.shop-row[data-state="equipped"] .menu-detail::before { content: "● "; }
+.shop-row[data-state="owned"] .menu-detail { color: #e3e8ed; font-size: .95em; }
+.shop-row[data-state="short"] .menu-detail { color: #8a929b; }
+.shop-row[data-state="short"] .menu-detail::after { content: " · need gold"; font-family: system-ui, sans-serif; font-weight: 600; font-size: .6em; letter-spacing: 0; text-transform: none; }
+.shop-gold { padding: 2px 10px; border: 1px solid #6a5636; border-radius: 4px; background: #1d1810; }
+
+/* -------------------------------------------------------- results */
+.gameover-summary { font-variant-numeric: tabular-nums; }
+
+/* ------------------------------------------- faction radio captions */
+.story-caption, .scene-caption { --faction: var(--amber); border-left-color: var(--faction); }
+.story-caption .caption-speaker, .scene-caption .caption-speaker { color: var(--faction); }
+.story-caption .caption-portrait, .scene-caption .caption-portrait { border: 2px solid var(--faction); }
+[data-faction="fleet"] { --faction: #8adddf; }
+[data-faction="squad"] { --faction: #f4c37b; }
+[data-faction="commando"] { --faction: #e8edf1; }
+[data-faction="elf"] { --faction: #c9a0ff; }
+[data-faction="police"] { --faction: #9cc8ff; }
+[data-faction="thug"] { --faction: #f0946a; }
+[data-faction="archive"] { --faction: #e2cf86; }
+[data-faction="signal"] { --faction: #7fe0c5; }
+.story-caption.major { border-color: #59616b; border-left-color: var(--faction); box-shadow: 0 0 0 1px #ffffff1a, 0 4px 18px #000c; }
+/* Portraits stay large enough to read during play. */
+.story-caption .caption-portrait { width: 3.3em; height: 3.3em; }
+
+/* Narrow maps: compact labels (name and one status word) measured to clear
+   every ring on the art; Next and Selected show on the ring and briefing. */
+@container (max-width: 460px) {
+  .star-map .waypoint { font-size: 9.5px; gap: 3px; }
+  .star-map .wp-label { padding: 2px 6px 3px; min-height: 0; border-radius: 4px; }
+  .star-map .wp-label > span:first-child { font-size: 1.05em; letter-spacing: .02em; }
+  .star-map .wp-extra { display: none; }
+  .star-map .waypoint[data-side="below"] { max-width: 34%; }
+  .star-map .waypoint { max-width: 30%; }
+  /* One-line labels so a label below its planet never wraps into the art's edge. */
+  .star-map .wp-label > span { white-space: nowrap; }
+  .star-map .waypoint[data-side="below"] { max-width: none; }
+  /* Near the right edge: the label hangs from the ring's right side. */
+  .star-map .waypoint[data-narrow="below-end"] { align-items: flex-end; transform: translate(calc(-100% + var(--ring) / 2), calc(var(--ring) / -2)); }
+  .star-map .waypoint[data-narrow="below-end"] .wp-label { text-align: right; justify-items: end; }
+}
+/* Short landscape: the briefing keeps the objective and drops the flavour
+   paragraph, so Campaign Continue and Quickplay stay on screen. */
+@media (orientation: landscape) and (max-height: 430px) {
+  .map-brief .map-text { display: none; }
+  .map-brief h3 { font-size: 18px; }
+  .menu-panel > .kicker { font-size: 11px; }
+  .map-panel h2 { font-size: 20px; margin-bottom: 4px; padding-bottom: 3px; }
+}
+@media (orientation: portrait) {
+  .shop-grid { grid-template-columns: 1fr; }
+}

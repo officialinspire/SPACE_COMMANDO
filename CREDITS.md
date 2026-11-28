@@ -62,7 +62,7 @@ These files ship with the game, but no record in the repository names their crea
   - the station parallax (`assets/station/`, `space_station_parallax.png`);
   - the three environment kits (`assets/environments/`);
   - the story stills and radio portraits (`assets/story/` and their PNG sources);
-  - the title art (`assets/ui/orbital-breach*`), the star map (`assets/ui/star-map.webp`) and the legacy `space-commando-sprite-sheet.png`.
+  - the title art (`assets/ui/orbital-breach*`), the star map (`assets/ui/star-map-wide.webp`, from "Wide-field deep-space campaign vista.png") and the legacy `space-commando-sprite-sheet.png`.
 
   The READMEs under `assets/characters/` describe frame layouts but not creators or licences.
 - **Intro video:** `inspiresoftwareintro.mp4` has no creator or licence record.
