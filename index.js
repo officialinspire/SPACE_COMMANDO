@@ -102,14 +102,145 @@
     asset.ready.then(() => { station[name] = asset.image; }, () => {});
   }
 
-  // The four stages of a run, in order. Stage 1 is the orbital station with
-  // its own art; the others draw from the environment kits.
+  // The campaign route, in order, keyed by stable stage IDs (see the story
+  // draft): Space Station, Jungle Planet, CyberCity, then the Ancient Planet
+  // Ruins, which use the Desert Temple Ruins art. Everything that depends on
+  // a stage looks it up by id; the array order is only the route.
+  //   map       waypoint position on the star-map art, as fractions of its size
+  //   briefing  map and Quickplay text; it never previews unreached story beats
+  //   quickplay the fixed standalone loadout for a Quickplay session
   const STAGES = [
-    { id: 'station', name: 'Orbital Station', music: 'play' },
-    { id: 'cyber', name: 'CyberCity', env: 'cyberpunk-city', music: 'cyber' },
-    { id: 'jungle', name: 'Jungle Planet', env: 'jungle-planet', music: 'jungle' },
-    { id: 'desert', name: 'Desert Temple Ruins', env: 'desert-temple-ruins', music: 'desert' }
+    { id: 'station', name: 'Space Station', music: 'play', map: [0.453, 0.139],
+      objective: 'Recover the analyst’s research, then reach the shuttle.',
+      briefing: 'Our contact missed a scheduled check-in. The docking cradle still answers, but life-support telemetry is dead.',
+      quickplay: { health: 100, gold: 0, weapon: 'pistol', owned: ['pistol'], clip: { pistol: 12 }, reserve: { pistol: 24 } } },
+    { id: 'jungle', name: 'Jungle Planet', env: 'jungle-planet', music: 'jungle', map: [0.529, 0.362],
+      objective: 'Reach the abandoned research facility and restore its relay.',
+      briefing: 'The damaged shuttle could only make the nearest planet. A colonial research site stands empty under the canopy.',
+      quickplay: { health: 100, gold: 40, weapon: 'rifle', owned: ['pistol', 'rifle'], clip: { pistol: 12, rifle: 50 }, reserve: { pistol: 24, rifle: 60 } } },
+    { id: 'cyber', name: 'CyberCity', env: 'cyberpunk-city', music: 'cyber', map: [0.472, 0.579],
+      objective: 'Slip through the freight district and reach an impounded courier.',
+      briefing: 'A CyberCity cargo hauler is the only ride off-world. The port says freight inspection. The police are scanning for a beacon.',
+      quickplay: { health: 100, gold: 80, weapon: 'shotgun', owned: ['pistol', 'rifle', 'shotgun'], clip: { pistol: 12, rifle: 50, shotgun: 5 }, reserve: { pistol: 24, rifle: 60, shotgun: 15 } } },
+    { id: 'desert', name: 'Ancient Planet Ruins', env: 'desert-temple-ruins', music: 'desert', map: [0.529, 0.815],
+      objective: 'Open the archive, record it and reach extraction.',
+      briefing: 'HQ decrypted the analyst’s coordinates to a ruined desert world. Wind cuts across the terraces. Someone may be there first.',
+      quickplay: { health: 100, gold: 120, weapon: 'laser', owned: ['pistol', 'rifle', 'shotgun', 'laser'], clip: { pistol: 12, rifle: 50, shotgun: 5, laser: 30 }, reserve: { pistol: 24, rifle: 60, shotgun: 15, laser: 30 } } }
   ];
+  const stageById = id => STAGES.find(stage => stage.id === id);
+  const stageOrder = id => STAGES.findIndex(stage => stage.id === id);
+
+  // Campaign progress: versioned unlocks, clears and the last stage entry
+  // (stage, seed and loadout) in localStorage. Bad or foreign data resets to
+  // a fresh campaign; without storage, progress lasts for the session only.
+  const SAVE_KEY = 'space-commando.campaign';
+  const SAVE_VERSION = 1;
+  const WEAPON_KEYS = ['pistol', 'rifle', 'shotgun', 'laser'];
+  let storageNotice = '';
+  let memorySave = null;
+  const saveStorage = (() => {
+    try {
+      const probe = '__space-commando-probe__';
+      window.localStorage.setItem(probe, '1');
+      window.localStorage.removeItem(probe);
+      return window.localStorage;
+    } catch {
+      storageNotice = 'Progress can’t be saved in this browser. It lasts until you close the page.';
+      return null;
+    }
+  })();
+
+  const STORY = window.SpaceStory;
+
+  // Required anchors in the order the objectives ask for them.
+  function storyPhases(data) {
+    return data.steps.filter(step => step.type !== 'reach').map(step => step.anchors || [step.anchor])
+      .filter((list, i, all) => all.findIndex(other => other.join() === list.join()) === i);
+  }
+
+  // A mid-stage checkpoint from untrusted data, or null. A bad checkpoint
+  // only drops back to the stage entry; it never resets the campaign.
+  function sanitizeCheckpoint(stageId, raw) {
+    const data = STORY.STAGES[stageId];
+    if (!data || !raw || typeof raw !== 'object') return null;
+    const step = raw.step;
+    if (!Number.isInteger(step) || step < 1 || step >= data.steps.length || !data.steps[step - 1].checkpoint) return null;
+    const loadout = sanitizeLoadout(raw.loadout);
+    if (!loadout || !(raw.at in data.anchors)) return null;
+    const list = (value, allowed) => Array.isArray(value) ? [...new Set(value.filter(v => allowed.includes(v)))] : [];
+    const done = list(raw.done, Object.keys(data.anchors));
+    // Every anchor of the finished steps must be done.
+    const needed = data.steps.slice(0, step).flatMap(s => s.anchors || []);
+    if (!needed.every(id => done.includes(id))) return null;
+    const fired = list(raw.fired, data.triggers.map(t => t.id));
+    const elapsed = Number.isFinite(raw.elapsed) && raw.elapsed >= 0 ? Math.min(raw.elapsed, 3.6e7) : 0;
+    return { step, at: raw.at, done, fired, loadout, elapsed };
+  }
+
+  function freshCampaign() {
+    return { unlocked: ['station'], cleared: [], entry: null };
+  }
+
+  // A loadout from untrusted data: known weapons only, sane non-negative ammo.
+  function sanitizeLoadout(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    // Out-of-range values are clamped rather than trusted.
+    const int = (value, min, max, fallback) => Number.isFinite(value) ? Math.max(min, Math.min(max, Math.floor(value))) : fallback;
+    const owned = Array.isArray(raw.owned) ? WEAPON_KEYS.filter(key => raw.owned.includes(key)) : [];
+    if (!owned.includes('pistol')) owned.unshift('pistol');
+    const weapon = owned.includes(raw.weapon) ? raw.weapon : 'pistol';
+    const clip = {};
+    const reserve = {};
+    for (const key of WEAPON_KEYS) {
+      const has = owned.includes(key);
+      clip[key] = has ? int(raw.clip?.[key], 0, WEAPONS[key].magazine, 0) : 0;
+      reserve[key] = has ? int(raw.reserve?.[key], 0, 9999, 0) : 0;
+    }
+    return { health: int(raw.health, 1, 100, 100), gold: int(raw.gold, 0, 1e6, 0), weapon, owned, clip, reserve };
+  }
+
+  function loadCampaign() {
+    let text = memorySave;
+    if (saveStorage) {
+      try { text = saveStorage.getItem(SAVE_KEY); } catch { text = memorySave; }
+    }
+    if (!text) return freshCampaign();
+    try {
+      const data = JSON.parse(text);
+      if (data?.version !== SAVE_VERSION) throw new Error('version');
+      // Clears are a prefix of the route, and only clears unlock the next
+      // stage, so an edited unlock list can't skip ahead.
+      const ids = STAGES.map(stage => stage.id);
+      let clearedCount = 0;
+      while (clearedCount < ids.length && Array.isArray(data.cleared) && data.cleared.includes(ids[clearedCount])) clearedCount++;
+      const cleared = ids.slice(0, clearedCount);
+      const unlocked = ids.slice(0, Math.min(ids.length, clearedCount + 1));
+      let entry = null;
+      if (data.entry) {
+        const seed = Number.isInteger(data.entry.seed) && data.entry.seed >= 0 ? data.entry.seed >>> 0 : null;
+        if (seed === null || !unlocked.includes(data.entry.stage)) throw new Error('entry');
+        const loadout = sanitizeLoadout(data.entry.loadout) || sanitizeLoadout(stageById(data.entry.stage).quickplay);
+        // Elapsed play time at entry keeps the difficulty ramp where it was.
+        const elapsed = Number.isFinite(data.entry.elapsed) && data.entry.elapsed >= 0 ? Math.min(data.entry.elapsed, 3.6e7) : 0;
+        entry = { stage: data.entry.stage, seed, loadout, elapsed, checkpoint: sanitizeCheckpoint(data.entry.stage, data.entry.checkpoint) };
+      }
+      return { unlocked, cleared, entry };
+    } catch {
+      storageNotice = 'Saved progress couldn’t be read, so the campaign was reset.';
+      return freshCampaign();
+    }
+  }
+
+  function saveCampaign(campaign) {
+    const text = JSON.stringify({ version: SAVE_VERSION, ...campaign });
+    memorySave = text;
+    if (!saveStorage) return;
+    try {
+      saveStorage.setItem(SAVE_KEY, text);
+    } catch {
+      storageNotice = 'Progress couldn’t be saved. It lasts until you close the page.';
+    }
+  }
 
   // How each kit's sprites map onto the game. Rectangles come from
   // assets/environments/manifest.json. The numbers here were measured from
@@ -201,19 +332,20 @@
   //   cues      per-event cue names: field-sfx clips where a recording fits the
   //             attack (carbine, laser, armour damage), bank cues otherwise
   const EXPANSION = {
-    'cybercity-police': { stage: 'cyber', kind: 'projectile', body: [32, 32], hurt: [28, 50], health: 4, speed: 0.9,
+    'cybercity-police': { stages: ['cyber'], kind: 'projectile', body: [32, 32], hurt: [28, 50], health: 4, speed: 0.9,
       preferredRange: 230, reach: 520, damage: 7, shotSpeed: 4.6, firstDelay: [1200, 700], cooldown: [1900, 900],
       economy: 'robot', audio: 'robot', climbs: true,
       cues: { Warn: 'robotWarn', Attack: 'rifleFire', Hurt: 'robotHurt', Down: 'robotDown' } },
-    'cybercity-thug': { stage: 'cyber', kind: 'dash', body: [32, 32], hurt: [30, 52], health: 4, speed: 1.15,
+    'cybercity-thug': { stages: ['cyber'], kind: 'dash', body: [32, 32], hurt: [30, 52], health: 4, speed: 1.15,
       preferredRange: 36, reach: 70, damage: 7, dashSpeed: 8.5, firstDelay: [600, 600], cooldown: [1400, 600],
       economy: 'zombie', audio: 'zombie', climbs: true, hops: true,
-      cues: { Warn: 'zombieWarn', Attack: 'robotAttack', Hurt: 'zombieHurt', Down: 'zombieDown' } },
-    'jungle-dinosaur': { stage: 'jungle', kind: 'pounce', body: [64, 40], hurt: [84, 52], health: 7, speed: 1.0,
+      cues: { Warn: 'zombieWarn', Attack: 'robotAttack', Impact: 'robotDown', Hurt: 'zombieHurt', Down: 'zombieDown' } },
+    'jungle-dinosaur': { stages: ['jungle'], kind: 'pounce', body: [64, 40], hurt: [84, 52], health: 7, speed: 1.0, minRun: 260,
       preferredRange: 40, reach: 190, damage: 9, pounce: [4.2, -4.6], firstDelay: [700, 600], cooldown: [1800, 700],
       vulnerable: 2, economy: 'alien', audio: 'alien', climbs: false, hops: true,
-      cues: { Warn: 'alienWarn', Attack: 'alienAttack', Hurt: 'alienHurt', Down: 'alienDown' } },
-    'jungle-dark-elf': { stage: 'jungle', kind: 'laser', body: [32, 32], hurt: [28, 50], health: 3, speed: 1.05,
+      cues: { Warn: 'alienWarn', Attack: 'alienAttack', Land: 'robotMove', Impact: 'robotMove', Hurt: 'alienHurt', Down: 'alienDown' } },
+    // Laser rangers lead the jungle roster and return as guests at the ruins.
+    'jungle-dark-elf': { stages: ['jungle'], guestStages: ['desert'], guestWeight: [0.2, 0.12], kind: 'laser', body: [32, 32], hurt: [28, 50], health: 3, speed: 1.05,
       preferredRange: 210, reach: 520, damage: 8, firstDelay: [1100, 700], cooldown: [2100, 900],
       economy: 'robot', audio: 'alien', climbs: true,
       cues: { Warn: 'ghostWarn', Attack: 'laserFire', Hurt: 'ghostHurt', Down: 'ghostDown' } }
@@ -415,9 +547,25 @@
     jungle: { src: 'Jungle Planet_ Level Theme.mp3', tail: 1.81, gain: 0.78,
               fallback: 'game-background-music.mp3', fallbackTail: 6.9, fallbackGain: 1 },
     desert: { src: 'Desert Ruins_ Ancient Temple.mp3', tail: 1.25, gain: 0.68,
-              fallback: 'game-background-music.mp3', fallbackTail: 6.9, fallbackGain: 1 }
+              fallback: 'game-background-music.mp3', fallbackTail: 6.9, fallbackGain: 1 },
+    // Story cues: the three scenes, the shuttle's crash landing after the
+    // station and the end credits. Each restarts from the top when it comes
+    // in. Gains match the stage themes at about -18.6 LUFS; tails are the
+    // measured trailing silence. A cue that can't load is replaced by its
+    // `instead` track and retried later.
+    dock: { src: 'Orbital Station (Ambient Cutscene).mp3', tail: 0.42, gain: 0.6, restart: true, instead: 'play' },
+    escape: { src: 'CyberCity Escape (Cloudline Break).mp3', tail: 0.92, gain: 0.56, restart: true, instead: 'cyber' },
+    reveal: { src: 'Desolate Desert Ruins.mp3', tail: 0.47, gain: 0.65, restart: true, instead: 'desert' },
+    crash: { src: 'Jungle Planet_ Emergency Crash Landing.mp3', tail: 0, gain: 0.59, restart: true, instead: 'menu' },
+    credits: { src: 'Iron and Sand (Instrumental Credits).mp3', tail: 1.48, gain: 0.63, restart: true, instead: 'menu' }
   };
+  // Stage themes that can't play at all fall back to the menu theme.
+  for (const name of ['play', 'cyber', 'jungle', 'desert']) MUSIC_TRACKS[name].instead = 'menu';
   const MUSIC_FADE_MS = 700;
+  // A track with nothing playable is retried after this long.
+  const MUSIC_RETRY_MS = 15000;
+  // Light ducks: pause and shop sit under the menus; major radio beats dip slightly.
+  const MUSIC_DUCK = { pause: 0.45, shop: 0.6, radio: 0.72 };
 
   // -----------------------------------------------------------------------------
   // Sound effects
@@ -533,22 +681,34 @@
       track.pending = true;
       track.audio.preload = 'auto';
       const done = () => { track.pending = false; };
+      // Story cues start from the top when they come in from silence.
+      if (track.restart && track.level === 0) {
+        try { track.audio.currentTime = 0; } catch {}
+      }
       const attempt = track.audio.play();
-      // Autoplay rejection waits for the next gesture instead of retrying every frame.
-      if (attempt?.then) attempt.then(done, () => { done(); musicBlocked = true; });
+      // Autoplay rejection waits for the next gesture instead of retrying
+      // every frame. A missing or undecodable file is handled by 'error'.
+      if (attempt?.then) attempt.then(done, err => { done(); if (err?.name === 'NotAllowedError') musicBlocked = true; });
       else done();
     }
     for (const [name, def] of Object.entries(MUSIC_TRACKS)) {
       const audio = new Audio();
       audio.preload = 'metadata';
-      const track = { name, audio, level: 0, gain: def.gain, tail: def.tail, failed: false, pending: false };
+      const track = { name, audio, level: 0, gain: def.gain, tail: def.tail, restart: Boolean(def.restart),
+        failed: false, pending: false, unavailableUntil: 0 };
       audio.addEventListener('error', () => {
-        if (track.failed) return;
-        track.failed = true;
-        track.gain = def.fallbackGain;
-        track.tail = def.fallbackTail;
-        audio.src = encodeURI(def.fallback);
-        audio.load();
+        if (!track.failed && def.fallback) {
+          track.failed = true;
+          track.gain = def.fallbackGain;
+          track.tail = def.fallbackTail;
+          audio.src = encodeURI(def.fallback);
+          audio.load();
+          return;
+        }
+        // Nothing playable right now: another track stands in until a retry.
+        track.unavailableUntil = performance.now() + MUSIC_RETRY_MS;
+        track.pending = false;
+        track.level = 0;
       });
       // Loop inside the silent tail rather than waiting for the file end.
       audio.addEventListener('timeupdate', () => {
@@ -574,18 +734,59 @@
       }
     });
 
+    // The track each screen wants. Stage themes follow the stage ID and keep
+    // playing (ducked) under pause, shop and pause settings, so resuming
+    // never restarts them. Scenes and end screens use the story cues.
     function wantedMusic() {
       if (document.body.dataset.boot !== 'ready' || !SETTINGS.audio || document.hidden) return null;
-      return gameState === 'play' ? STAGES[stageIndex].music : 'menu';
+      const stageTrack = STAGES[stageIndex].music;
+      const campaignStory = playMode === 'campaign' ? STORY.STAGES[STAGES[stageIndex].id] : null;
+      if (gameState === 'scene') return (scene && STORY.SCENES[scene.id].music) || stageTrack;
+      if (gameState === 'play' || gameState === 'menu' || gameState === 'shop') return stageTrack;
+      if (gameState === 'settings') return prevSettingsState === 'menu' ? stageTrack : 'menu';
+      if (gameState === 'gameover' && campaignStory) {
+        if (endKind === 'complete') return campaignStory.endMusic || 'menu';
+        if (endKind === 'cleared') return campaignStory.clearMusic || 'menu';
+      }
+      return 'menu';
+    }
+
+    // The wanted track, or the one standing in while it is unavailable. An
+    // unavailable track is retried once its wait is over and it is wanted.
+    function playableMusic(name) {
+      for (let hops = 0; name && hops < 4; hops++) {
+        const track = music[name];
+        if (!track.unavailableUntil) return name;
+        if (performance.now() >= track.unavailableUntil) {
+          const def = MUSIC_TRACKS[name];
+          track.unavailableUntil = 0;
+          track.failed = false;
+          track.gain = def.gain;
+          track.tail = def.tail;
+          track.audio.src = encodeURI(def.src);
+          track.audio.load();
+          return name;
+        }
+        name = MUSIC_TRACKS[name].instead;
+      }
+      return null;
+    }
+
+    function musicDuck() {
+      if (gameState === 'menu' || (gameState === 'settings' && prevSettingsState === 'menu')) return MUSIC_DUCK.pause;
+      if (gameState === 'shop') return MUSIC_DUCK.shop;
+      if (gameState === 'play' && story?.caption?.major) return MUSIC_DUCK.radio;
+      return 1;
     }
 
     // Called every frame: fade each track toward its target for the state.
     function updateMusic(now) {
       const dt = musicLast === null ? 0 : Math.min(100, now - musicLast);
       musicLast = now;
-      const wanted = wantedMusic();
+      const wanted = playableMusic(wantedMusic());
+      const duck = musicDuck();
       for (const track of Object.values(music)) {
-        const target = track.name === wanted ? Math.min(1, track.gain * SETTINGS.musicVolume * AUDIO_LEVELS[SETTINGS.musicLevel]) : 0;
+        const target = track.name === wanted ? Math.min(1, track.gain * duck * SETTINGS.musicVolume * AUDIO_LEVELS[SETTINGS.musicLevel]) : 0;
         const step = dt / MUSIC_FADE_MS;
         // A track that is not playing yet (blocked or buffering) waits at zero, so it still fades in.
         if (target > track.level && !track.audio.paused) track.level = Math.min(target, track.level + step);
@@ -595,7 +796,7 @@
         if (!target && !track.level && !track.audio.paused) track.audio.pause();
       }
     }
-    window.commandoMusic = { tracks: music, wanted: wantedMusic };
+    window.commandoMusic = { tracks: music, wanted: wantedMusic, playing: () => playableMusic(wantedMusic()), duck: musicDuck };
 
     // Menu music starts after the intro video ends (see index.html), so the
     // two never overlap.
@@ -791,8 +992,8 @@
           mainMenuSelection = 0;
         }
       } else if (gameState === 'menu') {
-        // Pause menu options: 0: Return to Game, 1: Restart Game, 2: Game Settings
-        const optionsCount = 3;
+        // Pause menu options: 0 Resume, 1 Retry stage, 2 Star map, 3 Settings
+        const optionsCount = 4;
         if (e.key === 'ArrowUp') {
           mainMenuSelection = (mainMenuSelection + optionsCount - 1) % optionsCount;
         } else if (e.key === 'ArrowDown') {
@@ -802,11 +1003,11 @@
             // Return to game
             gameState = 'play';
           } else if (mainMenuSelection === 1) {
-            // Restart game and return to start menu
-            restart();
-            gameState = 'start';
-            startMenuSelection = 0;
+            // Retry the stage from how it was entered.
+            retryStage();
           } else if (mainMenuSelection === 2) {
+            openStarMap();
+          } else if (mainMenuSelection === 3) {
             // Open settings menu
             prevSettingsState = 'menu';
             settingsSelection = 0;
@@ -873,9 +1074,7 @@
         } else if (e.key === 'Enter') {
           if (startMenuSelection === 0) {
             if (!artReady) return;
-            // Begin gameplay
-            restart();
-            gameState = 'play';
+            openStarMap();
           } else if (startMenuSelection === 1) {
             // open settings from start menu
             prevSettingsState = 'start';
@@ -887,13 +1086,31 @@
         }
         // no escape action on start menu
       } else if (gameState === 'gameover') {
+        const count = endOptions.length || 1;
+        if (e.key === 'ArrowUp') endSelection = (endSelection + count - 1) % count;
+        else if (e.key === 'ArrowDown') endSelection = (endSelection + 1) % count;
+        else if (e.key === 'Enter' && endOptions[endSelection]) {
+          playLegacyEffect(selectSfx);
+          endOptions[endSelection][1]();
+        }
+      } else if (gameState === 'scene') {
+        if (e.key === 'Escape') closeScene(true);
+        else if (e.key === 'Enter' || e.key === ' ' || e.key === 'Space' || e.key === 'ArrowRight') advanceScene();
+      } else if (gameState === 'map') {
+        // Rows: the four waypoints, then Continue, Quickplay and Back.
+        const rows = STAGES.length + 3;
+        if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') mapRow = (mapRow + rows - 1) % rows;
+        else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') mapRow = (mapRow + 1) % rows;
+        if (mapRow < STAGES.length && e.key.startsWith('Arrow')) mapPick = mapRow;
         if (e.key === 'Enter') {
-          restart();
-          // return to start screen after death
+          playLegacyEffect(selectSfx);
+          if (mapRow < STAGES.length) mapPick = mapRow;
+          else if (mapRow === STAGES.length) continueCampaign();
+          else if (mapRow === STAGES.length + 1) startQuickplay(STAGES[mapPick].id);
+          else { gameState = 'start'; startMenuSelection = 0; }
+        } else if (e.key === 'Escape') {
           gameState = 'start';
           startMenuSelection = 0;
-          // Play selection sound on restart
-          playLegacyEffect(selectSfx);
         }
       }
       if (gameState !== previousState && (previousState === 'play' || gameState === 'play')) {
@@ -917,8 +1134,19 @@
       releaseGameplayKey(keyboardKeys, key);
       if (scrollKeys.includes(key) && !(key === 'Space' && e.target?.closest?.('button'))) e.preventDefault();
     });
-    window.addEventListener('blur', resetGameplayInput);
-    document.addEventListener('visibilitychange', resetGameplayInput);
+    // Losing focus releases held input and pauses play, so timers and holds
+    // never run while the player can't see or control the game.
+    function autoPause() {
+      resetGameplayInput();
+      if (gameState === 'play' && document.body.dataset.boot === 'ready') {
+        gameState = 'menu';
+        mainMenuSelection = 0;
+        syncMenu();
+      }
+    }
+    window.addEventListener('blur', () => { windowFocused = false; autoPause(); });
+    window.addEventListener('focus', () => { windowFocused = true; });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) autoPause(); else resetGameplayInput(); });
     document.addEventListener('fullscreenchange', resetGameplayInput);
     window.addEventListener('orientationchange', resetGameplayInput);
     window.screen.orientation?.addEventListener('change', resetGameplayInput);
@@ -1139,22 +1367,143 @@
     let levelSeed = 0;
     const urlSeed = Number.parseInt(new URLSearchParams(location.search).get('seed'), 10);
 
-    // A run has one seed; each stage derives its own, and the station keeps
-    // the run seed so ?seed=N repeats the same station as before.
+    // Stage seeds derive from a base seed and the stage's stable id, so the
+    // route order never changes a layout. The station uses the base seed
+    // itself, so ?seed=N repeats the same station as before.
     let runSeed = 0;
     let stageIndex = 0;
     let stageBanner = null;
     let runComplete = false;
     let decorations = [];
     const EXIT_WIDTH = 46;
+    // 'campaign' or 'quickplay'. Quickplay never reads or writes campaign data.
+    let playMode = 'campaign';
+    let campaign = loadCampaign();
+    // How the current stage was entered, for Retry: { stage, seed, loadout, elapsed }.
+    let sessionEntry = null;
+    // End screen: 'dead', 'cleared', 'complete' or 'quickplay', with its actions.
+    let endKind = null;
+    let endOptions = [];
+    let endSelection = 0;
+    let mapRow = 0;
+    let mapPick = 0;
+    // Campaign story: placement, the running attempt and the open scene.
+    let storyPlan = null;
+    let story = null;
+    let scene = null;
+    let endReason = '';
+    let leaving = false;
+    let windowFocused = true;
 
-    function stageSeed(index) {
-      return index ? (runSeed ^ Math.imul(index, 0x9E3779B1)) >>> 0 : runSeed;
+    function stageSeed(id, base) {
+      if (id === 'station') return base >>> 0;
+      let hash = 0x811c9dc5;
+      for (const char of id) hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193);
+      return (base ^ hash) >>> 0;
+    }
+
+    function freshSeed(id) {
+      const base = Number.isFinite(urlSeed) ? urlSeed >>> 0 : (Math.random() * 2 ** 32) >>> 0;
+      return stageSeed(id, base);
+    }
+
+    function defaultLoadout() {
+      return { health: 100, gold: 0, weapon: 'pistol', owned: ['pistol'],
+        clip: { pistol: WEAPONS.pistol.magazine, rifle: 0, shotgun: 0, laser: 0 },
+        reserve: { pistol: WEAPONS.pistol.magazine * 2, rifle: 0, shotgun: 0, laser: 0 } };
+    }
+
+    function captureLoadout() {
+      return sanitizeLoadout({
+        health: Math.max(1, Math.min(100, Math.ceil(player.health))), gold: player.gold, weapon: player.weapon,
+        owned: WEAPON_KEYS.filter(key => player.ownedWeapons[key]),
+        clip: { ...player.ammoInClip }, reserve: { ...player.reserveAmmo }
+      });
+    }
+
+    function applyLoadout(loadout) {
+      const l = sanitizeLoadout(loadout) || defaultLoadout();
+      player.health = l.health;
+      player.gold = l.gold;
+      player.weapon = l.weapon;
+      player.ownedWeapons = Object.fromEntries(WEAPON_KEYS.map(key => [key, l.owned.includes(key)]));
+      player.ammoInClip = { pistol: 0, rifle: 0, shotgun: 0, laser: 0, ...l.clip };
+      player.reserveAmmo = { pistol: 0, rifle: 0, shotgun: 0, laser: 0, ...l.reserve };
+    }
+
+    // Begin a stage in either mode from a known seed and loadout. Campaign
+    // entries are saved so Continue and Retry restore exactly this start.
+    // A checkpoint resumes the same seed mid-stage with its own loadout.
+    function startStage(mode, id, seed, loadout, elapsed = 0, checkpoint = null) {
+      resetRunState();
+      playMode = mode;
+      applyLoadout(loadout);
+      sessionEntry = { stage: id, seed, loadout: captureLoadout(), elapsed, checkpoint: mode === 'campaign' ? checkpoint || null : null };
+      if (sessionEntry.checkpoint) applyLoadout(checkpoint.loadout);
+      elapsedTime = sessionEntry.checkpoint ? checkpoint.elapsed : elapsed;
+      if (mode === 'campaign') {
+        campaign.entry = sessionEntry;
+        saveCampaign(campaign);
+      }
+      enterStage(stageOrder(id), seed);
+      setupStory(sessionEntry.checkpoint);
+    }
+
+    function continueCampaign() {
+      const entry = campaign.entry;
+      if (entry) startStage('campaign', entry.stage, entry.seed, entry.loadout, entry.elapsed || 0, entry.checkpoint);
+      else startStage('campaign', 'station', freshSeed('station'), defaultLoadout());
+    }
+
+    // Retry stage starts over from the stage entry: objectives, timer, doors
+    // and one-shot triggers all reset, and any checkpoint is dropped.
+    function retryStage() {
+      const entry = sessionEntry || { stage: 'station', seed: freshSeed('station'), loadout: defaultLoadout(), elapsed: 0 };
+      startStage(playMode, entry.stage, entry.seed, entry.loadout, entry.elapsed);
+    }
+
+    function retryCheckpoint() {
+      const entry = sessionEntry;
+      if (!entry?.checkpoint) { retryStage(); return; }
+      startStage(playMode, entry.stage, entry.seed, entry.loadout, entry.elapsed, entry.checkpoint);
+    }
+
+    function startQuickplay(id) {
+      const stage = stageById(id);
+      if (!stage || !campaign.unlocked.includes(id)) return;
+      startStage('quickplay', id, freshSeed(id), stage.quickplay);
+    }
+
+    function openStarMap() {
+      resetGameplayInput();
+      gameState = 'map';
+      mapPick = Math.max(0, stageOrder(campaign.entry?.stage || campaign.unlocked.at(-1)));
+      mapRow = STAGES.length; // Campaign Continue
+    }
+
+    // End screens list their actions; Enter runs the selected one.
+    function showEnd(kind) {
+      endKind = kind;
+      endSelection = 0;
+      const next = STAGES[stageIndex + 1];
+      const checkpoint = playMode === 'campaign' && sessionEntry?.checkpoint;
+      endOptions = {
+        dead: checkpoint ? [['Retry from checkpoint', retryCheckpoint], ['Restart stage', retryStage], ['Star map', openStarMap]]
+          : [['Retry stage', retryStage], ['Star map', openStarMap]],
+        quickplay: [['Retry stage', retryStage], ['Star map', openStarMap]],
+        cleared: [[`Continue to ${next?.name}`, continueCampaign], ['Star map', openStarMap]],
+        complete: [['Star map', openStarMap]]
+      }[kind];
+      runComplete = kind === 'complete';
+      if (kind !== 'dead') endReason = '';
+      closeCaption();
+      gameState = 'gameover';
+      playerDownAt = performance.now();
+      resetGameplayInput();
     }
 
     function generateEnvironment() {
       const stage = STAGES[stageIndex];
-      levelSeed = stageSeed(stageIndex);
       layout = window.SpaceStation.build({
         seed: levelSeed, stage: stage.id, coverAspect: stage.env ? ENV_ART[stage.env].coverAspect : null,
         worldWidth, worldHeight, deckY: DECK_Y,
@@ -1163,6 +1512,12 @@
       obstacles = layout.solids;
       ladders = layout.ladders;
       decorations = stage.env ? placeDecorations(stage.env) : [];
+      // Story anchors and doors exist only in the campaign.
+      const data = playMode === 'campaign' ? STORY.STAGES[stage.id] : null;
+      storyPlan = data ? window.SpaceStation.placeStory(layout, {
+        worldWidth, worldHeight, deckY: DECK_Y, movement: MOVEMENT, body: { width: 32, height: 32 }
+      }, { anchors: data.anchors, doors: data.doors, phases: storyPhases(data) }) : null;
+      if (storyPlan) obstacles = [...layout.solids, ...storyPlan.doors.map(door => door.solid)];
     }
 
     // Non-solid props: floor pieces on walkable decks and hanging pieces
@@ -1196,8 +1551,9 @@
     // Enter a stage: build it, clear stage-local threats and effects, and
     // place the player at the start. Health, gold, weapons, ammo and
     // difficulty carry over.
-    function enterStage(index) {
+    function enterStage(index, seed = stageSeed(STAGES[index].id, runSeed)) {
       stageIndex = index;
+      levelSeed = seed >>> 0;
       bullets = [];
       enemyBullets = [];
       enemies = [];
@@ -1209,8 +1565,10 @@
       beams = [];
       slashes = [];
       damageOverlayTimer = 0;
-      openingEnemyPending = index === 0;
-      spawnCooldown = index === 0 ? 900 : 1800;
+      // The opening zombie belongs to the station, wherever it sits in the route.
+      const opening = STAGES[index].id === 'station';
+      openingEnemyPending = opening;
+      spawnCooldown = opening ? 900 : 1800;
       player.x = 100;
       player.height = player.baseHeight;
       player.y = groundY - player.height;
@@ -1225,9 +1583,10 @@
       player.hitFlashTimer = 0;
       lastLanding = -Infinity;
       resetGameplayInput();
+      story = null;
       generateEnvironment();
       snapCamera();
-      stageBanner = { text: `Stage ${index + 1} · ${STAGES[index].name}`, at: performance.now() };
+      stageBanner = { text: playMode === 'quickplay' ? `Quickplay · ${STAGES[index].name}` : `Stage ${index + 1} · ${STAGES[index].name}`, at: performance.now() };
     }
 
     // The exit sits at the end of the upper deck on the stage's right edge.
@@ -1237,15 +1596,469 @@
         player.x + player.width >= worldWidth - EXIT_WIDTH;
     }
 
+    // Reaching the exit. A campaign clear unlocks the next waypoint and saves
+    // its entry with the loadout carried out of this stage; a Quickplay clear
+    // changes nothing in the campaign.
     function leaveStage() {
-      if (stageIndex + 1 < STAGES.length) {
-        enterStage(stageIndex + 1);
+      // One clear per attempt, however the exit and its scene are reached.
+      if (leaving) return;
+      leaving = true;
+      if (playMode === 'quickplay') { showEnd('quickplay'); return; }
+      const id = STAGES[stageIndex].id;
+      if (!campaign.cleared.includes(id)) campaign.cleared.push(id);
+      const next = STAGES[stageIndex + 1];
+      if (next) {
+        if (!campaign.unlocked.includes(next.id)) campaign.unlocked.push(next.id);
+        campaign.entry = { stage: next.id, seed: freshSeed(next.id), loadout: captureLoadout(), elapsed: elapsedTime };
+        saveCampaign(campaign);
+        showEnd('cleared');
+      } else {
+        campaign.entry = null;
+        saveCampaign(campaign);
+        showEnd('complete');
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // Campaign story. story.js holds the captions, speakers, one-shot
+    // triggers, objectives and scenes; this runs one attempt of a stage.
+    const storyHud = document.getElementById('story-hud');
+    const objectivePanel = storyHud.querySelector('.story-objective');
+    const objectiveText = document.getElementById('story-objective-text');
+    const objectiveMeta = document.getElementById('story-objective-meta');
+    const objectiveBar = storyHud.querySelector('.objective-progress');
+    const captionBox = document.getElementById('story-caption');
+    const liveRegion = document.getElementById('story-live');
+    const interactButton = document.getElementById('interact-btn');
+    const gameContainer = document.getElementById('game-container');
+    const sceneLayer = document.getElementById('story-scene');
+    const sceneArt = sceneLayer.querySelector('.scene-art');
+    const sceneTitle = document.getElementById('scene-title');
+    const sceneCaption = sceneLayer.querySelector('.scene-caption');
+    const sceneNext = document.getElementById('scene-next');
+    const sceneSkip = document.getElementById('scene-skip');
+    const hudCache = new Map();
+
+    function setCached(key, value, apply) {
+      if (hudCache.get(key) === value) return;
+      hudCache.set(key, value);
+      apply(value);
+    }
+
+    function announce(text) {
+      // A repeated message still re-announces.
+      liveRegion.textContent = liveRegion.textContent === text ? `${text}​` : text;
+    }
+
+    function lineFor(id) {
+      return STORY.LINES[id] || { speaker: 'narration', text: String(id) };
+    }
+
+    // Radio lines are brief and clear on their own.
+    function lineDuration(line) {
+      return Math.max(2600, Math.min(6000, 1400 + line.text.length * 46));
+    }
+
+    function fillCaption(box, line) {
+      const speaker = STORY.SPEAKERS[line.speaker] || { label: '' };
+      const portrait = box.querySelector('.caption-portrait');
+      if (speaker.portrait) {
+        portrait.onerror = () => { portrait.hidden = true; };
+        portrait.src = `assets/story/portrait-${speaker.portrait}.webp`;
+        portrait.hidden = false;
+      } else portrait.hidden = true;
+      box.querySelector('.caption-speaker').textContent = speaker.label;
+      box.querySelector('.caption-text').textContent = line.text;
+    }
+
+    // Major beats duck the music slightly while their lines are on screen.
+    function say(ids, major = false) {
+      if (story) for (const id of ids) story.queue.push({ ...lineFor(id), major });
+    }
+
+    function closeCaption() {
+      if (story) {
+        story.queue = [];
+        story.caption = null;
+      }
+      captionBox.hidden = true;
+    }
+
+    // Captions age with simulation time, so pause and menus hold them.
+    function updateCaptions(dt) {
+      if (story.caption) {
+        story.caption.left -= dt;
+        if (story.caption.left > 0) return;
+        story.caption = null;
+        captionBox.hidden = true;
+      }
+      const line = story.queue.shift();
+      if (!line) return;
+      story.caption = { line, left: lineDuration(line), major: Boolean(line.major) };
+      fillCaption(captionBox, line);
+      captionBox.classList.toggle('major', Boolean(line.major));
+      // Restart the entrance so each new line is noticed.
+      captionBox.classList.remove('enter');
+      void captionBox.offsetWidth;
+      captionBox.classList.add('enter');
+      captionBox.hidden = false;
+      const label = STORY.SPEAKERS[line.speaker]?.label;
+      announce(label ? `${label}: ${line.text}` : line.text);
+    }
+
+    function setupStory(checkpoint) {
+      const data = playMode === 'campaign' && storyPlan ? STORY.STAGES[STAGES[stageIndex].id] : null;
+      closeCaption();
+      hudCache.clear();
+      if (!data) {
+        story = null;
+        storyHud.hidden = true;
+        interactButton.hidden = true;
         return;
       }
-      runComplete = true;
-      gameState = 'gameover';
-      playerDownAt = performance.now();
+      story = { data, step: 0, done: new Set(), fired: new Set(), timer: null, hold: 0, cues: new Set(), warned: new Set(),
+        queue: [], caption: null, near: null, announcedNear: null, exitHintAt: -Infinity, closedDoors: [] };
+      if (checkpoint) {
+        story.step = checkpoint.step;
+        checkpoint.done.forEach(id => story.done.add(id));
+        checkpoint.fired.forEach(id => story.fired.add(id));
+        const at = storyPlan.anchors[checkpoint.at];
+        if (at) {
+          player.x = at.x;
+          player.y = at.y - player.height;
+          snapCamera();
+        }
+      }
+      syncDoors();
+      beginStep();
+      if (!checkpoint && data.start?.scene) openScene(data.start.scene);
+    }
+
+    // A step's timer and hold progress always start fresh, including after
+    // a checkpoint retry.
+    function beginStep() {
+      const step = story.data.steps[story.step];
+      story.timer = step?.timer ? step.timer * 1000 : null;
+      story.hold = 0;
+      story.cues = new Set();
+      story.warned = new Set();
+    }
+
+    function syncDoors() {
+      story.closedDoors = storyPlan.doors.filter(door => !door.until.every(id => story.done.has(id)));
+      obstacles = [...layout.solids, ...story.closedDoors.map(door => door.solid)];
+    }
+
+    function closedDoorX() {
+      return story?.closedDoors.length ? Math.min(...story.closedDoors.map(door => door.solid.x)) : Infinity;
+    }
+
+    function storyExitOpen() {
+      return !story || story.data.steps[story.step]?.type === 'reach';
+    }
+
+    function anchorInRange(a) {
+      const feet = player.y + player.height;
+      return !player.isClimbing && Math.abs(feet - a.y) < 3 && Math.abs(player.x + player.width / 2 - (a.x + 16)) < 40;
+    }
+
+    function inHoldZone(id) {
+      const a = storyPlan.anchors[id];
+      const zone = story.data.anchors[id].zone || 140;
+      return Math.abs(player.y + player.height - a.y) < 3 && Math.abs(player.x + player.width / 2 - (a.x + 16)) < zone;
+    }
+
+    // Anchors the player can use right now: the current step's unfinished
+    // ones, plus optional extras such as the jungle recorder.
+    function activeAnchors() {
+      const step = story.data.steps[story.step];
+      const ids = step?.type === 'interact' ? step.anchors.filter(id => !story.done.has(id)) : [];
+      for (const [id, a] of Object.entries(story.data.anchors)) {
+        if (a.optional && !story.done.has(id) && storyPlan.anchors[id]) ids.push(id);
+      }
+      return ids;
+    }
+
+    function updateStory(dt, interactTap) {
+      const data = story.data;
+      for (const trigger of data.triggers) {
+        if (story.fired.has(trigger.id)) continue;
+        const chunk = layout.chunks[trigger.at.chunk];
+        if (player.x + player.width / 2 >= chunk.x0 + trigger.at.f * (chunk.x1 - chunk.x0)) {
+          story.fired.add(trigger.id);
+          say(trigger.lines, Boolean(trigger.duck));
+        }
+      }
+      story.near = activeAnchors().find(id => anchorInRange(storyPlan.anchors[id])) || null;
+      if (story.near && story.announcedNear !== story.near) announce(`${isMobile ? 'Use' : 'Press E'}: ${data.anchors[story.near].prompt}`);
+      story.announcedNear = story.near;
+      if (interactTap && story.near) {
+        interact(story.near);
+        if (gameState !== 'play') return;
+      }
+      const step = data.steps[story.step];
+      if (step?.type === 'hold') {
+        if (inHoldZone(step.anchor)) story.hold += dt;
+        const progress = story.hold / (step.seconds * 1000);
+        for (const cue of step.cues || []) {
+          if (progress >= cue.at && !story.cues.has(cue.at)) {
+            story.cues.add(cue.at);
+            say(cue.lines, Boolean(cue.duck));
+          }
+        }
+        if (progress >= 1) completeStep(step.anchor);
+      } else if (story.timer !== null) {
+        story.timer -= dt;
+        const left = Math.ceil(story.timer / 1000);
+        for (const mark of [30, 10]) {
+          if (left <= mark && !story.warned.has(mark)) {
+            story.warned.add(mark);
+            announce(`${mark} seconds left.`);
+          }
+        }
+        if (story.timer <= 0) {
+          endReason = step.fail;
+          showEnd('dead');
+          return;
+        }
+      }
+      if (gameState === 'play') updateCaptions(dt);
+    }
+
+    function interact(id) {
+      story.done.add(id);
+      playLegacyEffect(selectSfx);
+      const step = story.data.steps[story.step];
+      if (story.data.anchors[id].optional) {
+        say(story.data.interactions?.[id]?.lines || []);
+        return;
+      }
+      if (step.anchors.every(a => story.done.has(a))) completeStep(id);
+      else {
+        syncDoors();
+        say(step.progress?.lines || []);
+      }
+    }
+
+    function completeStep(at) {
+      const step = story.data.steps[story.step];
+      const done = step.done || {};
+      say(done.lines || [], Boolean(done.duck));
+      story.step += 1;
+      syncDoors();
+      beginStep();
+      const save = () => { if (step.checkpoint) saveCheckpoint(at); };
+      // A scene's checkpoint is saved once it closes, so leaving mid-scene
+      // replays it.
+      if (done.scene) openScene(done.scene, save);
+      else save();
+    }
+
+    function saveCheckpoint(at) {
+      if (playMode !== 'campaign' || !sessionEntry) return;
+      const required = [...story.done].filter(id => !story.data.anchors[id].optional);
+      sessionEntry.checkpoint = { step: story.step, at, done: required, fired: [...story.fired], loadout: captureLoadout(), elapsed: elapsedTime };
+      campaign.entry = sessionEntry;
+      saveCampaign(campaign);
+    }
+
+    // An exit that isn't open yet holds the player back and says why.
+    function blockExit() {
+      player.x = Math.min(player.x, worldWidth - EXIT_WIDTH - player.width - 2);
+      player.vx = Math.min(0, player.vx);
+      if (elapsedTime - story.exitHintAt > 4500) {
+        story.exitHintAt = elapsedTime;
+        story.queue.unshift({ speaker: 'narration', text: story.data.exitLocked });
+      }
+    }
+
+    // Objective panel, captions and the contextual Interact button.
+    function syncStoryHud() {
+      const show = Boolean(story) && gameState === 'play';
+      setCached('show', show, v => { storyHud.hidden = !v; });
+      setCached('motion', effectsReduced(), v => { storyHud.classList.toggle('reduce-motion', v); });
+      const prompt = show && story.near ? story.data.anchors[story.near].prompt : '';
+      setCached('interact', prompt, v => {
+        interactButton.hidden = !v;
+        interactButton.setAttribute('aria-label', v ? `Interact: ${v}` : 'Interact');
+      });
+      if (!show) return;
+      const step = story.data.steps[story.step];
+      setCached('objective', step?.text || '', v => { objectiveText.textContent = v; });
+      const parts = [];
+      let urgent = false;
+      if (story.timer !== null) {
+        const sec = Math.max(0, Math.ceil(story.timer / 1000));
+        parts.push(`${step.meter || 'Time'} ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`);
+        urgent = sec <= 10;
+      }
+      let progress = null;
+      if (step?.type === 'hold') {
+        progress = Math.min(1, story.hold / (step.seconds * 1000));
+        parts.push(`${step.meter || 'Progress'} ${Math.floor(progress * 100)}%${inHoldZone(step.anchor) ? '' : ' · stay in range'}`);
+      } else if (step?.type === 'interact' && step.anchors.length > 1) {
+        parts.push(`${step.anchors.filter(id => story.done.has(id)).length} of ${step.anchors.length}`);
+      }
+      if (prompt) parts.push(`${isMobile ? 'Use' : 'E'} · ${prompt}`);
+      setCached('meta', parts.join(' · '), v => { objectiveMeta.textContent = v; });
+      setCached('urgent', urgent, v => { objectivePanel.dataset.urgent = String(v); });
+      setCached('bar', progress === null ? -1 : Math.round(progress * 100), v => {
+        objectiveBar.hidden = v < 0;
+        objectiveBar.firstElementChild.style.width = `${Math.max(0, v)}%`;
+      });
+    }
+
+    // Still-image scenes pause the simulation. Next advances, Skip (or
+    // Escape) closes and replays the scene's essential lines as captions.
+    function openScene(id, onDone = null) {
+      const data = STORY.SCENES[id];
       resetGameplayInput();
+      const beats = data.frames.flatMap((frame, f) => frame.lines.map(line => ({ frame: f, line })));
+      scene = { id, data, beats, index: -1, left: 0, onDone, returnFocus: document.activeElement };
+      gameState = 'scene';
+      sceneTitle.textContent = data.title;
+      sceneLayer.hidden = false;
+      gameContainer.inert = true;
+      menuLayer.inert = true;
+      showBeat(0);
+      syncMenu();
+      sceneNext.focus({ preventScroll: true });
+    }
+
+    // Missing story art falls back to an existing environment image.
+    function setSceneArt(frame) {
+      if (sceneArt.dataset.frame === frame.art) return;
+      sceneArt.dataset.frame = frame.art;
+      sceneArt.hidden = false;
+      sceneArt.onerror = () => {
+        if (sceneArt.dataset.frame !== frame.art) return;
+        if (frame.fallback && !sceneArt.src.endsWith(frame.fallback)) sceneArt.src = frame.fallback;
+        else sceneArt.hidden = true;
+      };
+      sceneArt.src = frame.art;
+    }
+
+    function showBeat(index) {
+      scene.index = index;
+      const beat = scene.beats[index];
+      setSceneArt(scene.data.frames[beat.frame]);
+      const line = lineFor(beat.line);
+      fillCaption(sceneCaption, line);
+      scene.left = lineDuration(line) + 900;
+      sceneNext.textContent = index === scene.beats.length - 1 ? 'Continue' : 'Next';
+    }
+
+    function advanceScene() {
+      if (!scene) return;
+      if (scene.index + 1 < scene.beats.length) showBeat(scene.index + 1);
+      else closeScene(false);
+    }
+
+    function closeSceneView() {
+      const closed = scene;
+      scene = null;
+      sceneLayer.hidden = true;
+      gameContainer.inert = false;
+      menuLayer.inert = false;
+      return closed;
+    }
+
+    function closeScene(skipped) {
+      if (!scene) return;
+      const closed = closeSceneView();
+      gameState = 'play';
+      resetGameplayInput();
+      if (skipped) say(closed.data.essential || [], true);
+      const back = closed.returnFocus;
+      if (back?.isConnected && back !== document.body && !sceneLayer.contains(back)) back.focus({ preventScroll: true });
+      else if (sceneLayer.contains(document.activeElement)) document.activeElement.blur();
+      syncMenu();
+      closed.onDone?.();
+    }
+
+    sceneNext.addEventListener('click', advanceScene);
+    sceneSkip.addEventListener('click', () => closeScene(true));
+    // Keep keyboard focus inside the open scene.
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Tab' || !scene) return;
+      e.preventDefault();
+      const items = [sceneNext, sceneSkip];
+      const i = items.indexOf(document.activeElement);
+      items[(i + (e.shiftKey ? -1 : 1) + items.length) % items.length].focus();
+    });
+
+    function drawStory(view) {
+      if (!story) return;
+      const reduced = effectsReduced();
+      const now = performance.now();
+      for (const door of story.closedDoors) {
+        const s = door.solid;
+        if (!onScreen(view, s.x, s.y, s.width, s.height)) continue;
+        ctx.fillStyle = '#18212d';
+        ctx.fillRect(s.x, s.y, s.width, s.height);
+        ctx.fillStyle = 'rgba(244,195,123,0.55)';
+        for (let y = s.y + 10; y < s.y + s.height; y += 30) ctx.fillRect(s.x + 2, y, s.width - 4, 6);
+        ctx.fillStyle = '#ff9f86';
+        for (const deck of DECK_Y) ctx.fillRect(s.x + s.width / 2 - 2, deck - 52, 4, 4);
+      }
+      const step = story.data.steps[story.step];
+      const active = new Set(activeAnchors());
+      const holding = step?.type === 'hold' ? step.anchor : null;
+      if (holding) {
+        const a = storyPlan.anchors[holding];
+        const zone = story.data.anchors[holding].zone || 140;
+        const progress = Math.min(1, story.hold / (step.seconds * 1000));
+        ctx.fillStyle = 'rgba(138,221,223,0.16)';
+        ctx.fillRect(a.x + 16 - zone, a.y - 4, zone * 2, 4);
+        ctx.fillStyle = 'rgba(138,221,223,0.75)';
+        ctx.fillRect(a.x + 16 - zone, a.y - 4, zone * 2 * progress, 4);
+      }
+      for (const [id, a] of Object.entries(storyPlan.anchors)) {
+        if (!onScreen(view, a.x - 20, a.y - 100, 72, 100)) continue;
+        const def = story.data.anchors[id];
+        const live = active.has(id) || holding === id;
+        const color = live ? '#f4c37b' : (story.done.has(id) ? '#8fd486' : '#6f8197');
+        if (def.kind === 'remains') {
+          ctx.fillStyle = '#3a4350';
+          ctx.fillRect(a.x + 2, a.y - 7, 28, 7);
+          ctx.fillStyle = '#56606d';
+          ctx.fillRect(a.x + 24, a.y - 10, 8, 8);
+          ctx.fillStyle = color;
+          ctx.fillRect(a.x + 8, a.y - 9, 4, 3);
+        } else {
+          const wide = def.kind === 'archive';
+          if (def.kind === 'switch') {
+            ctx.fillStyle = '#3b4a55';
+            ctx.fillRect(a.x + 15, a.y - 96, 3, 70);
+            const blink = reduced || Math.floor(now / 520) % 2 === 0;
+            ctx.fillStyle = blink ? '#ff6b5e' : '#5a2b28';
+            ctx.fillRect(a.x + 13, a.y - 100, 7, 5);
+          }
+          ctx.fillStyle = wide ? '#5b4a33' : '#243243';
+          ctx.fillRect(a.x + (wide ? -4 : 6), a.y - (wide ? 20 : 28), wide ? 40 : 20, wide ? 20 : 28);
+          ctx.fillStyle = color;
+          ctx.fillRect(a.x + (wide ? 4 : 9), a.y - (wide ? 16 : 25), wide ? 24 : 14, wide ? 4 : 9);
+        }
+        if (live && !story.done.has(id)) {
+          const bob = reduced ? 0 : Math.sin(now / 240) * 2;
+          const cx = a.x + 16;
+          const top = a.y - 46 + bob;
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.moveTo(cx - 5, top);
+          ctx.lineTo(cx + 5, top);
+          ctx.lineTo(cx, top + 6);
+          ctx.closePath();
+          ctx.fill();
+          if (story.near === id) {
+            ctx.font = '700 8px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#ffe3b8';
+            ctx.fillText(isMobile ? 'USE' : 'E', cx, top - 4);
+            ctx.textAlign = 'left';
+          }
+        }
+      }
     }
 
     // The nav region (structural walkable surface) under a body, projecting
@@ -1343,6 +2156,7 @@
     // and ladders arrays with randomised platforms and cover.  Without
     // this call the world would be empty at the first launch.
     runSeed = Number.isFinite(urlSeed) ? urlSeed >>> 0 : (Math.random() * 2 ** 32) >>> 0;
+    levelSeed = stageSeed('station', runSeed);
     generateEnvironment();
     snapCamera();
 
@@ -1350,7 +2164,13 @@
      * Reset all entities and player stats to their initial values. Called
      * when restarting after game over.
      */
+    // A fresh campaign attempt from the station (unlocks are kept).
     function restart() {
+      startStage('campaign', 'station', freshSeed('station'), defaultLoadout());
+    }
+
+    // Clear everything a stage attempt touches; startStage applies the loadout.
+    function resetRunState() {
       elapsedTime = 0;
       fallenSprites = [];
       lastLanding = -Infinity;
@@ -1373,10 +2193,13 @@
       spawnCooldown = 900;
       openingEnemyPending = true;
       gameState = 'play';
-      // A new run always starts at the station with a fresh seed.
-      runSeed = Number.isFinite(urlSeed) ? urlSeed >>> 0 : (Math.random() * 2 ** 32) >>> 0;
-      stageIndex = 0;
       runComplete = false;
+      endKind = null;
+      endReason = '';
+      leaving = false;
+      story = null;
+      storyPlan = null;
+      if (scene) closeSceneView();
       stageBanner = null;
       player.x = 100;
       player.height = player.baseHeight;
@@ -1405,15 +2228,6 @@
       resetGameplayInput();
       menuSelection = 0;
       mainMenuSelection = 0;
-
-      // Regenerate the random obstacles and ladders on each restart so the
-      // battlefield feels fresh.  This also clears any leftover
-      // environment from the previous run.
-      if (typeof generateEnvironment === 'function') {
-        generateEnvironment();
-      }
-      snapCamera();
-      stageBanner = { text: `Stage 1 · ${STAGES[0].name}`, at: performance.now() };
     }
 
     /**
@@ -1438,9 +2252,13 @@
       // loaded; the ramp shifts from the melee to the ranged member like the
       // original roster. Station and Desert Temple Ruins keep the original four.
       const stageId = STAGES[stageIndex].id;
-      const local = Object.keys(EXPANSION).filter(t => EXPANSION[t].stage === stageId && expansionArt[t]);
+      const local = Object.keys(EXPANSION).filter(t => EXPANSION[t].stages.includes(stageId) && expansionArt[t]);
       const melee = local.find(t => ['dash', 'pounce'].includes(EXPANSION[t].kind));
       const shooter = local.find(t => ['projectile', 'laser'].includes(EXPANSION[t].kind));
+      // Guests (the returning elf rangers at the ruins) join that stage's
+      // original roster with a small weight that grows with the ramp.
+      const guests = Object.keys(EXPANSION).filter(t => EXPANSION[t].guestStages?.includes(stageId) && expansionArt[t])
+        .map(t => ({ item: t, weight: EXPANSION[t].guestWeight[0] + progress * EXPANSION[t].guestWeight[1] }));
       const type = teach ? 'zombie' : (melee && shooter ? weightedChoice([
         { item: melee, weight: 0.6 - progress * 0.2 },
         { item: shooter, weight: 0.4 + progress * 0.2 }
@@ -1448,7 +2266,8 @@
         { item: 'zombie', weight: typeWeights.zombie },
         { item: 'ghost', weight: typeWeights.ghost },
         { item: 'robot', weight: typeWeights.robot },
-        { item: 'alien', weight: typeWeights.alien }
+        { item: 'alien', weight: typeWeights.alien },
+        ...guests
       ])) || 'zombie';
       const spawnDir = Math.random() < 0.65 ? 1 : -1;
       const spawnOffset = width + 140 + Math.random() * 280;
@@ -1593,9 +2412,10 @@
       // the room's clear height.
       const playerRegion = regionAt(player);
       let best = null;
+      const barrier = closedDoorX();
       for (const point of layout.encounters) {
         const dx = point.x - player.x;
-        if (Math.abs(dx) > 1400) continue;
+        if (Math.abs(dx) > 1400 || point.x + e.width > barrier) continue;
         let y = point.y - e.height;
         if (type === 'ghost') {
           const low = point.y - e.height - 12;
@@ -1606,6 +2426,8 @@
           // Wide bodies need the whole footprint on the surface; non-climbers
           // need a route without ladders.
           if (point.x < region.x0 + 4 || point.x + e.width > region.x1 - 4) continue;
+          // Large bodies need a long enough run to be seen and dodged.
+          if (EXPANSION[type]?.minRun && region.x1 - region.x0 < EXPANSION[type].minRun) continue;
           if (!routeExists(region, playerRegion, EXPANSION[type]?.climbs ?? true)) continue;
         }
         if (!fair(point.x, y)) continue;
@@ -1812,11 +2634,7 @@
       damageOverlayTimer = 120;
       screenShakeTimer = Math.max(screenShakeTimer, 130);
       screenShakeStrength = Math.max(screenShakeStrength, 5);
-      if (player.health <= 0) {
-        gameState = 'gameover';
-        playerDownAt = performance.now();
-        resetGameplayInput();
-      }
+      if (player.health <= 0) showEnd('dead');
       playLegacyEffect(playerDamageSfx);
       return true;
     }
@@ -2136,30 +2954,35 @@
         rect.y >= camera.y && rect.y + rect.height <= camera.y + viewHeight;
     }
 
-    const ENEMY_CUE_LEVEL = { Warn: 0.48, Attack: 0.42, Down: 0.42, Hurt: 0.36, Move: 0.26 };
+    const ENEMY_CUE_LEVEL = { Warn: 0.48, Attack: 0.42, Down: 0.42, Hurt: 0.36, Move: 0.26, Land: 0.34, Impact: 0.3 };
+    // A tell that cancels and restarts quickly warns only once.
+    const WARN_CUE_GAP_MS = 900;
     const HURT_CUE_GAP_MS = 260;
     // Sentry Unit footsteps: on starting to move, then at a walking cadence.
     const ROBOT_STEP_MS = 1500;
     const ROBOT_START_GAP_MS = 1000;
 
     function playEnemyCue(enemy, cue) {
-      if (!SETTINGS.sfx) return;
-      const x = enemy.x + enemy.width / 2;
-      const y = enemy.y + enemy.height / 2;
+      const def = EXPANSION[enemy.type];
+      const name = def?.cues?.[cue] ?? (def?.audio || enemy.type) + cue;
+      return playCueAt(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, name, cue);
+    }
+
+    // A positional cue: panned and attenuated by distance from the player.
+    function playCueAt(x, y, name, cue) {
+      if (!SETTINGS.sfx) return false;
       const offset = x - player.x - player.width / 2;
       // Threats in or just outside the frame, or close to the player even
       // when the tighter view leaves them off screen, stay audible.
       const nearView = x >= camera.x - 48 && x <= camera.x + viewWidth + 48 &&
         y >= camera.y - 48 && y <= camera.y + viewHeight + 48;
-      if (!nearView && Math.abs(offset) > 420) return;
+      if (!nearView && Math.abs(offset) > 420) return false;
       const pan = Math.max(-0.72, Math.min(0.72, offset / 330));
       const gain = (ENEMY_CUE_LEVEL[cue] ?? 0.42) / (1 + Math.abs(offset) / 720);
-      const group = cue === 'Hurt' ? 'hurt' : (cue === 'Move' ? 'move' : 'enemy');
-      const def = EXPANSION[enemy.type];
-      const name = def?.cues?.[cue] ?? (def?.audio || enemy.type) + cue;
-      if (!window.combatAudio?.play(name, group, gain, pan) && cue === 'Down') {
-        playLegacyEffect(enemyDeathSfx);
-      }
+      const group = cue === 'Hurt' ? 'hurt' : (cue === 'Move' || cue === 'Land' ? 'move' : 'enemy');
+      const played = Boolean(window.combatAudio?.play(name, group, gain, pan));
+      if (!played && cue === 'Down') playLegacyEffect(enemyDeathSfx);
+      return played;
     }
 
     // A burst or a shotgun's pellets play one hurt cue per enemy per window.
@@ -2251,10 +3074,12 @@
       return def.damage;
     }
 
+    // A dash or pounce hitting a solid: sparks and one impact cue.
     function stopSpecialMove(e, x, y) {
       if (!e.moveVx) return;
       e.moveVx = 0;
       spawnHitSparks(x, y, 'enemy');
+      playEnemyCue(e, 'Impact');
     }
 
     function endSpecial(e, def) {
@@ -2293,11 +3118,17 @@
           const gap = dir > 0 ? player.x - (e.x + e.width) : e.x - (player.x + player.width);
           if (gap > def.reach || gap < -8 || Math.abs(dy) > 30) return;
           if (firstSolidAlong(e.x + e.width / 2, player.x + player.width / 2, e.y + e.height - 10) !== null) return;
+          // A pounce needs floor all the way to where it lands, so it never
+          // leaps off a ledge and its vulnerable landing is always reachable.
+          if (def.kind === 'pounce' && !pounceLandingSupported(e, def, dir)) return;
         }
         e.special = { kind: def.kind, t: 0, dir, fired: false, hit: false, airborne: false };
         e.targetDir = dir;
         e.dir = dir;
-        playEnemyCue(e, 'Warn');
+        if (elapsedTime - (e.warnCueAt ?? -Infinity) >= WARN_CUE_GAP_MS) {
+          e.warnCueAt = elapsedTime;
+          playEnemyCue(e, 'Warn');
+        }
         return;
       }
       const sp = e.special;
@@ -2327,11 +3158,18 @@
       } else if (sp.kind === 'dash') e.moveVx = 0;
       if (sp.kind === 'pounce' && sp.fired) {
         if (wasFired && sp.airborne && e.onGround) {
-          // Landing: the bite closes and a vulnerable recovery begins.
+          // Landing: the bite closes from the chest to the jaw (it can still
+          // only hit once), then a vulnerable recovery begins. Without this a
+          // mid-range arc carried the jaw over the player's head.
           sp.airborne = false;
           e.moveVx = 0;
+          const frame = art.clips.special[art.trigger];
+          const jaw = framePoint(e, frame, frame.contact, sp.dir);
+          const chest = e.x + e.width / 2;
+          meleeHit(e, def, { x: Math.min(chest, jaw.x), y: e.y, width: Math.abs(jaw.x - chest) + 4, height: e.height });
           sp.t = art.triggerEnd;
           sp.vulnerable = true;
+          playEnemyCue(e, 'Land');
         }
         if (sp.airborne) {
           const frame = art.clips.special[art.trigger];
@@ -2340,6 +3178,23 @@
         }
       }
       if (sp.t >= art.total) endSpecial(e, def);
+    }
+
+    // The pounce arc's landing span at the same feet height: ballistic
+    // flight from the pounce velocity under enemy gravity (0.25 per tick).
+    function pounceLandingSupported(e, def, dir) {
+      const airTicks = Math.ceil(-2 * def.pounce[1] / 0.25);
+      const travel = def.pounce[0] * airTicks;
+      const feet = e.y + e.height;
+      const x0 = dir > 0 ? e.x : e.x - travel;
+      const x1 = dir > 0 ? e.x + e.width + travel : e.x + e.width;
+      if (x0 < 0 || x1 > worldWidth) return false;
+      if (feet >= groundY - 0.5) return true;
+      // Merged walkable surfaces at this height must cover the whole span.
+      const spans = obstacles.filter(ob => Math.abs(ob.y - feet) < 0.6 && ob.role !== 'cover').map(ob => [ob.x, ob.x + ob.width]).sort((a, b) => a[0] - b[0]);
+      let reach = x0;
+      for (const [a, b] of spans) { if (a > reach + 0.5) break; reach = Math.max(reach, b); }
+      return spans.length > 0 && spans[0][0] <= x0 + 0.5 && reach >= x1 - 0.5;
     }
 
     function resolveSpecial(e, def, art, sp) {
@@ -2387,13 +3242,23 @@
       player.hitFlashTimer = Math.max(0, player.hitFlashTimer - dt);
       player.recoilTimer = Math.max(0, player.recoilTimer - dt);
       const wasGrounded = player.onGround;
+      const interactTap = pressedKeys.has('e') || pressedKeys.has('Enter');
       // Age kicks before this tick's shots so a new kick shows at full strength.
       updateShotKicks(dt);
       updatePlayer(dt);
       updateCamera(dt);
       if (atStageExit()) {
-        leaveStage();
-        return;
+        if (story && !storyExitOpen()) blockExit();
+        else {
+          const exitScene = story?.data.steps[story.step]?.exitScene;
+          if (exitScene) openScene(exitScene, leaveStage);
+          else leaveStage();
+          return;
+        }
+      }
+      if (story) {
+        updateStory(dt, interactTap);
+        if (gameState !== 'play') return;
       }
       if (!wasGrounded && player.onGround) lastLanding = elapsedTime;
       fallenSprites = fallenSprites.filter(enemy => elapsedTime - enemy.at < ENEMY_FALL[enemy.type]);
@@ -2664,6 +3529,8 @@
       advanceProjectiles(enemyBullets, [player], (b, hit) => {
         spawnHitSparks(hit.x, hit.y, 'enemy');
         if (hit.target === player) damagePlayer(b.damage);
+        // A Breach Pulse breaking on cover or a wall plays one impact cue.
+        else if (b.kind === 'police') playCueAt(hit.x, hit.y, 'robotAttack', 'Impact');
       });
       if (gameState !== 'play') return;
       // Decrement hit timers on enemies
@@ -2774,7 +3641,7 @@
 
       // Spawn new enemies periodically with a smoother ramp and cap to avoid
       // sudden overcrowding.
-      spawnCooldown -= dt;
+      spawnCooldown -= dt * (story?.data.steps[story.step]?.spawnRate || 1);
       if (spawnCooldown <= 0 && gameState === 'play') {
         const maxEnemies = SETTINGS.difficulty === 'easy' ? 8 : (SETTINGS.difficulty === 'hard' ? 14 : 11);
         const delayed = enemies.length < maxEnemies && !spawnEnemy();
@@ -2838,7 +3705,7 @@
       const shot = playerShot?.key === key && playerShot.facing === player.facing && shotAge < SHOT_FEEDBACK[key].duration;
       let frame;
       if (gameState === 'start') frame = get('idle', performance.now(), true);
-      else if (gameState === 'gameover' && !runComplete) frame = get('down', performance.now() - playerDownAt);
+      else if (gameState === 'gameover' && endKind === 'dead') frame = get('down', performance.now() - playerDownAt);
       else if (player.hitFlashTimer > 0) frame = get('hit', 180 - player.hitFlashTimer);
       else if (player.isClimbing) frame = get('climb', Math.abs(player.vy) > 0.1 ? player.animTime : 0, true);
       else if (player.reloading && player.onGround && !player.isDucking) {
@@ -3056,7 +3923,7 @@
       ctx.fillStyle = art.tint;
       ctx.fillRect(view.x - WORLD_OVERSCAN, groundY, viewWidth + WORLD_OVERSCAN * 2, deckDepth + WORLD_OVERSCAN);
       drawEnvBand(env, art.deck, floor, view);
-      for (const ob of obstacles) {
+      for (const ob of layout.solids) {
         if (ob.role !== 'wall' || !onScreen(view, ob.x, ob.y, ob.width, ob.height)) continue;
         const src = envSource(env, art.wall);
         if (!src) continue;
@@ -3085,7 +3952,7 @@
         for (let y = top; y < ladder.bottom; y += tileH - 2) drawEnvImage(ladderSrc, ladder.x - r0 * scale, y, w, tileH, false);
         ctx.restore();
       }
-      for (const ob of obstacles) {
+      for (const ob of layout.solids) {
         if (ob.role === 'wall' || ob.type === 'deck' || !onScreen(view, ob.x, ob.y, ob.width, ob.height, 24)) continue;
         if (ob.role === 'cover') {
           const def = art.cover[ob.type] || art.cover.crate;
@@ -3127,7 +3994,9 @@
       ctx.fillStyle = `rgba(255,227,184,${0.75 + pulse * 0.25})`;
       ctx.font = '700 8px system-ui, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(stageIndex + 1 < STAGES.length ? 'EXIT' : 'EXTRACT', x + EXIT_WIDTH / 2, top - 9);
+      const sealed = story && !storyExitOpen();
+      if (sealed) ctx.fillStyle = '#ff9f86';
+      ctx.fillText(sealed ? 'SEALED' : (playMode === 'campaign' && stageIndex + 1 === STAGES.length ? 'EXTRACT' : 'EXIT'), x + EXIT_WIDTH / 2, top - 9);
       ctx.textAlign = 'left';
     }
 
@@ -3206,7 +4075,7 @@
       if (left < 51) drawTerrainTile('deckEnd', 0, groundY, 51, deckDepth, true);
       if (right > worldWidth - 51) drawTerrainTile('deckEnd', worldWidth - 51, groundY, 51, deckDepth);
 
-      for (const ob of obstacles) {
+      for (const ob of layout.solids) {
         if (ob.role !== 'wall' || !onScreen(view, ob.x, ob.y, ob.width, ob.height)) continue;
         ctx.fillStyle = '#1a2738';
         ctx.fillRect(ob.x, ob.y, ob.width, ob.height);
@@ -3230,7 +4099,7 @@
           ctx.fillRect(x + 3, top + rung, ladder.width - 6, 2);
         }
       }
-      for (const obstacle of obstacles) {
+      for (const obstacle of layout.solids) {
         if (obstacle.role === 'wall' || obstacle.type === 'deck') continue;
         if (!onScreen(view, obstacle.x, obstacle.y, obstacle.width, obstacle.height)) continue;
         const x = obstacle.x;
@@ -3344,6 +4213,7 @@
       ctx.save();
       ctx.setTransform(zoom, 0, 0, zoom, offset.x - view.x * zoom, offset.y - view.y * zoom);
       drawTerrain(view);
+      drawStory(view);
       // Draw pickups
       pickups.forEach(p => {
         if (!onScreen(view, p.x, p.y, p.width, p.height, 24)) return;
@@ -3596,7 +4466,7 @@
       }
       ctx.textAlign = 'right';
       ctx.fillStyle = '#8adddf';
-      ctx.fillText(`STAGE ${stageIndex + 1}/${STAGES.length}`, 323, 46);
+      ctx.fillText(playMode === 'quickplay' ? 'QUICKPLAY' : `STAGE ${stageIndex + 1}/${STAGES.length}`, 323, 46);
       ctx.textAlign = 'left';
     }
 
@@ -3620,6 +4490,8 @@
       if (gameState === 'menu') return mainMenuSelection;
       if (gameState === 'settings') return settingsSelection;
       if (gameState === 'shop') return menuSelection;
+      if (gameState === 'map') return mapRow;
+      if (gameState === 'gameover') return endSelection;
       return 0;
     }
 
@@ -3628,6 +4500,125 @@
       if (gameState === 'menu') mainMenuSelection = index;
       if (gameState === 'settings') settingsSelection = index;
       if (gameState === 'shop') menuSelection = index;
+      if (gameState === 'map') {
+        mapRow = index;
+        if (index < STAGES.length) mapPick = index;
+      }
+      if (gameState === 'gameover') endSelection = index;
+    }
+
+    // Waypoint status for the campaign: cleared, available or locked.
+    function waypointStatus(stage) {
+      if (campaign.cleared.includes(stage.id)) return 'cleared';
+      return campaign.unlocked.includes(stage.id) ? 'available' : 'locked';
+    }
+
+    function unlockCondition(stage) {
+      const previous = STAGES[stageOrder(stage.id) - 1];
+      return previous ? `Clear ${previous.name} in the campaign to unlock.` : '';
+    }
+
+    let mapParts = null;
+    function buildStarMap(panel) {
+      const body = element('div', 'map-body');
+      const chart = element('div', 'star-map');
+      const art = element('img', 'star-map-art');
+      art.alt = '';
+      art.decoding = 'async';
+      // Without the backdrop the waypoints become a plain list over the title art.
+      art.addEventListener('load', () => chart.classList.add('has-art'));
+      art.addEventListener('error', () => {
+        chart.classList.add('no-art');
+        menuLayer.classList.add('map-fallback');
+      });
+      art.src = 'assets/ui/star-map.webp';
+      chart.append(art);
+      const svgNS = 'http://www.w3.org/2000/svg';
+      const route = document.createElementNS(svgNS, 'svg');
+      route.setAttribute('class', 'map-route');
+      route.setAttribute('viewBox', '0 0 100 100');
+      route.setAttribute('preserveAspectRatio', 'none');
+      route.setAttribute('aria-hidden', 'true');
+      const segments = [];
+      for (let i = 1; i < STAGES.length; i++) {
+        const line = document.createElementNS(svgNS, 'line');
+        const [x1, y1] = STAGES[i - 1].map;
+        const [x2, y2] = STAGES[i].map;
+        line.setAttribute('x1', x1 * 100); line.setAttribute('y1', y1 * 100);
+        line.setAttribute('x2', x2 * 100); line.setAttribute('y2', y2 * 100);
+        line.setAttribute('vector-effect', 'non-scaling-stroke');
+        route.append(line);
+        segments.push(line);
+      }
+      chart.append(route);
+      const list = element('ol', 'waypoints');
+      list.setAttribute('aria-label', 'Waypoints');
+      STAGES.forEach((stage, i) => {
+        const item = element('li');
+        const row = addMenuRow(item, stage.name, i, true);
+        row.classList.add('waypoint');
+        row.style.setProperty('--x', `${stage.map[0] * 100}%`);
+        row.style.setProperty('--y', `${stage.map[1] * 100}%`);
+        // The ring frames the planet; only the label carries a background.
+        const label = element('span', 'wp-label');
+        label.append(...row.childNodes);
+        row.append(element('span', 'wp-marker'), label);
+        list.append(item);
+      });
+      chart.append(list);
+      const side = element('div', 'map-side');
+      const brief = element('article', 'map-brief');
+      brief.id = 'map-brief';
+      brief.setAttribute('aria-live', 'polite');
+      const briefName = element('h3');
+      const briefStatus = element('p', 'map-status');
+      const briefObjective = element('p', 'map-objective');
+      const briefText = element('p', 'map-text');
+      brief.append(briefName, briefStatus, briefObjective, briefText);
+      const actions = element('div', 'menu-options map-actions');
+      addMenuRow(actions, 'Continue', STAGES.length, true);
+      addMenuRow(actions, 'Quickplay', STAGES.length + 1, true);
+      addMenuRow(actions, 'Back', STAGES.length + 2, false);
+      const notice = element('p', 'map-notice');
+      notice.setAttribute('role', 'status');
+      side.append(brief, actions, notice);
+      body.append(chart, side);
+      panel.append(body);
+      mapParts = { segments, briefName, briefStatus, briefObjective, briefText, notice };
+    }
+
+    function syncStarMap() {
+      const statusText = { cleared: 'Cleared', available: 'Available', locked: 'Locked' };
+      STAGES.forEach((stage, i) => {
+        const { row, value } = menuRows[i];
+        const status = waypointStatus(stage);
+        const next = campaign.entry?.stage === stage.id;
+        row.dataset.status = status;
+        row.dataset.next = String(next);
+        row.setAttribute('aria-pressed', String(i === mapPick));
+        value.textContent = statusText[status] + (next ? ' · Next' : '');
+        // Spoken state: name, status and, when locked, how to unlock it.
+        row.setAttribute('aria-label', `${stage.name}. ${statusText[status]}${next ? ', next campaign stop' : ''}. ${status === 'locked' ? unlockCondition(stage) : ''}`.trim());
+      });
+      mapParts.segments.forEach((line, i) => line.setAttribute('class', campaign.unlocked.includes(STAGES[i + 1].id) ? 'open' : 'locked'));
+      const picked = STAGES[mapPick];
+      const status = waypointStatus(picked);
+      mapParts.briefName.textContent = picked.name;
+      mapParts.briefStatus.textContent = status === 'locked' ? `Locked · ${unlockCondition(picked)}` : statusText[status];
+      mapParts.briefObjective.textContent = status === 'locked' ? '' : picked.objective;
+      mapParts.briefText.textContent = status === 'locked' ? '' : picked.briefing;
+      const entry = campaign.entry;
+      const complete = STAGES.every(stage => campaign.cleared.includes(stage.id));
+      const cont = menuRows[STAGES.length];
+      cont.name.textContent = entry ? `Continue · ${stageById(entry.stage).name}` : (complete ? 'Replay campaign' : 'Start campaign');
+      const kit = entry?.checkpoint?.loadout || entry?.loadout;
+      cont.value.textContent = entry ? `${entry.checkpoint ? 'Checkpoint · ' : ''}${WEAPONS[kit.weapon].name} · ${kit.health}% · ${kit.gold} G` : 'From Space Station';
+      const quick = menuRows[STAGES.length + 1];
+      const locked = status === 'locked';
+      quick.name.textContent = `Quickplay · ${picked.name}`;
+      quick.value.textContent = locked ? 'Locked' : 'Standalone loadout';
+      quick.row.setAttribute('aria-disabled', String(locked));
+      mapParts.notice.textContent = storageNotice;
     }
 
     function addMenuRow(parent, label, index, detail) {
@@ -3661,13 +4652,16 @@
       menuRows = [];
       menuLayer.replaceChildren();
       menuLayer.classList.toggle('title-art', mode === 'start');
-      menuLayer.hidden = mode === 'play' || mode === 'boot';
+      menuLayer.classList.toggle('map-layer', mode === 'map');
+      menuLayer.classList.remove('map-fallback');
+      menuLayer.hidden = mode === 'play' || mode === 'boot' || mode === 'scene';
       if (menuLayer.hidden) return;
 
-      const panel = element('section', mode === 'shop' ? 'menu-panel shop-panel' : 'menu-panel');
+      const panel = element('section', mode === 'shop' ? 'menu-panel shop-panel' : (mode === 'map' ? 'menu-panel map-panel' : 'menu-panel'));
+      const endHeading = { dead: 'Game over', quickplay: 'Quickplay clear', cleared: 'Stage clear', complete: 'Mission complete' }[endKind] || 'Game over';
       const heading = element(mode === 'start' ? 'h1' : 'h2', '', {
-        start: 'SPACE COMMANDO', menu: 'Paused', settings: 'Settings', shop: 'Shop',
-        gameover: runComplete ? 'Mission complete' : 'Game over'
+        start: 'SPACE COMMANDO', menu: 'Paused', settings: 'Settings', shop: 'Shop', map: 'Star map',
+        gameover: endHeading
       }[mode]);
       heading.id = 'menu-heading';
       panel.setAttribute('aria-labelledby', heading.id);
@@ -3702,22 +4696,37 @@
       }
 
       panel.append(heading);
+      if (mode === 'map') {
+        buildStarMap(panel);
+        return;
+      }
       const options = element('div', 'menu-options');
       const labels = {
-        start: ['Start game', 'Settings'],
-        menu: ['Resume', 'Restart game', 'Settings'],
+        start: ['Star map', 'Settings'],
+        menu: ['Resume', 'Retry stage', 'Star map', 'Settings'],
         settings: ['Difficulty', 'Music', 'Particles', 'Camera shake and flashes', 'Sound effects', 'Haptics'],
-        gameover: ['Restart']
+        gameover: endOptions.map(([label]) => label)
       }[mode];
       if (mode === 'gameover') {
-        const reached = runComplete ? `All ${STAGES.length} stages cleared` : `Reached stage ${stageIndex + 1} · ${STAGES[stageIndex].name}`;
-        panel.append(element('p', 'gameover-summary', `${reached} · Gold collected: ${player.gold}`));
+        const stage = STAGES[stageIndex];
+        const next = STAGES[stageIndex + 1];
+        const summary = {
+          dead: playMode === 'quickplay' ? `Quickplay · ${stage.name}` : `Reached stage ${stageIndex + 1} · ${stage.name}`,
+          quickplay: `${stage.name} cleared · campaign progress unchanged`,
+          cleared: `${stage.name} cleared · ${next?.name} unlocked`,
+          complete: `All ${STAGES.length} stages cleared`
+        }[endKind] || stage.name;
+        const data = playMode === 'campaign' ? STORY.STAGES[stage.id] : null;
+        if (endKind === 'dead' && endReason) panel.append(element('p', 'gameover-summary', endReason));
+        if (data && (endKind === 'cleared' || endKind === 'complete')) panel.append(element('p', 'gameover-story', data.clear));
+        panel.append(element('p', 'gameover-summary', `${summary} · Gold: ${player.gold}`));
+        if (data && endKind === 'complete' && data.endCard) panel.append(element('p', 'gameover-card', data.endCard));
       }
       labels.forEach((label, index) => addMenuRow(options, label, index, mode === 'settings'));
       panel.append(options);
       if (mode === 'settings') addBackButton(panel, 'Back', 'system-button menu-back');
       if (mode === 'start' && !isMobile) {
-        panel.append(element('p', 'menu-hint', 'Move: A/D or arrows · Jump: Space · Fire: Z · Reload: X · Shop: P'));
+        panel.append(element('p', 'menu-hint', 'Move: A/D or arrows · Jump: Space · Fire: Z · Reload: X · Interact: E · Shop: P'));
       }
     }
 
@@ -3727,7 +4736,7 @@
       if (changed) {
         menuMode = mode;
         buildMenu(mode);
-        document.body.toggleAttribute('data-playing', mode === 'play');
+        document.body.toggleAttribute('data-playing', mode === 'play' || mode === 'scene');
       }
       if (menuLayer.hidden) return;
       const selected = selectedRow();
@@ -3737,13 +4746,15 @@
 
       if (mode === 'start') {
         menuRows[0].row.disabled = !artReady;
-        menuRows[0].name.textContent = artReady ? 'Start game' : 'Loading sprites…';
+        menuRows[0].name.textContent = artReady ? 'Star map' : 'Loading sprites…';
       } else if (mode === 'settings') {
         const effectText = SETTINGS.effects === 'system' ? (effectsReduced() ? 'System · Reduced' : 'System · Full') :
           SETTINGS.effects === 'full' ? 'Full' : 'Reduced';
         const hapticText = hapticsSupported ? (SETTINGS.haptics ? 'On' : 'Off') : (SETTINGS.haptics ? 'On · not supported' : 'Off');
         const values = [SETTINGS.difficulty, AUDIO_LEVEL_NAMES[SETTINGS.musicLevel], SETTINGS.particles ? 'On' : 'Off', effectText, AUDIO_LEVEL_NAMES[SETTINGS.sfxLevel], hapticText];
         menuRows.forEach(({ value }, i) => { value.textContent = values[i]; });
+      } else if (mode === 'map') {
+        syncStarMap();
       } else if (mode === 'shop') {
         shopGold.textContent = `${player.gold} gold`;
         shopStatus.textContent = shopNotice;
@@ -3778,6 +4789,11 @@
       } else {
         accumulator = 0;
       }
+      if (gameState === 'scene' && scene && !document.hidden && windowFocused) {
+        scene.left -= frameMs;
+        if (scene.left <= 0) advanceScene();
+      }
+      syncStoryHud();
       if ((document.body.dataset.boot === 'ready' && gameState !== menuMode) ||
           (menuMode === 'start' && menuRows[0].row.disabled !== !artReady)) syncMenu();
       updateMusic(now);

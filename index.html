@@ -26,8 +26,33 @@
     <div class="game-stage">
       <div id="game-container">
         <canvas id="game-canvas" width="800" height="450" aria-label="SPACE COMMANDO playfield"></canvas>
+        <div id="story-hud" class="story-hud" hidden>
+          <div class="story-objective">
+            <p class="objective-label">Objective</p>
+            <p id="story-objective-text" aria-live="polite"></p>
+            <p id="story-objective-meta" class="objective-meta"></p>
+            <div class="objective-progress" hidden><span></span></div>
+          </div>
+          <div id="story-caption" class="story-caption" hidden>
+            <img class="caption-portrait" alt="" hidden>
+            <p><strong class="caption-speaker"></strong> <span class="caption-text"></span></p>
+          </div>
+          <p id="story-live" class="visually-hidden" aria-live="polite" aria-atomic="true"></p>
+        </div>
       </div>
       <div id="game-menu" class="menu-layer" hidden></div>
+      <div id="story-scene" class="story-scene" role="dialog" aria-modal="true" aria-labelledby="scene-title" hidden>
+        <img class="scene-art" alt="">
+        <h2 id="scene-title" class="visually-hidden"></h2>
+        <div class="scene-caption" aria-live="polite" aria-atomic="true">
+          <img class="caption-portrait" alt="" hidden>
+          <p><strong class="caption-speaker"></strong> <span class="caption-text"></span></p>
+        </div>
+        <div class="scene-actions">
+          <button id="scene-next" class="system-button primary-button" type="button">Next</button>
+          <button id="scene-skip" class="system-button" type="button">Skip scene</button>
+        </div>
+      </div>
       <div id="intro-layer" class="intro-layer" hidden>
         <video id="intro-video" src="inspiresoftwareintro.mp4" playsinline muted preload="metadata"></video>
         <button id="skip-intro" class="system-button" type="button">Skip intro</button>
@@ -50,6 +75,7 @@
         <button class="control-btn" type="button" data-key="Space">Jump</button>
         <button class="control-btn" type="button" data-key="z">Fire</button>
         <button class="control-btn" type="button" data-key="x">Reload</button>
+        <button id="interact-btn" class="control-btn interact-btn" type="button" data-key="e" aria-label="Interact" hidden>Use</button>
       </div>
     </div>
   </main>
@@ -63,6 +89,7 @@
 
   <script src="combat-audio.js"></script>
   <script src="station-layout.js"></script>
+  <script src="story.js"></script>
   <script src="index.js"></script>
   <script>
     (() => {

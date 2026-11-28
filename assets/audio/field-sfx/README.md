@@ -20,3 +20,21 @@ These MP3s are trimmed, faded and gain-adjusted mono game cues. Every source in 
 | [zombie-hurt.mp3](zombie-hurt.mp3) | Breach Infantry hurt | [Ogrebane, Monster Sound Effects Pack, monster-3.wav](https://opengameart.org/content/monster-sound-effects-pack) |  |
 
 Use the gun sounds once per confirmed round. Apply a short per-enemy cooldown to hurt cues. Trigger robot locomotion on steps or movement transitions so it stays sparse. The current weapon list has no grenade event. Use the detonation clip once that event exists.
+
+## Faction special cues
+
+Each special plays its cues once per event through `combat-audio.js`, within the existing voice limits (enemy 6, hurt 3, move 2; the oldest voice in a full group is cut). When a cue name has no field clip it plays from `combat-bank.mp3`, which has every name below. If Web Audio is unavailable, only defeats fall back to `enemy_death.mp3`; the other cues stay silent.
+
+| Event | When it plays | CyberCity Police | CyberCity Thug | Jungle Dinosaur | Dark Elf Ranger |
+| --- | --- | --- | --- | --- | --- |
+| Charge (tell) | Windup starts; a tell that cancels and restarts within 0.9 s does not repeat it | `robotWarn` | `zombieWarn` | `alienWarn` | `ghostWarn` |
+| Attack / movement | Trigger frame resolves: shot, dash launch or pounce leap | `rifleFire` (Breach Pulse) | `robotAttack` (Shock Dash) | `alienAttack` (Pounce Bite) | `laserFire` (Violet Lance) |
+| Landing | Pounce touches down, starting the vulnerable recovery | — | — | `robotMove` (heavy step, *move* group) | — |
+| Impact on a solid | Dash or pounce stops on cover or a wall; Breach Pulse breaks on a solid | `robotAttack` | `robotDown` | `robotMove` | — (the lance ends in sparks) |
+| Player hit | The special's one hit lands | `player_damage.mp3` (shared) | same | same | same |
+| Hurt | One per enemy per 260 ms | `robotHurt` | `zombieHurt` | `alienHurt` | `ghostHurt` |
+| Defeat | Once, when the enemy is removed | `robotDown` | `zombieDown` | `alienDown` | `ghostDown` |
+
+## Music tracks
+
+Music plays through HTML audio elements, separate from these cues, so the Music and Sound effects levels stay independent. Stage themes are chosen by stage ID: menu, `station` (Space Station Level 1 Ambient), `jungle`, `cyber`, `desert`. The story cues are the docking scene (Orbital Station Ambient Cutscene), the CyberCity launch scene and the CyberCity clear screen (CyberCity Escape, Cloudline Break), the archive reveal (Desolate Desert Ruins), the Space Station clear screen (Jungle Planet Emergency Crash Landing), and Mission complete (Iron and Sand, Instrumental Credits). If a story cue can't load, the matching stage theme stands in; if a stage theme and its legacy fallback can't load, the menu theme stands in. Either way the missing track is retried 15 s later the next time it's wanted.
