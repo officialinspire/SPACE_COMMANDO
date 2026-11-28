@@ -157,7 +157,8 @@
       'Robot hurt: “videogame sci-fi metalish damage efect” by saangosu (Freesound)',
       'Robot movement: “MnG - Mech Step” by SergeyIonov (Freesound)',
       'Zombie hurt: Monster Sound Effects Pack, “monster-3” by Ogrebane (OpenGameArt)',
-      'Grenade detonation (included for a future event): “Explosion / Gun” by SamsterBirdies (Freesound)']],
+      'Station blasts: “Explosion / Gun” by SamsterBirdies (Freesound)',
+      'Radio, alarm, ignition and archive cues: synthesized for SPACE COMMANDO']],
     ['Typeface', ['Barlow Condensed SemiBold and Bold by The Barlow Project Authors, SIL Open Font License 1.1, packaged by Fontsource (@fontsource/barlow-condensed 5.1.0).']],
     ['Software', ['No third-party code libraries ship with the game.']],
     ['Thanks for playing', ['']]
@@ -1257,6 +1258,7 @@
               applySfxLevel();
               if (!SETTINGS.sfx) {
                 stopEffects();
+                window.combatAudio?.stopStory();
                 selectSfx.pause();
               }
             }
@@ -1781,6 +1783,7 @@
 
     function openStarMap() {
       resetGameplayInput();
+      stopStorySfx();
       gameState = 'map';
       mapPick = Math.max(0, stageOrder(campaign.entry?.stage || campaign.unlocked.at(-1)));
       mapRow = STAGES.length; // Campaign Continue
@@ -1805,6 +1808,9 @@
       runComplete = kind === 'complete';
       if (kind !== 'dead') endReason = '';
       closeCaption();
+      stopStorySfx();
+      const endData = playMode === 'campaign' ? STORY.STAGES[STAGES[stageIndex].id] : null;
+      if (kind === 'cleared' && endData?.clearSfx) storySfx(endData.clearSfx);
       gameState = 'gameover';
       playerDownAt = performance.now();
       resetGameplayInput();
@@ -1998,6 +2004,37 @@
       for (const id of ids) story.queue.push({ ...lineFor(id), major, urgent });
     }
 
+    // Story sound cues: [id, delay] pairs (or ids) from story.js. They play
+    // only with sound effects on and never carry information a caption
+    // doesn't. Tests read the log.
+    const storySfxLog = [];
+    function storySfx(list) {
+      if (!list || !SETTINGS.sfx) return;
+      for (const item of list) {
+        const [id, delay = 0] = Array.isArray(item) ? item : [item, 0];
+        const spec = STORY.SFX[id];
+        if (!spec) continue;
+        const result = window.combatAudio?.playStory(id, spec, delay) ?? false;
+        storySfxLog.push({ id, delay, result, t: Math.round(elapsedTime) });
+        if (storySfxLog.length > 200) storySfxLog.shift();
+      }
+    }
+    function stopStorySfx() {
+      window.combatAudio?.stopStory();
+    }
+
+    // The cue for a caption: its own, its speaker's, or a squelch when a
+    // radio speaker keys up. `state.lastRadio` tracks the open transmission.
+    function lineSfx(line, state) {
+      const speaker = STORY.SPEAKERS[line.speaker] || {};
+      const cues = [];
+      if (line.sfx) cues.push(line.sfx);
+      else if (speaker.sfx) cues.push(speaker.sfx);
+      else if (speaker.radio && state.lastRadio !== line.speaker) cues.push('radio-in');
+      state.lastRadio = speaker.radio ? line.speaker : null;
+      storySfx(cues);
+    }
+
     function closeCaption() {
       if (story) {
         story.queue = [];
@@ -2013,9 +2050,15 @@
         if (story.caption.left > 0) return;
         story.caption = null;
         captionBox.hidden = true;
+        // The transmission ends when nothing follows straight away.
+        if (!story.queue.length && story.lastRadio) {
+          storySfx(['radio-out']);
+          story.lastRadio = null;
+        }
       }
       const line = story.queue.shift();
       if (!line) return;
+      lineSfx(line, story);
       story.caption = { line, left: lineDuration(line), major: Boolean(line.major) };
       fillCaption(captionBox, line);
       captionBox.classList.toggle('major', Boolean(line.major));
@@ -2051,7 +2094,7 @@
           snapCamera();
         }
       }
-      syncDoors();
+      syncDoors(true);
       beginStep();
       if (!checkpoint && data.start?.scene) openScene(data.start.scene);
     }
@@ -2066,9 +2109,15 @@
       story.warned = new Set();
     }
 
-    function syncDoors() {
+    // A door that opens plays its servo and seal once. The first sync of an
+    // attempt (including a checkpoint reload) only records what is open.
+    function syncDoors(initial = false) {
+      const wasClosed = new Set((story.closedDoors || []).map(door => door.id));
       story.closedDoors = storyPlan.doors.filter(door => !door.until.every(id => story.done.has(id)));
       obstacles = [...layout.solids, ...story.closedDoors.map(door => door.solid)];
+      if (initial) return;
+      const nowClosed = new Set(story.closedDoors.map(door => door.id));
+      for (const id of wasClosed) if (!nowClosed.has(id)) storySfx(STORY.DOOR_SFX);
     }
 
     function closedDoorX() {
@@ -2138,6 +2187,12 @@
             announce(`${mark} seconds left.`);
           }
         }
+        for (const cue of step.timerSfx || []) {
+          if (left <= cue.left && !story.warned.has('sfx' + cue.left)) {
+            story.warned.add('sfx' + cue.left);
+            storySfx([cue.sfx]);
+          }
+        }
         if (story.timer <= 0) {
           endReason = step.fail;
           showEnd('dead');
@@ -2159,6 +2214,7 @@
       else {
         syncDoors();
         say(step.progress?.lines || []);
+        storySfx(step.progress?.sfx);
       }
     }
 
@@ -2168,6 +2224,7 @@
       // A scene supersedes any banter still waiting on the radio.
       if (done.scene) closeCaption();
       say(done.lines || [], Boolean(done.duck), Boolean(done.urgent));
+      storySfx(done.sfx);
       story.step += 1;
       syncDoors();
       beginStep();
@@ -2198,6 +2255,8 @@
 
     // Objective panel, captions and the contextual Interact button.
     function syncStoryHud() {
+      // Story cues sit lower while a radio caption or scene caption is up.
+      window.combatAudio?.duckStory(Boolean(scene) || (Boolean(story) && !captionBox.hidden));
       const show = Boolean(story) && gameState === 'play';
       setCached('show', show, v => { storyHud.hidden = !v; });
       setCached('motion', effectsReduced(), v => { storyHud.classList.toggle('reduce-motion', v); });
@@ -2270,10 +2329,14 @@
     }
 
     function showBeat(index) {
+      const previous = scene.index >= 0 ? scene.beats[scene.index] : null;
       scene.index = index;
       const beat = scene.beats[index];
       setSceneArt(scene.data.frames[beat.frame]);
+      // A new frame plays its cues once; each beat plays its line's cue.
+      if (!previous || previous.frame !== beat.frame) storySfx(scene.data.frames[beat.frame].sfx);
       const line = lineFor(beat.line);
+      lineSfx(line, scene);
       fillCaption(sceneCaption, line);
       scene.left = lineDuration(line) + 900;
       sceneNext.textContent = index === scene.beats.length - 1 ? 'Continue' : 'Next';
@@ -2296,6 +2359,8 @@
 
     function closeScene(skipped) {
       if (!scene) return;
+      // Scene cues (and anything delayed or still sounding) stop with it.
+      stopStorySfx();
       const closed = closeSceneView();
       gameState = 'play';
       resetGameplayInput();
@@ -2536,6 +2601,7 @@
       leaving = false;
       story = null;
       storyPlan = null;
+      stopStorySfx();
       if (scene) closeSceneView();
       stageBanner = null;
       player.x = 100;

@@ -15,17 +15,19 @@
   // player can't identify yet; the same recording later plays as `analyst`.
   const SPEAKERS = {
     commando: { label: 'Commando' },
-    'squad-leader': { label: 'Squad Leader', portrait: 'squad-leader' },
-    squad: { label: 'Squad channel' },
+    // `radio` speakers key up with a squelch at the start of a transmission
+    // and release one when it ends; `sfx` plays on each of their lines.
+    'squad-leader': { label: 'Squad Leader', portrait: 'squad-leader', radio: true },
+    squad: { label: 'Squad channel', radio: true },
     signal: { label: 'Unknown signal' },
     analyst: { label: 'Analyst · recovered log', portrait: 'analyst' },
-    commander: { label: 'Fleet Commander', portrait: 'commander' },
+    commander: { label: 'Fleet Commander', portrait: 'commander', radio: true },
     priestess: { label: 'Dark Elf Priestess', portrait: 'elf-leader' },
-    'police-commander': { label: 'Police Commander', portrait: 'police-commander' },
+    'police-commander': { label: 'Police Commander', portrait: 'police-commander', radio: true },
     'thug-leader': { label: 'Thug Leader', portrait: 'thug-leader' },
-    recorder: { label: 'Colonial recorder' },
-    interference: { label: 'Interference' },
-    archive: { label: 'Archive' },
+    recorder: { label: 'Colonial recorder', sfx: 'playback-glitch' },
+    interference: { label: 'Interference', radio: true },
+    archive: { label: 'Archive', sfx: 'playback-glitch' },
     narration: { label: '' }
   };
 
@@ -51,11 +53,11 @@
     'breach-hold': { speaker: 'squad-leader', text: 'Breach! I’ve got the bulkhead.' },
     'breach-go': { speaker: 'squad-leader', text: 'Her last ping was observation. Go. Bring her home.' },
     'breach-static': { speaker: 'interference', text: 'CHAOS.' },
-    'packet-heard': { speaker: 'signal', text: PACKET_SIX, signature: PACKET_SIGNATURE },
+    'packet-heard': { speaker: 'signal', text: PACKET_SIX, signature: PACKET_SIGNATURE, sfx: 'analyst-signature' },
     'packet-knock': { speaker: 'commando', text: 'Knocking twice.' },
     'packet-dismiss': { speaker: 'commander', text: 'That isn’t live traffic. Keep moving.' },
     'analyst-found': { speaker: 'commando', text: 'Found her. Observation bay.' },
-    'analyst-log': { speaker: 'analyst', text: PACKET_SIX, signature: PACKET_SIGNATURE },
+    'analyst-log': { speaker: 'analyst', text: PACKET_SIX, signature: PACKET_SIGNATURE, sfx: 'analyst-signature' },
     'analyst-pocket': { speaker: 'commander', text: 'Check her left pocket.' },
     'analyst-how': { speaker: 'commando', text: 'Drive’s in her left pocket. How did you know that?' },
     'analyst-standard': { speaker: 'commander', text: 'Standard issue. Move.' },
@@ -138,7 +140,8 @@
     escape: {
       title: 'CyberCity launch',
       frames: [
-        { art: 'assets/story/courier.webp', fallback: 'assets/environments/cyberpunk-city/background.webp', lines: ['escape-sent'] },
+        { art: 'assets/story/courier.webp', fallback: 'assets/environments/cyberpunk-city/background.webp', lines: ['escape-sent'],
+          sfx: [['courier-ignition', 0], ['ship-fire', 1.0]] },
         { art: 'assets/story/orbit.webp', fallback: 'assets/ui/star-map.webp', lines: ['escape-stop', 'escape-who', 'escape-anyone'] }
       ],
       music: 'escape',
@@ -148,14 +151,41 @@
     archive: {
       title: 'The archive',
       frames: [
-        { art: 'assets/story/archive-masters.webp', fallback: 'assets/environments/desert-temple-ruins/background.webp', lines: ['archive-architect'] },
-        { art: 'assets/story/archive-host.webp', fallback: 'assets/environments/desert-temple-ruins/background.webp', lines: ['archive-operator', 'archive-driving'] },
+        { art: 'assets/story/archive-masters.webp', fallback: 'assets/environments/desert-temple-ruins/background.webp', lines: ['archive-architect'],
+          sfx: [['archive-wake', 0]] },
+        { art: 'assets/story/archive-host.webp', fallback: 'assets/environments/desert-temple-ruins/background.webp', lines: ['archive-operator', 'archive-driving'],
+          sfx: [['fly-buzz', 0.2]] },
         { art: 'assets/story/archive-masters.webp', fallback: 'assets/environments/desert-temple-ruins/background.webp', lines: ['archive-human', 'archive-program'] }
       ],
       music: 'reveal',
       essential: ['archive-architect', 'archive-operator', 'archive-program']
     }
   };
+
+  // Story sound cues. `clip` is a cleared field recording (see
+  // assets/audio/field-sfx/README.md), played with an optional rate,
+  // low-pass and repeats; `synth` is an original recipe in combat-audio.js.
+  // A clip that fails to load plays silence unless it names a fallbackSynth.
+  // Levels stay low so cues sit under captions; the story bus ducks further
+  // while a caption is on screen.
+  const SFX = {
+    'radio-in': { synth: 'squelch', gain: 0.16 },
+    'radio-out': { synth: 'squelch', release: true, gain: 0.11 },
+    'analyst-signature': { synth: 'carrier', gain: 0.13 },
+    'playback-glitch': { synth: 'glitch', gain: 0.08 },
+    'bulkhead-servo': { clip: 'robotMove', rate: 0.62, lowpass: 1800, gain: 0.55 },
+    'seal-release': { synth: 'hiss', gain: 0.12 },
+    'relay-startup': { clip: 'laserReload', rate: 0.85, gain: 0.42 },
+    'station-alarm': { synth: 'alarm', cycles: 6, gain: 0.07 },
+    'distant-blast': { clip: 'grenadeExplosion', rate: 0.72, lowpass: 600, gain: 0.55 },
+    'station-blast': { clip: 'grenadeExplosion', rate: 0.6, lowpass: 1300, gain: 0.85 },
+    'courier-ignition': { synth: 'ignition', gain: 0.32 },
+    'ship-fire': { clip: 'laserFire', rate: 0.6, repeat: 3, gap: 0.14, lowpass: 2600, gain: 0.3 },
+    'archive-wake': { synth: 'drone', gain: 0.2 },
+    'fly-buzz': { synth: 'buzz', gain: 0.045 }
+  };
+  // Every door opens with the bulkhead servo, then the seal releases.
+  const DOOR_SFX = [['bulkhead-servo', 0], ['seal-release', 0.32]];
 
   // Per stage: anchors, doors, ordered steps and one-shot triggers.
   // Step types: interact (all listed anchors), hold (stay in the anchor's
@@ -175,8 +205,10 @@
         { id: 'recover', type: 'interact', anchors: ['analyst'], text: 'Find the analyst in the observation bay.',
           done: { lines: ['analyst-found', 'analyst-log', 'analyst-pocket', 'analyst-how', 'analyst-standard'], duck: true }, checkpoint: true },
         { id: 'scuttle', type: 'interact', anchors: ['scuttle'], text: 'Arm the self-destruct on the upper deck.',
-          done: { lines: ['scuttle-arm', 'scuttle-time'], duck: true, urgent: true }, checkpoint: true },
+          done: { lines: ['scuttle-arm', 'scuttle-time'], duck: true, urgent: true, sfx: [['station-alarm', 0]] }, checkpoint: true },
         { id: 'escape', type: 'reach', text: 'Reach the emergency shuttle.', timer: 75, meter: 'Self-destruct', spawnRate: 1.35,
+          // The dock goes in stages behind the player.
+          timerSfx: [{ left: 50, sfx: 'distant-blast' }, { left: 22, sfx: 'distant-blast' }],
           fail: 'The self-destruct went off before the shuttle cleared.' }
       ],
       triggers: [
@@ -187,7 +219,8 @@
       ],
       exitLocked: 'Shuttle locked. Recover the drive and arm the station first.',
       clear: 'The shuttle clears the blast. Its damaged drive can only reach the nearest planet.',
-      clearMusic: 'crash'
+      clearMusic: 'crash',
+      clearSfx: [['station-blast', 0.5]]
     },
     jungle: {
       anchors: {
@@ -199,7 +232,7 @@
       ],
       steps: [
         { id: 'relay', type: 'interact', anchors: ['relay'], text: 'Reach the research facility and restore the relay’s power.',
-          done: { lines: ['relay-up'], urgent: true }, checkpoint: true },
+          done: { lines: ['relay-up'], urgent: true, sfx: [['relay-startup', 0]] }, checkpoint: true },
         { id: 'upload', type: 'hold', anchor: 'relay', seconds: 18, meter: 'Upload', text: 'Stay by the relay while the distress call uploads.',
           spawnRate: 1.25, cues: [{ at: 0.35, lines: ['upload-hold'], urgent: true }],
           done: { lines: ['relay-heard', 'relay-war', 'relay-cargo', 'relay-elves', 'relay-offline'], duck: true }, checkpoint: true },
@@ -246,7 +279,7 @@
       ],
       steps: [
         { id: 'power', type: 'interact', anchors: ['terminal-a', 'terminal-b'], text: 'Restore power at both archive terminals.',
-          progress: { lines: ['ruins-power'] }, checkpoint: true },
+          progress: { lines: ['ruins-power'], sfx: [['relay-startup', 0]] }, done: { sfx: [['relay-startup', 0]] }, checkpoint: true },
         { id: 'activate', type: 'interact', anchors: ['archive'], text: 'Open the archive with the drive.',
           done: { scene: 'archive', lines: ['archive-hold'] }, checkpoint: true },
         { id: 'uplink', type: 'hold', anchor: 'archive', seconds: 22, meter: 'Copying record', text: 'Hold the archive uplink until the record copies.',
@@ -265,5 +298,5 @@
     }
   };
 
-  root.SpaceStory = { SPEAKERS, LINES, SCENES, STAGES };
+  root.SpaceStory = { SPEAKERS, LINES, SCENES, STAGES, SFX, DOOR_SFX };
 })(typeof window !== 'undefined' ? window : globalThis);
