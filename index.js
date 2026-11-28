@@ -142,7 +142,7 @@
       'Jungle Planet: Emergency Crash Landing', 'CyberCity Escape (Cloudline Break)', 'Desolate Desert Ruins',
       'Iron and Sand (Instrumental Credits)']],
     ['Art', ['Commando, enemy and pickup sprites', 'Orbital station, Jungle Planet, CyberCity and desert ruins environments',
-      'Story stills, radio portraits, title art and star map']],
+      'Story stills, radio portraits, title art and star map', 'Stage approach films generated with Google Veo']],
     ['Sound effects · CC0 1.0', [
       'Pistol fire: “Single Pistol Gunshot 3.2” by morganpurkis (Freesound)',
       'Rifle fire: “Machine Gun 001 - single shot” by pgi (Freesound)',
