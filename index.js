@@ -110,19 +110,19 @@
   //   briefing  map and Quickplay text; it never previews unreached story beats
   //   quickplay the fixed standalone loadout for a Quickplay session
   const STAGES = [
-    { id: 'station', name: 'Space Station', music: 'play', map: [0.453, 0.139],
+    { id: 'station', name: 'Space Station', music: 'play', map: [0.155, 0.364, 0.04, 'right'],
       objective: 'Recover the analyst’s research, then reach the shuttle.',
       briefing: 'Our contact missed a scheduled check-in. The docking cradle still answers, but life-support telemetry is dead.',
       quickplay: { health: 100, gold: 0, weapon: 'pistol', owned: ['pistol'], clip: { pistol: 12 }, reserve: { pistol: 24 } } },
-    { id: 'jungle', name: 'Jungle Planet', env: 'jungle-planet', music: 'jungle', map: [0.529, 0.362],
+    { id: 'jungle', name: 'Jungle Planet', env: 'jungle-planet', music: 'jungle', map: [0.327, 0.633, 0.068, 'below'],
       objective: 'Reach the abandoned research facility and restore its relay.',
       briefing: 'The damaged shuttle could only make the nearest planet. A colonial research site stands empty under the canopy.',
       quickplay: { health: 100, gold: 40, weapon: 'rifle', owned: ['pistol', 'rifle'], clip: { pistol: 12, rifle: 50 }, reserve: { pistol: 24, rifle: 60 } } },
-    { id: 'cyber', name: 'CyberCity', env: 'cyberpunk-city', music: 'cyber', map: [0.472, 0.579],
+    { id: 'cyber', name: 'CyberCity', env: 'cyberpunk-city', music: 'cyber', map: [0.621, 0.345, 0.053, 'right'],
       objective: 'Slip through the freight district and reach an impounded courier.',
       briefing: 'A CyberCity cargo hauler is the only ride off-world. The port says freight inspection. The police are scanning for a beacon.',
       quickplay: { health: 100, gold: 80, weapon: 'shotgun', owned: ['pistol', 'rifle', 'shotgun'], clip: { pistol: 12, rifle: 50, shotgun: 5 }, reserve: { pistol: 24, rifle: 60, shotgun: 15 } } },
-    { id: 'desert', name: 'Ancient Planet Ruins', env: 'desert-temple-ruins', music: 'desert', map: [0.529, 0.815],
+    { id: 'desert', name: 'Ancient Planet Ruins', env: 'desert-temple-ruins', music: 'desert', map: [0.828, 0.591, 0.056, 'below', 'below-end'],
       objective: 'Open the archive, record it and reach extraction.',
       briefing: 'HQ decrypted the analyst’s coordinates to a ruined desert world. Wind cuts across the terraces. Someone may be there first.',
       quickplay: { health: 100, gold: 120, weapon: 'laser', owned: ['pistol', 'rifle', 'shotgun', 'laser'], clip: { pistol: 12, rifle: 50, shotgun: 5, laser: 30 }, reserve: { pistol: 24, rifle: 60, shotgun: 15, laser: 30 } } }
@@ -157,7 +157,8 @@
       'Robot hurt: “videogame sci-fi metalish damage efect” by saangosu (Freesound)',
       'Robot movement: “MnG - Mech Step” by SergeyIonov (Freesound)',
       'Zombie hurt: Monster Sound Effects Pack, “monster-3” by Ogrebane (OpenGameArt)',
-      'Grenade detonation (included for a future event): “Explosion / Gun” by SamsterBirdies (Freesound)']],
+      'Station blasts: “Explosion / Gun” by SamsterBirdies (Freesound)',
+      'Radio, alarm, ignition and archive cues: synthesized for SPACE COMMANDO']],
     ['Typeface', ['Barlow Condensed SemiBold and Bold by The Barlow Project Authors, SIL Open Font License 1.1, packaged by Fontsource (@fontsource/barlow-condensed 5.1.0).']],
     ['Software', ['No third-party code libraries ship with the game.']],
     ['Thanks for playing', ['']]
@@ -1257,6 +1258,7 @@
               applySfxLevel();
               if (!SETTINGS.sfx) {
                 stopEffects();
+                window.combatAudio?.stopStory();
                 selectSfx.pause();
               }
             }
@@ -1781,6 +1783,7 @@
 
     function openStarMap() {
       resetGameplayInput();
+      stopStorySfx();
       gameState = 'map';
       mapPick = Math.max(0, stageOrder(campaign.entry?.stage || campaign.unlocked.at(-1)));
       mapRow = STAGES.length; // Campaign Continue
@@ -1805,6 +1808,9 @@
       runComplete = kind === 'complete';
       if (kind !== 'dead') endReason = '';
       closeCaption();
+      stopStorySfx();
+      const endData = playMode === 'campaign' ? STORY.STAGES[STAGES[stageIndex].id] : null;
+      if (kind === 'cleared' && endData?.clearSfx) storySfx(endData.clearSfx);
       gameState = 'gameover';
       playerDownAt = performance.now();
       resetGameplayInput();
@@ -1959,12 +1965,13 @@
     }
 
     function lineFor(id) {
-      return STORY.LINES[id] || { speaker: 'narration', text: String(id) };
+      return STORY.LINES[id] ? { id, ...STORY.LINES[id] } : { id, speaker: 'narration', text: String(id) };
     }
 
     // Radio lines are brief and clear on their own.
+    // A reveal can ask for a longer minimum with `hold`.
     function lineDuration(line) {
-      return Math.max(2600, Math.min(6000, 1400 + line.text.length * 46));
+      return Math.max(line.hold || 2600, Math.min(6000, 1400 + line.text.length * 46));
     }
 
     function fillCaption(box, line) {
@@ -1977,11 +1984,77 @@
       } else portrait.hidden = true;
       box.querySelector('.caption-speaker').textContent = speaker.label;
       box.querySelector('.caption-text').textContent = line.text;
+      // Each side has its own speaker colour and edge.
+      box.dataset.faction = speaker.faction || 'neutral';
+      // A recording's signature tag, so a repeat reads as the same signal.
+      let tag = box.querySelector('.caption-signature');
+      if (line.signature) {
+        if (!tag) { tag = element('span', 'caption-signature'); box.querySelector('p').append(tag); }
+        tag.textContent = line.signature;
+        tag.hidden = false;
+      } else if (tag) tag.hidden = true;
     }
 
     // Major beats duck the music slightly while their lines are on screen.
-    function say(ids, major = false) {
-      if (story) for (const id of ids) story.queue.push({ ...lineFor(id), major });
+    // Priority: urgent 0, essential 1, banter 2. A said block keeps its own
+    // order and goes after everything of equal or higher priority. An urgent
+    // block drops queued banter (and cuts a banter caption) but keeps
+    // essential lines. `staleX` marks a trigger's `until` point.
+    const lineRank = line => line.urgent ? 0 : (line.priority === 'essential' ? 1 : 2);
+    function say(ids, major = false, urgent = false, staleX = null) {
+      if (!story || !ids.length) return;
+      if (urgent) {
+        story.queue = story.queue.filter(line => lineRank(line) < 2);
+        if (story.caption && lineRank(story.caption.line) === 2) story.caption.left = 0;
+      }
+      const block = ids.map(id => ({ ...lineFor(id), major, urgent, staleX }));
+      const rank = Math.min(...block.map(lineRank));
+      let at = story.queue.length;
+      while (at > 0 && lineRank(story.queue[at - 1]) > rank) at--;
+      story.queue.splice(at, 0, ...block);
+    }
+
+    // A line that went stale before its turn is dropped unheard.
+    function lineStale(line) {
+      if (line.urgent) return false;
+      // Only banter expires at its trigger's point; essential lines wait.
+      if (lineRank(line) === 2 && line.staleX !== null && line.staleX !== undefined && player.x + player.width / 2 > line.staleX) return true;
+      if (line.untilStep) {
+        const index = story.data.steps.findIndex(step => step.id === line.untilStep);
+        if (index >= 0 && story.step > index) return true;
+      }
+      return false;
+    }
+
+    // Story sound cues: [id, delay] pairs (or ids) from story.js. They play
+    // only with sound effects on and never carry information a caption
+    // doesn't. Tests read the log.
+    const storySfxLog = [];
+    function storySfx(list) {
+      if (!list || !SETTINGS.sfx) return;
+      for (const item of list) {
+        const [id, delay = 0] = Array.isArray(item) ? item : [item, 0];
+        const spec = STORY.SFX[id];
+        if (!spec) continue;
+        const result = window.combatAudio?.playStory(id, spec, delay) ?? false;
+        storySfxLog.push({ id, delay, result, t: Math.round(elapsedTime) });
+        if (storySfxLog.length > 200) storySfxLog.shift();
+      }
+    }
+    function stopStorySfx() {
+      window.combatAudio?.stopStory();
+    }
+
+    // The cue for a caption: its own, its speaker's, or a squelch when a
+    // radio speaker keys up. `state.lastRadio` tracks the open transmission.
+    function lineSfx(line, state) {
+      const speaker = STORY.SPEAKERS[line.speaker] || {};
+      const cues = [];
+      if (line.sfx) cues.push(line.sfx);
+      else if (speaker.sfx) cues.push(speaker.sfx);
+      else if (speaker.radio && state.lastRadio !== line.speaker) cues.push('radio-in');
+      state.lastRadio = speaker.radio ? line.speaker : null;
+      storySfx(cues);
     }
 
     function closeCaption() {
@@ -1997,11 +2070,20 @@
       if (story.caption) {
         story.caption.left -= dt;
         if (story.caption.left > 0) return;
+        // `heard` means the line finished (or was cut): gated anchors open now.
+        story.heard.add(story.caption.line.id);
         story.caption = null;
         captionBox.hidden = true;
+        // The transmission ends when nothing follows straight away.
+        if (!story.queue.length && story.lastRadio) {
+          storySfx(['radio-out']);
+          story.lastRadio = null;
+        }
       }
-      const line = story.queue.shift();
+      let line = story.queue.shift();
+      while (line && lineStale(line)) line = story.queue.shift();
       if (!line) return;
+      lineSfx(line, story);
       story.caption = { line, left: lineDuration(line), major: Boolean(line.major) };
       fillCaption(captionBox, line);
       captionBox.classList.toggle('major', Boolean(line.major));
@@ -2025,11 +2107,16 @@
         return;
       }
       story = { data, step: 0, done: new Set(), fired: new Set(), timer: null, hold: 0, cues: new Set(), warned: new Set(),
-        queue: [], caption: null, near: null, announcedNear: null, exitHintAt: -Infinity, closedDoors: [] };
+        queue: [], caption: null, near: null, announcedNear: null, exitHintAt: -Infinity, closedDoors: [], heard: new Set() };
       if (checkpoint) {
         story.step = checkpoint.step;
         checkpoint.done.forEach(id => story.done.add(id));
         checkpoint.fired.forEach(id => story.fired.add(id));
+        // Lines behind the checkpoint count as heard, so gated anchors open.
+        for (const step of data.steps.slice(0, checkpoint.step)) {
+          for (const id of [...(step.done?.lines || []), ...(step.progress?.lines || []), ...(step.cues || []).flatMap(cue => cue.lines)]) story.heard.add(id);
+        }
+        for (const trigger of data.triggers) if (story.fired.has(trigger.id)) [...trigger.lines, ...(trigger.then || [])].forEach(id => story.heard.add(id));
         const at = storyPlan.anchors[checkpoint.at];
         if (at) {
           player.x = at.x;
@@ -2037,7 +2124,7 @@
           snapCamera();
         }
       }
-      syncDoors();
+      syncDoors(true);
       beginStep();
       if (!checkpoint && data.start?.scene) openScene(data.start.scene);
     }
@@ -2052,9 +2139,15 @@
       story.warned = new Set();
     }
 
-    function syncDoors() {
+    // A door that opens plays its servo and seal once. The first sync of an
+    // attempt (including a checkpoint reload) only records what is open.
+    function syncDoors(initial = false) {
+      const wasClosed = new Set((story.closedDoors || []).map(door => door.id));
       story.closedDoors = storyPlan.doors.filter(door => !door.until.every(id => story.done.has(id)));
       obstacles = [...layout.solids, ...story.closedDoors.map(door => door.solid)];
+      if (initial) return;
+      const nowClosed = new Set(story.closedDoors.map(door => door.id));
+      for (const id of wasClosed) if (!nowClosed.has(id)) storySfx(STORY.DOOR_SFX);
     }
 
     function closedDoorX() {
@@ -2080,7 +2173,10 @@
     // ones, plus optional extras such as the jungle recorder.
     function activeAnchors() {
       const step = story.data.steps[story.step];
-      const ids = step?.type === 'interact' ? step.anchors.filter(id => !story.done.has(id)) : [];
+      // An anchor with `after` waits until that line has played (or was
+      // already behind a checkpoint).
+      const ready = id => !story.data.anchors[id].after || story.heard.has(story.data.anchors[id].after);
+      const ids = step?.type === 'interact' ? step.anchors.filter(id => !story.done.has(id) && ready(id)) : [];
       for (const [id, a] of Object.entries(story.data.anchors)) {
         if (a.optional && !story.done.has(id) && storyPlan.anchors[id]) ids.push(id);
       }
@@ -2094,7 +2190,10 @@
         const chunk = layout.chunks[trigger.at.chunk];
         if (player.x + player.width / 2 >= chunk.x0 + trigger.at.f * (chunk.x1 - chunk.x0)) {
           story.fired.add(trigger.id);
-          say(trigger.lines, Boolean(trigger.duck));
+          const until = trigger.until && layout.chunks[trigger.until.chunk];
+          const staleX = until ? until.x0 + trigger.until.f * (until.x1 - until.x0) : null;
+          say(trigger.lines, Boolean(trigger.duck), Boolean(trigger.urgent), staleX);
+          if (trigger.then) say(trigger.then, Boolean(trigger.duck), false, staleX);
         }
       }
       story.near = activeAnchors().find(id => anchorInRange(storyPlan.anchors[id])) || null;
@@ -2111,7 +2210,7 @@
         for (const cue of step.cues || []) {
           if (progress >= cue.at && !story.cues.has(cue.at)) {
             story.cues.add(cue.at);
-            say(cue.lines, Boolean(cue.duck));
+            say(cue.lines, Boolean(cue.duck), Boolean(cue.urgent));
           }
         }
         if (progress >= 1) completeStep(step.anchor);
@@ -2122,6 +2221,12 @@
           if (left <= mark && !story.warned.has(mark)) {
             story.warned.add(mark);
             announce(`${mark} seconds left.`);
+          }
+        }
+        for (const cue of step.timerSfx || []) {
+          if (left <= cue.left && !story.warned.has('sfx' + cue.left)) {
+            story.warned.add('sfx' + cue.left);
+            storySfx([cue.sfx]);
           }
         }
         if (story.timer <= 0) {
@@ -2145,13 +2250,17 @@
       else {
         syncDoors();
         say(step.progress?.lines || []);
+        storySfx(step.progress?.sfx);
       }
     }
 
     function completeStep(at) {
       const step = story.data.steps[story.step];
       const done = step.done || {};
-      say(done.lines || [], Boolean(done.duck));
+      // A scene supersedes any banter still waiting on the radio.
+      if (done.scene) closeCaption();
+      say(done.lines || [], Boolean(done.duck), Boolean(done.urgent));
+      storySfx(done.sfx);
       story.step += 1;
       syncDoors();
       beginStep();
@@ -2182,6 +2291,8 @@
 
     // Objective panel, captions and the contextual Interact button.
     function syncStoryHud() {
+      // Story cues sit lower while a radio caption or scene caption is up.
+      window.combatAudio?.duckStory(Boolean(scene) || (Boolean(story) && !captionBox.hidden));
       const show = Boolean(story) && gameState === 'play';
       setCached('show', show, v => { storyHud.hidden = !v; });
       setCached('motion', effectsReduced(), v => { storyHud.classList.toggle('reduce-motion', v); });
@@ -2254,10 +2365,14 @@
     }
 
     function showBeat(index) {
+      const previous = scene.index >= 0 ? scene.beats[scene.index] : null;
       scene.index = index;
       const beat = scene.beats[index];
       setSceneArt(scene.data.frames[beat.frame]);
+      // A new frame plays its cues once; each beat plays its line's cue.
+      if (!previous || previous.frame !== beat.frame) storySfx(scene.data.frames[beat.frame].sfx);
       const line = lineFor(beat.line);
+      lineSfx(line, scene);
       fillCaption(sceneCaption, line);
       scene.left = lineDuration(line) + 900;
       sceneNext.textContent = index === scene.beats.length - 1 ? 'Continue' : 'Next';
@@ -2280,10 +2395,18 @@
 
     function closeScene(skipped) {
       if (!scene) return;
+      // Scene cues (and anything delayed or still sounding) stop with it.
+      stopStorySfx();
       const closed = closeSceneView();
       gameState = 'play';
       resetGameplayInput();
-      if (skipped) say(closed.data.essential || [], true);
+      // Skipped: the scene's essential lines play first, before anything queued during it.
+      if (skipped && story) {
+        const queued = story.queue;
+        story.queue = [];
+        say(closed.data.essential || [], true);
+        story.queue.push(...queued);
+      }
       const back = closed.returnFocus;
       if (back?.isConnected && back !== document.body && !sceneLayer.contains(back)) back.focus({ preventScroll: true });
       else if (sceneLayer.contains(document.activeElement)) document.activeElement.blur();
@@ -2514,6 +2637,7 @@
       leaving = false;
       story = null;
       storyPlan = null;
+      stopStorySfx();
       if (scene) closeSceneView();
       stageBanner = null;
       player.x = 100;
@@ -4891,7 +5015,7 @@
         chart.classList.add('no-art');
         menuLayer.classList.add('map-fallback');
       });
-      art.src = 'assets/ui/star-map.webp';
+      art.src = 'assets/ui/star-map-wide.webp';
       chart.append(art);
       const svgNS = 'http://www.w3.org/2000/svg';
       const route = document.createElementNS(svgNS, 'svg');
@@ -4917,8 +5041,14 @@
         const item = element('li');
         const row = addMenuRow(item, stage.name, i, true);
         row.classList.add('waypoint');
-        row.style.setProperty('--x', `${stage.map[0] * 100}%`);
-        row.style.setProperty('--y', `${stage.map[1] * 100}%`);
+        // Positions and planet sizes are measured on the map art itself.
+        // `narrow` is the label side on narrow maps, where space is tighter.
+        const [x, y, r, side, narrow = side] = stage.map;
+        row.style.setProperty('--x', `${x * 100}%`);
+        row.style.setProperty('--y', `${y * 100}%`);
+        row.style.setProperty('--r', String(r));
+        row.dataset.side = side;
+        row.dataset.narrow = narrow;
         // The ring frames the planet; only the label carries a background.
         const label = element('span', 'wp-label');
         label.append(...row.childNodes);
@@ -4960,8 +5090,11 @@
         row.setAttribute('aria-pressed', String(i === mapPick));
         const picked = i === mapPick;
         // Every state is written out, not only coloured.
-        value.textContent = (status === 'locked' ? '🔒 ' : status === 'cleared' ? '✓ ' : '') + statusText[status] +
-          (next ? ' · Next' : '') + (picked ? ' · Selected' : '');
+        // The status word always shows; Next and Selected drop on narrow maps,
+        // where the ring and the briefing carry them.
+        const extra = (next ? ' · Next' : '') + (picked ? ' · Selected' : '');
+        value.replaceChildren(element('span', 'wp-status', (status === 'locked' ? '🔒 ' : status === 'cleared' ? '✓ ' : '') + statusText[status]),
+          ...(extra ? [element('span', 'wp-extra', extra)] : []));
         // Spoken state: name, status and, when locked, how to unlock it.
         row.setAttribute('aria-label', `${stage.name}. ${statusText[status]}${next ? ', next campaign stop' : ''}${picked ? ', selected' : ''}. ${status === 'locked' ? unlockCondition(stage) : ''}`.trim());
       });
@@ -5031,6 +5164,19 @@
       heading.id = 'menu-heading';
       panel.setAttribute('aria-labelledby', heading.id);
       menuLayer.append(panel);
+      // A short tactical label above each heading.
+      const kicker = {
+        menu: 'Operation on hold', settings: 'Systems', shop: 'Armory · requisition', map: 'Operation map', credits: 'Roll call',
+        gameover: { dead: 'Mission report · KIA', quickplay: 'Quickplay report', cleared: 'Mission report', complete: 'Operation complete' }[endKind] || 'Mission report'
+      }[mode];
+      if (kicker) panel.append(element('p', 'kicker', kicker));
+      if (mode === 'start') {
+        // Wordmark: a tracked SPACE over a heavy COMMANDO, then a short line.
+        heading.textContent = '';
+        heading.classList.add('wordmark');
+        heading.setAttribute('aria-label', 'SPACE COMMANDO');
+        heading.append(element('span', 'wordmark-top', 'SPACE'), element('span', 'wordmark-main', 'COMMANDO'));
+      }
       if (mode === 'shop') {
         const header = element('div', 'shop-heading');
         shopGold = element('span', 'shop-gold');
@@ -5045,8 +5191,10 @@
             const weapon = WEAPONS[item.key];
             const row = addMenuRow(list, weapon?.name || item.name, column * 4 + i, true);
             row.classList.add('shop-row');
-            const detail = weapon ? `Damage ${weapon.damage} · Mag ${weapon.magazine}` : `+${item.qty} to reserve`;
-            row.append(element('small', '', detail));
+            // Ammo shows its quantity as a chip beside the price.
+            if (!weapon) row.insertBefore(element('span', 'shop-qty', `+${item.qty}`), row.lastChild);
+            const detail = weapon ? `DMG ${weapon.damage} · MAG ${weapon.magazine}${weapon.auto ? ' · AUTO' : ''}` : '';
+            row.append(element('small', 'shop-stats', detail));
           });
           group.append(list);
           grid.append(group);
@@ -5061,6 +5209,7 @@
       }
 
       panel.append(heading);
+      if (mode === 'start') panel.append(element('p', 'title-tagline', 'Orbital breach. Four worlds. One drive.'));
       if (mode === 'map') {
         buildStarMap(panel);
         return;
@@ -5154,9 +5303,13 @@
         shopStatus.textContent = shopNotice;
         SHOP_ITEMS.forEach((item, i) => {
           const owned = item.type === 'weapon' && player.ownedWeapons[item.key];
-          const value = owned ? (player.weapon === item.key ? 'Equipped' : 'Equip') :
-            `${item.cost ?? WEAPONS[item.key].cost} G`;
+          const cost = item.cost ?? WEAPONS[item.key].cost;
+          const state = owned ? (player.weapon === item.key ? 'equipped' : 'owned') : (player.gold >= cost ? 'buy' : 'short');
+          const value = state === 'equipped' ? 'Equipped' : (state === 'owned' ? 'Equip' : `${cost} G`);
+          const { row } = menuRows[i];
+          row.dataset.state = state;
           menuRows[i].value.textContent = value;
+          if (item.type === 'ammo') row.querySelector('.shop-stats').textContent = `In reserve ${player.reserveAmmo[item.ammoType]}`;
         });
       }
       if (changed || moveFocus) {

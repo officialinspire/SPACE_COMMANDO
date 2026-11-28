@@ -51,3 +51,25 @@ Each frame the director turns the screen into one desired track plus an entry ke
 - **Streaming:** sources are set only when a track is first wanted, so boot fetches no music and only active tracks stream.
 - **Credits:** Mission complete starts Iron and Sand (Instrumental Credits). Its Credits screen continues the same track without restarting it, and Credits opened from the title starts it fresh.
 
+
+## Story cues
+
+Story events (radio key-ups, doors, the scuttle, the courier launch and the archive) play short cues defined in `story.js` (`SFX`). They play through a story bus in `combat-audio.js`, on the same Sound effects master and limiter as combat. The bus holds at most 4 voices, ducks to 0.55 while a caption is on screen, and stops every pending, delayed or looping cue on Skip, scene close, retry, stage transitions, the star map, Sound effects off, and a hidden tab.
+
+| Cue | When | Source | License |
+| --- | --- | --- | --- |
+| `radio-in` / `radio-out` | A radio speaker keys up / the transmission ends | Synthesized in `combat-audio.js` (band-passed noise burst) | Original, part of the game code |
+| `analyst-signature` | Both plays of the Analyst's packet-six recording; renders sample-identical every time | Synthesized (1.4 kHz carrier with two knocks and a hiss bed) | Original |
+| `playback-glitch` | Archive and colonial recorder lines | Synthesized (fixed stutter of short square blips) | Original |
+| `bulkhead-servo` | A story door opening (once per real unlock; checkpoint reloads are silent) | `robot-move.mp3` at 0.62× rate, low-passed | CC0 1.0 (SergeyIonov) |
+| `seal-release` | 0.32 s after the servo | Synthesized (decaying high hiss) | Original |
+| `relay-startup` | Jungle relay power, each archive terminal | `laser-reload.mp3` at 0.85× rate | CC0 1.0 (Sojan) |
+| `station-alarm` | Arming the self-destruct (six restrained pulses) | Synthesized (two-tone square through a low-pass) | Original |
+| `distant-blast` | 50 s and 22 s left on the countdown | `grenade-explosion.mp3` at 0.72×, low-pass 600 Hz (about 12 dB under the station theme) | CC0 1.0 (SamsterBirdies) |
+| `station-blast` | Space Station clear screen | `grenade-explosion.mp3` at 0.6×, low-pass 1.3 kHz | CC0 1.0 (SamsterBirdies) |
+| `courier-ignition` | CyberCity launch scene, first frame | Synthesized (low rumble sweep over a sub tone) | Original |
+| `ship-fire` | One second into the launch: three brief exterior shots | `laser-fire.mp3` at 0.6×, low-passed | CC0 1.0 (Kenney) |
+| `archive-wake` | Archive reveal, first frame | Synthesized (detuned saw drone, opening filter) | Original |
+| `fly-buzz` | Archive reveal, host frame (very faint) | Synthesized (saw with a 28 Hz flutter) | Original |
+
+Missing files: if a field clip fails to load or decode, its cue is silent (no fallback). The synthesized cues need no files. Dialogue never depends on these cues; every line is a caption.

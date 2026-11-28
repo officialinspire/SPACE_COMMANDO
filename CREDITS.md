@@ -17,7 +17,7 @@ All of these are CC0 1.0, per [assets/audio/field-sfx/README.md](assets/audio/fi
 | rifle-fire.mp3 | Machine Gun 001 - single shot.ogg (Freesound) | pgi |
 | shotgun-fire.mp3 | shotgun-one-shot.wav (Freesound) | DeltaCode |
 | laser-fire.mp3 | Sci-Fi Sounds, laserSmall_003.ogg (OpenGameArt) | Kenney |
-| grenade-explosion.mp3 | Explosion / Gun (Freesound); shipped but not yet used | SamsterBirdies |
+| grenade-explosion.mp3 | Explosion / Gun (Freesound); the station blasts | SamsterBirdies |
 | pistol-reload.mp3 | Taurus G2c Magazine Release (Freesound) | NoonerBear |
 | rifle-reload.mp3 | Assault Rifle Reload (Freesound) | qubodup |
 | shotgun-pump.mp3 | R870 Pump 1 (Freesound) | qubodup |
@@ -27,6 +27,8 @@ All of these are CC0 1.0, per [assets/audio/field-sfx/README.md](assets/audio/fi
 | robot-damaged.mp3 | videogame sci-fi metalish damage efect (Freesound) | saangosu |
 | robot-move.mp3 | MnG - Mech Step.wav (Freesound) | SergeyIonov |
 | zombie-hurt.mp3 | Monster Sound Effects Pack, monster-3.wav (OpenGameArt) | Ogrebane |
+
+Story cues (radio squelch, the Analyst's signature, playback glitch, seal release, station alarm, courier ignition, archive drone and fly buzz) are synthesized in the game code (`combat-audio.js`) and are original. Door, relay, blast and ship-fire cues reuse the CC0 clips above. See the Story cues table in [assets/audio/field-sfx/README.md](assets/audio/field-sfx/README.md).
 
 ## Typeface
 
@@ -60,7 +62,7 @@ These files ship with the game, but no record in the repository names their crea
   - the station parallax (`assets/station/`, `space_station_parallax.png`);
   - the three environment kits (`assets/environments/`);
   - the story stills and radio portraits (`assets/story/` and their PNG sources);
-  - the title art (`assets/ui/orbital-breach*`), the star map (`assets/ui/star-map.webp`) and the legacy `space-commando-sprite-sheet.png`.
+  - the title art (`assets/ui/orbital-breach*`), the star map (`assets/ui/star-map-wide.webp`, from "Wide-field deep-space campaign vista.png") and the legacy `space-commando-sprite-sheet.png`.
 
   The READMEs under `assets/characters/` describe frame layouts but not creators or licences.
 - **Intro video:** `inspiresoftwareintro.mp4` has no creator or licence record.
