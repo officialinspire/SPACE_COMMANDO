@@ -1139,6 +1139,10 @@
       if (scrollKeys.includes(key)) e.preventDefault();
       if (e.repeat || keyboardKeys.has(key)) return;
       if (gameState === 'play') pressGameplayKey(keyboardKeys, key);
+      // The game handles this Enter or Space itself. If a menu rebuild moves
+      // focus to a button, the same press must not also activate it (that
+      // turned one Enter on the start screen into Star map + Start campaign).
+      if ((key === 'Enter' || key === 'Space') && gameState !== 'play') e.preventDefault();
       handleMenuInput(e);
     });
     document.addEventListener('keyup', e => {
