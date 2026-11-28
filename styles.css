@@ -467,8 +467,24 @@ button:disabled { cursor: wait; opacity: .65; }
   border-radius: 4px;
   line-height: 1.35;
 }
-.story-caption { position: absolute; top: 1.8%; right: 1.1%; width: min(56%, 470px); font-size: .92em; }
-.story-caption .caption-portrait { width: 2.9em; height: 2.9em; }
+.story-caption {
+  position: absolute;
+  top: 1.8%;
+  right: 1.1%;
+  width: min(56%, 480px);
+  font-size: 1em;
+  background: #050c15f7;
+  box-shadow: 0 4px 14px #000a;
+}
+.story-caption .caption-portrait { width: 3.1em; height: 3.1em; border-color: #6f8197; }
+/* Radio lines: speaker on its own line above the text, high contrast. */
+.story-caption p { display: grid; gap: .1em; }
+.story-caption .caption-speaker { font-size: .78em; letter-spacing: .07em; text-transform: uppercase; }
+.story-caption .caption-text { color: #f4f8fb; font-weight: 550; }
+.story-caption.major { border-color: #8a7350; border-left-color: #ffc978; box-shadow: 0 0 0 1px #f4c37b55, 0 4px 18px #000c; }
+.story-caption.enter { animation: caption-in .18s ease-out; }
+.story-hud.reduce-motion .story-caption.enter { animation: none; }
+@keyframes caption-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
 .story-caption p, .scene-caption p { margin: 0; }
 .caption-speaker { color: var(--amber); }
 .caption-speaker:empty { display: none; }

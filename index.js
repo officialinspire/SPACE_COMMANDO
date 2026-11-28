@@ -339,11 +339,11 @@
     'cybercity-thug': { stages: ['cyber'], kind: 'dash', body: [32, 32], hurt: [30, 52], health: 4, speed: 1.15,
       preferredRange: 36, reach: 70, damage: 7, dashSpeed: 8.5, firstDelay: [600, 600], cooldown: [1400, 600],
       economy: 'zombie', audio: 'zombie', climbs: true, hops: true,
-      cues: { Warn: 'zombieWarn', Attack: 'robotAttack', Hurt: 'zombieHurt', Down: 'zombieDown' } },
+      cues: { Warn: 'zombieWarn', Attack: 'robotAttack', Impact: 'robotDown', Hurt: 'zombieHurt', Down: 'zombieDown' } },
     'jungle-dinosaur': { stages: ['jungle'], kind: 'pounce', body: [64, 40], hurt: [84, 52], health: 7, speed: 1.0, minRun: 260,
       preferredRange: 40, reach: 190, damage: 9, pounce: [4.2, -4.6], firstDelay: [700, 600], cooldown: [1800, 700],
       vulnerable: 2, economy: 'alien', audio: 'alien', climbs: false, hops: true,
-      cues: { Warn: 'alienWarn', Attack: 'alienAttack', Hurt: 'alienHurt', Down: 'alienDown' } },
+      cues: { Warn: 'alienWarn', Attack: 'alienAttack', Land: 'robotMove', Impact: 'robotMove', Hurt: 'alienHurt', Down: 'alienDown' } },
     // Laser rangers lead the jungle roster and return as guests at the ruins.
     'jungle-dark-elf': { stages: ['jungle'], guestStages: ['desert'], guestWeight: [0.2, 0.12], kind: 'laser', body: [32, 32], hurt: [28, 50], health: 3, speed: 1.05,
       preferredRange: 210, reach: 520, damage: 8, firstDelay: [1100, 700], cooldown: [2100, 900],
@@ -547,9 +547,25 @@
     jungle: { src: 'Jungle Planet_ Level Theme.mp3', tail: 1.81, gain: 0.78,
               fallback: 'game-background-music.mp3', fallbackTail: 6.9, fallbackGain: 1 },
     desert: { src: 'Desert Ruins_ Ancient Temple.mp3', tail: 1.25, gain: 0.68,
-              fallback: 'game-background-music.mp3', fallbackTail: 6.9, fallbackGain: 1 }
+              fallback: 'game-background-music.mp3', fallbackTail: 6.9, fallbackGain: 1 },
+    // Story cues: the three scenes, the shuttle's crash landing after the
+    // station and the end credits. Each restarts from the top when it comes
+    // in. Gains match the stage themes at about -18.6 LUFS; tails are the
+    // measured trailing silence. A cue that can't load is replaced by its
+    // `instead` track and retried later.
+    dock: { src: 'Orbital Station (Ambient Cutscene).mp3', tail: 0.42, gain: 0.6, restart: true, instead: 'play' },
+    escape: { src: 'CyberCity Escape (Cloudline Break).mp3', tail: 0.92, gain: 0.56, restart: true, instead: 'cyber' },
+    reveal: { src: 'Desolate Desert Ruins.mp3', tail: 0.47, gain: 0.65, restart: true, instead: 'desert' },
+    crash: { src: 'Jungle Planet_ Emergency Crash Landing.mp3', tail: 0, gain: 0.59, restart: true, instead: 'menu' },
+    credits: { src: 'Iron and Sand (Instrumental Credits).mp3', tail: 1.48, gain: 0.63, restart: true, instead: 'menu' }
   };
+  // Stage themes that can't play at all fall back to the menu theme.
+  for (const name of ['play', 'cyber', 'jungle', 'desert']) MUSIC_TRACKS[name].instead = 'menu';
   const MUSIC_FADE_MS = 700;
+  // A track with nothing playable is retried after this long.
+  const MUSIC_RETRY_MS = 15000;
+  // Light ducks: pause and shop sit under the menus; major radio beats dip slightly.
+  const MUSIC_DUCK = { pause: 0.45, shop: 0.6, radio: 0.72 };
 
   // -----------------------------------------------------------------------------
   // Sound effects
@@ -665,22 +681,34 @@
       track.pending = true;
       track.audio.preload = 'auto';
       const done = () => { track.pending = false; };
+      // Story cues start from the top when they come in from silence.
+      if (track.restart && track.level === 0) {
+        try { track.audio.currentTime = 0; } catch {}
+      }
       const attempt = track.audio.play();
-      // Autoplay rejection waits for the next gesture instead of retrying every frame.
-      if (attempt?.then) attempt.then(done, () => { done(); musicBlocked = true; });
+      // Autoplay rejection waits for the next gesture instead of retrying
+      // every frame. A missing or undecodable file is handled by 'error'.
+      if (attempt?.then) attempt.then(done, err => { done(); if (err?.name === 'NotAllowedError') musicBlocked = true; });
       else done();
     }
     for (const [name, def] of Object.entries(MUSIC_TRACKS)) {
       const audio = new Audio();
       audio.preload = 'metadata';
-      const track = { name, audio, level: 0, gain: def.gain, tail: def.tail, failed: false, pending: false };
+      const track = { name, audio, level: 0, gain: def.gain, tail: def.tail, restart: Boolean(def.restart),
+        failed: false, pending: false, unavailableUntil: 0 };
       audio.addEventListener('error', () => {
-        if (track.failed) return;
-        track.failed = true;
-        track.gain = def.fallbackGain;
-        track.tail = def.fallbackTail;
-        audio.src = encodeURI(def.fallback);
-        audio.load();
+        if (!track.failed && def.fallback) {
+          track.failed = true;
+          track.gain = def.fallbackGain;
+          track.tail = def.fallbackTail;
+          audio.src = encodeURI(def.fallback);
+          audio.load();
+          return;
+        }
+        // Nothing playable right now: another track stands in until a retry.
+        track.unavailableUntil = performance.now() + MUSIC_RETRY_MS;
+        track.pending = false;
+        track.level = 0;
       });
       // Loop inside the silent tail rather than waiting for the file end.
       audio.addEventListener('timeupdate', () => {
@@ -706,18 +734,59 @@
       }
     });
 
+    // The track each screen wants. Stage themes follow the stage ID and keep
+    // playing (ducked) under pause, shop and pause settings, so resuming
+    // never restarts them. Scenes and end screens use the story cues.
     function wantedMusic() {
       if (document.body.dataset.boot !== 'ready' || !SETTINGS.audio || document.hidden) return null;
-      return gameState === 'play' || gameState === 'scene' ? STAGES[stageIndex].music : 'menu';
+      const stageTrack = STAGES[stageIndex].music;
+      const campaignStory = playMode === 'campaign' ? STORY.STAGES[STAGES[stageIndex].id] : null;
+      if (gameState === 'scene') return (scene && STORY.SCENES[scene.id].music) || stageTrack;
+      if (gameState === 'play' || gameState === 'menu' || gameState === 'shop') return stageTrack;
+      if (gameState === 'settings') return prevSettingsState === 'menu' ? stageTrack : 'menu';
+      if (gameState === 'gameover' && campaignStory) {
+        if (endKind === 'complete') return campaignStory.endMusic || 'menu';
+        if (endKind === 'cleared') return campaignStory.clearMusic || 'menu';
+      }
+      return 'menu';
+    }
+
+    // The wanted track, or the one standing in while it is unavailable. An
+    // unavailable track is retried once its wait is over and it is wanted.
+    function playableMusic(name) {
+      for (let hops = 0; name && hops < 4; hops++) {
+        const track = music[name];
+        if (!track.unavailableUntil) return name;
+        if (performance.now() >= track.unavailableUntil) {
+          const def = MUSIC_TRACKS[name];
+          track.unavailableUntil = 0;
+          track.failed = false;
+          track.gain = def.gain;
+          track.tail = def.tail;
+          track.audio.src = encodeURI(def.src);
+          track.audio.load();
+          return name;
+        }
+        name = MUSIC_TRACKS[name].instead;
+      }
+      return null;
+    }
+
+    function musicDuck() {
+      if (gameState === 'menu' || (gameState === 'settings' && prevSettingsState === 'menu')) return MUSIC_DUCK.pause;
+      if (gameState === 'shop') return MUSIC_DUCK.shop;
+      if (gameState === 'play' && story?.caption?.major) return MUSIC_DUCK.radio;
+      return 1;
     }
 
     // Called every frame: fade each track toward its target for the state.
     function updateMusic(now) {
       const dt = musicLast === null ? 0 : Math.min(100, now - musicLast);
       musicLast = now;
-      const wanted = wantedMusic();
+      const wanted = playableMusic(wantedMusic());
+      const duck = musicDuck();
       for (const track of Object.values(music)) {
-        const target = track.name === wanted ? Math.min(1, track.gain * SETTINGS.musicVolume * AUDIO_LEVELS[SETTINGS.musicLevel]) : 0;
+        const target = track.name === wanted ? Math.min(1, track.gain * duck * SETTINGS.musicVolume * AUDIO_LEVELS[SETTINGS.musicLevel]) : 0;
         const step = dt / MUSIC_FADE_MS;
         // A track that is not playing yet (blocked or buffering) waits at zero, so it still fades in.
         if (target > track.level && !track.audio.paused) track.level = Math.min(target, track.level + step);
@@ -727,7 +796,7 @@
         if (!target && !track.level && !track.audio.paused) track.audio.pause();
       }
     }
-    window.commandoMusic = { tracks: music, wanted: wantedMusic };
+    window.commandoMusic = { tracks: music, wanted: wantedMusic, playing: () => playableMusic(wantedMusic()), duck: musicDuck };
 
     // Menu music starts after the intro video ends (see index.html), so the
     // two never overlap.
@@ -1602,8 +1671,9 @@
       box.querySelector('.caption-text').textContent = line.text;
     }
 
-    function say(ids) {
-      if (story) for (const id of ids) story.queue.push(lineFor(id));
+    // Major beats duck the music slightly while their lines are on screen.
+    function say(ids, major = false) {
+      if (story) for (const id of ids) story.queue.push({ ...lineFor(id), major });
     }
 
     function closeCaption() {
@@ -1624,8 +1694,13 @@
       }
       const line = story.queue.shift();
       if (!line) return;
-      story.caption = { line, left: lineDuration(line) };
+      story.caption = { line, left: lineDuration(line), major: Boolean(line.major) };
       fillCaption(captionBox, line);
+      captionBox.classList.toggle('major', Boolean(line.major));
+      // Restart the entrance so each new line is noticed.
+      captionBox.classList.remove('enter');
+      void captionBox.offsetWidth;
+      captionBox.classList.add('enter');
       captionBox.hidden = false;
       const label = STORY.SPEAKERS[line.speaker]?.label;
       announce(label ? `${label}: ${line.text}` : line.text);
@@ -1711,7 +1786,7 @@
         const chunk = layout.chunks[trigger.at.chunk];
         if (player.x + player.width / 2 >= chunk.x0 + trigger.at.f * (chunk.x1 - chunk.x0)) {
           story.fired.add(trigger.id);
-          say(trigger.lines);
+          say(trigger.lines, Boolean(trigger.duck));
         }
       }
       story.near = activeAnchors().find(id => anchorInRange(storyPlan.anchors[id])) || null;
@@ -1728,7 +1803,7 @@
         for (const cue of step.cues || []) {
           if (progress >= cue.at && !story.cues.has(cue.at)) {
             story.cues.add(cue.at);
-            say(cue.lines);
+            say(cue.lines, Boolean(cue.duck));
           }
         }
         if (progress >= 1) completeStep(step.anchor);
@@ -1768,7 +1843,7 @@
     function completeStep(at) {
       const step = story.data.steps[story.step];
       const done = step.done || {};
-      say(done.lines || []);
+      say(done.lines || [], Boolean(done.duck));
       story.step += 1;
       syncDoors();
       beginStep();
@@ -1801,6 +1876,7 @@
     function syncStoryHud() {
       const show = Boolean(story) && gameState === 'play';
       setCached('show', show, v => { storyHud.hidden = !v; });
+      setCached('motion', effectsReduced(), v => { storyHud.classList.toggle('reduce-motion', v); });
       const prompt = show && story.near ? story.data.anchors[story.near].prompt : '';
       setCached('interact', prompt, v => {
         interactButton.hidden = !v;
@@ -1892,7 +1968,7 @@
       const closed = closeSceneView();
       gameState = 'play';
       resetGameplayInput();
-      if (skipped) say(closed.data.essential || []);
+      if (skipped) say(closed.data.essential || [], true);
       const back = closed.returnFocus;
       if (back?.isConnected && back !== document.body && !sceneLayer.contains(back)) back.focus({ preventScroll: true });
       else if (sceneLayer.contains(document.activeElement)) document.activeElement.blur();
@@ -2878,30 +2954,35 @@
         rect.y >= camera.y && rect.y + rect.height <= camera.y + viewHeight;
     }
 
-    const ENEMY_CUE_LEVEL = { Warn: 0.48, Attack: 0.42, Down: 0.42, Hurt: 0.36, Move: 0.26 };
+    const ENEMY_CUE_LEVEL = { Warn: 0.48, Attack: 0.42, Down: 0.42, Hurt: 0.36, Move: 0.26, Land: 0.34, Impact: 0.3 };
+    // A tell that cancels and restarts quickly warns only once.
+    const WARN_CUE_GAP_MS = 900;
     const HURT_CUE_GAP_MS = 260;
     // Sentry Unit footsteps: on starting to move, then at a walking cadence.
     const ROBOT_STEP_MS = 1500;
     const ROBOT_START_GAP_MS = 1000;
 
     function playEnemyCue(enemy, cue) {
-      if (!SETTINGS.sfx) return;
-      const x = enemy.x + enemy.width / 2;
-      const y = enemy.y + enemy.height / 2;
+      const def = EXPANSION[enemy.type];
+      const name = def?.cues?.[cue] ?? (def?.audio || enemy.type) + cue;
+      return playCueAt(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, name, cue);
+    }
+
+    // A positional cue: panned and attenuated by distance from the player.
+    function playCueAt(x, y, name, cue) {
+      if (!SETTINGS.sfx) return false;
       const offset = x - player.x - player.width / 2;
       // Threats in or just outside the frame, or close to the player even
       // when the tighter view leaves them off screen, stay audible.
       const nearView = x >= camera.x - 48 && x <= camera.x + viewWidth + 48 &&
         y >= camera.y - 48 && y <= camera.y + viewHeight + 48;
-      if (!nearView && Math.abs(offset) > 420) return;
+      if (!nearView && Math.abs(offset) > 420) return false;
       const pan = Math.max(-0.72, Math.min(0.72, offset / 330));
       const gain = (ENEMY_CUE_LEVEL[cue] ?? 0.42) / (1 + Math.abs(offset) / 720);
-      const group = cue === 'Hurt' ? 'hurt' : (cue === 'Move' ? 'move' : 'enemy');
-      const def = EXPANSION[enemy.type];
-      const name = def?.cues?.[cue] ?? (def?.audio || enemy.type) + cue;
-      if (!window.combatAudio?.play(name, group, gain, pan) && cue === 'Down') {
-        playLegacyEffect(enemyDeathSfx);
-      }
+      const group = cue === 'Hurt' ? 'hurt' : (cue === 'Move' || cue === 'Land' ? 'move' : 'enemy');
+      const played = Boolean(window.combatAudio?.play(name, group, gain, pan));
+      if (!played && cue === 'Down') playLegacyEffect(enemyDeathSfx);
+      return played;
     }
 
     // A burst or a shotgun's pellets play one hurt cue per enemy per window.
@@ -2993,10 +3074,12 @@
       return def.damage;
     }
 
+    // A dash or pounce hitting a solid: sparks and one impact cue.
     function stopSpecialMove(e, x, y) {
       if (!e.moveVx) return;
       e.moveVx = 0;
       spawnHitSparks(x, y, 'enemy');
+      playEnemyCue(e, 'Impact');
     }
 
     function endSpecial(e, def) {
@@ -3042,7 +3125,10 @@
         e.special = { kind: def.kind, t: 0, dir, fired: false, hit: false, airborne: false };
         e.targetDir = dir;
         e.dir = dir;
-        playEnemyCue(e, 'Warn');
+        if (elapsedTime - (e.warnCueAt ?? -Infinity) >= WARN_CUE_GAP_MS) {
+          e.warnCueAt = elapsedTime;
+          playEnemyCue(e, 'Warn');
+        }
         return;
       }
       const sp = e.special;
@@ -3083,6 +3169,7 @@
           meleeHit(e, def, { x: Math.min(chest, jaw.x), y: e.y, width: Math.abs(jaw.x - chest) + 4, height: e.height });
           sp.t = art.triggerEnd;
           sp.vulnerable = true;
+          playEnemyCue(e, 'Land');
         }
         if (sp.airborne) {
           const frame = art.clips.special[art.trigger];
@@ -3442,6 +3529,8 @@
       advanceProjectiles(enemyBullets, [player], (b, hit) => {
         spawnHitSparks(hit.x, hit.y, 'enemy');
         if (hit.target === player) damagePlayer(b.damage);
+        // A Breach Pulse breaking on cover or a wall plays one impact cue.
+        else if (b.kind === 'police') playCueAt(hit.x, hit.y, 'robotAttack', 'Impact');
       });
       if (gameState !== 'play') return;
       // Decrement hit timers on enemies

@@ -82,6 +82,7 @@
         { art: 'assets/story/docking.webp', fallback: 'assets/station/distant.webp', lines: ['dock-approach', 'dock-commander'] },
         { art: 'assets/station/distant.webp', fallback: 'assets/ui/orbital-breach.webp', lines: ['dock-seal'] }
       ],
+      music: 'dock',
       essential: ['dock-commander']
     },
     escape: {
@@ -90,6 +91,7 @@
         { art: 'assets/story/courier.webp', fallback: 'assets/environments/cyberpunk-city/background.webp', lines: ['escape-break'] },
         { art: 'assets/story/orbit.webp', fallback: 'assets/ui/star-map.webp', lines: ['escape-sent', 'escape-stop', 'escape-wake'] }
       ],
+      music: 'escape',
       essential: ['escape-stop']
     },
     archive: {
@@ -99,6 +101,7 @@
         { art: 'assets/story/archive-host.webp', fallback: 'assets/environments/desert-temple-ruins/background.webp', lines: ['archive-host', 'archive-occupied'] },
         { art: 'assets/story/archive-masters.webp', fallback: 'assets/environments/desert-temple-ruins/background.webp', lines: ['archive-human', 'archive-program', 'archive-hold'] }
       ],
+      music: 'reveal',
       essential: ['archive-architect', 'archive-hold']
     }
   };
@@ -121,15 +124,16 @@
         { id: 'recover', type: 'interact', anchors: ['analyst'], text: 'Find the analyst in the observation bay.',
           done: { lines: ['analyst-found', 'analyst-log'] }, checkpoint: true },
         { id: 'scuttle', type: 'interact', anchors: ['scuttle'], text: 'Arm the station’s self-destruct on the upper deck.',
-          done: { lines: ['scuttle-arm', 'scuttle-warning'] }, checkpoint: true },
+          done: { lines: ['scuttle-arm', 'scuttle-warning'], duck: true }, checkpoint: true },
         { id: 'escape', type: 'reach', text: 'Reach the emergency shuttle.', timer: 75, meter: 'Self-destruct', spawnRate: 1.35,
           fail: 'The self-destruct went off before the shuttle cleared.' }
       ],
       triggers: [
-        { id: 'breach', at: { chunk: 0, f: 0.4 }, lines: ['breach-hold', 'breach-static'] }
+        { id: 'breach', at: { chunk: 0, f: 0.4 }, lines: ['breach-hold', 'breach-static'], duck: true }
       ],
       exitLocked: 'The shuttle won’t launch yet. Recover the drive and arm the station first.',
-      clear: 'The shuttle gets clear. The damage leaves it only enough range to reach the nearest planet.'
+      clear: 'The shuttle gets clear. The damage leaves it only enough range to reach the nearest planet.',
+      clearMusic: 'crash'
     },
     jungle: {
       anchors: {
@@ -143,12 +147,12 @@
         { id: 'relay', type: 'interact', anchors: ['relay'], text: 'Reach the research facility and restore the relay’s power.',
           done: { lines: ['relay-up'] }, checkpoint: true },
         { id: 'upload', type: 'hold', anchor: 'relay', seconds: 18, meter: 'Upload', text: 'Hold position by the relay while the distress call uploads.',
-          spawnRate: 1.25, done: { lines: ['relay-heard', 'relay-war', 'relay-hide', 'relay-secret'] }, checkpoint: true },
+          spawnRate: 1.25, done: { lines: ['relay-heard', 'relay-war', 'relay-hide', 'relay-secret'], duck: true }, checkpoint: true },
         { id: 'hauler', type: 'reach', text: 'Board the CyberCity hauler before it lifts off.' }
       ],
       triggers: [
         { id: 'mast', at: { chunk: 0, f: 0.35 }, lines: ['jungle-mast'] },
-        { id: 'elves', at: { chunk: 3, f: 0.2 }, lines: ['elf-demand', 'elf-rumor', 'elf-centuries'] }
+        { id: 'elves', at: { chunk: 3, f: 0.2 }, lines: ['elf-demand', 'elf-rumor', 'elf-centuries'], duck: true }
       ],
       interactions: { recorder: { lines: ['recorder-log', 'recorder-still'] } },
       exitLocked: 'The hauler isn’t here yet. Get the distress call out first.',
@@ -169,10 +173,12 @@
       triggers: [
         { id: 'scan', at: { chunk: 0, f: 0.3 }, lines: ['cyber-scan'] },
         { id: 'toll', at: { chunk: 1, f: 0.15 }, lines: ['cyber-toll', 'cyber-decline'] },
-        { id: 'lockdown', at: { chunk: 3, f: 0.1 }, lines: ['cyber-lockdown'] }
+        { id: 'lockdown', at: { chunk: 3, f: 0.1 }, lines: ['cyber-lockdown'], duck: true }
       ],
       exitLocked: 'The launch gate is sealed. Open the impound from the control terminal.',
-      clear: 'HQ decrypted a coordinate set from the drive. The courier diverts to a desert world.'
+      clear: 'HQ decrypted a coordinate set from the drive. The courier diverts to a desert world.',
+      // The launch cue carries on under the clear screen.
+      clearMusic: 'escape'
     },
     desert: {
       anchors: {
@@ -189,15 +195,16 @@
         { id: 'activate', type: 'interact', anchors: ['archive'], text: 'Open the archive with the drive.',
           done: { scene: 'archive' }, checkpoint: true },
         { id: 'uplink', type: 'hold', anchor: 'archive', seconds: 22, meter: 'Copying record', text: 'Hold the archive uplink until the record is copied.',
-          spawnRate: 1.3, cues: [{ at: 0.4, lines: ['uplink-cut'] }], done: { lines: ['uplink-done'] }, checkpoint: true },
+          spawnRate: 1.3, cues: [{ at: 0.4, lines: ['uplink-cut'], duck: true }], done: { lines: ['uplink-done'], duck: true }, checkpoint: true },
         { id: 'extract', type: 'reach', text: 'Reach the courier for extraction.' }
       ],
       triggers: [
-        { id: 'threshold-elf', at: { chunk: 1, f: 0.3 }, lines: ['ruins-elf', 'ruins-reply'] }
+        { id: 'threshold-elf', at: { chunk: 1, f: 0.3 }, lines: ['ruins-elf', 'ruins-reply'], duck: true }
       ],
       exitLocked: 'Extraction can wait. The archive record comes first.',
       clear: 'HQ received the recording.',
-      endCard: 'Far across the dunes, a dinosaur calls: “RAWR :3”'
+      endCard: 'Far across the dunes, a dinosaur calls: “RAWR :3”',
+      endMusic: 'credits'
     }
   };
 
