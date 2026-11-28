@@ -619,3 +619,15 @@ body[data-touch] .menu-layer, body[data-touch] .story-scene { position: fixed; }
 .credits-roll h3 { margin: 0 0 5px; font-family: var(--display); font-weight: 700; font-size: 17px; letter-spacing: .12em; text-transform: uppercase; color: var(--amber); }
 .credits-roll p { margin: 3px auto; max-width: 46ch; font-size: 14.5px; line-height: 1.45; color: #e8edf1; }
 .credits-panel .menu-hint { margin: 0 0 8px; }
+/* A recording's signature tag: the same on every playback of one signal. */
+.caption-signature {
+  justify-self: start;
+  margin-top: .2em;
+  padding: 0 .45em;
+  border: 1px solid #4f8e91;
+  border-radius: 3px;
+  font: 600 .72em/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  letter-spacing: .04em;
+  color: var(--cyan);
+}
+.scene-caption .caption-signature { display: inline-block; margin-left: .6em; }

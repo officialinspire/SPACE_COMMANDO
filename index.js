@@ -1963,8 +1963,9 @@
     }
 
     // Radio lines are brief and clear on their own.
+    // A reveal can ask for a longer minimum with `hold`.
     function lineDuration(line) {
-      return Math.max(2600, Math.min(6000, 1400 + line.text.length * 46));
+      return Math.max(line.hold || 2600, Math.min(6000, 1400 + line.text.length * 46));
     }
 
     function fillCaption(box, line) {
@@ -1977,11 +1978,24 @@
       } else portrait.hidden = true;
       box.querySelector('.caption-speaker').textContent = speaker.label;
       box.querySelector('.caption-text').textContent = line.text;
+      // A recording's signature tag, so a repeat reads as the same signal.
+      let tag = box.querySelector('.caption-signature');
+      if (line.signature) {
+        if (!tag) { tag = element('span', 'caption-signature'); box.querySelector('p').append(tag); }
+        tag.textContent = line.signature;
+        tag.hidden = false;
+      } else if (tag) tag.hidden = true;
     }
 
     // Major beats duck the music slightly while their lines are on screen.
-    function say(ids, major = false) {
-      if (story) for (const id of ids) story.queue.push({ ...lineFor(id), major });
+    // An urgent beat (a pressure point) drops queued banter and cuts in.
+    function say(ids, major = false, urgent = false) {
+      if (!story) return;
+      if (urgent) {
+        story.queue = story.queue.filter(line => line.urgent);
+        if (story.caption && !story.caption.line.urgent) story.caption.left = 0;
+      }
+      for (const id of ids) story.queue.push({ ...lineFor(id), major, urgent });
     }
 
     function closeCaption() {
@@ -2094,7 +2108,7 @@
         const chunk = layout.chunks[trigger.at.chunk];
         if (player.x + player.width / 2 >= chunk.x0 + trigger.at.f * (chunk.x1 - chunk.x0)) {
           story.fired.add(trigger.id);
-          say(trigger.lines, Boolean(trigger.duck));
+          say(trigger.lines, Boolean(trigger.duck), Boolean(trigger.urgent));
         }
       }
       story.near = activeAnchors().find(id => anchorInRange(storyPlan.anchors[id])) || null;
@@ -2111,7 +2125,7 @@
         for (const cue of step.cues || []) {
           if (progress >= cue.at && !story.cues.has(cue.at)) {
             story.cues.add(cue.at);
-            say(cue.lines, Boolean(cue.duck));
+            say(cue.lines, Boolean(cue.duck), Boolean(cue.urgent));
           }
         }
         if (progress >= 1) completeStep(step.anchor);
@@ -2151,7 +2165,9 @@
     function completeStep(at) {
       const step = story.data.steps[story.step];
       const done = step.done || {};
-      say(done.lines || [], Boolean(done.duck));
+      // A scene supersedes any banter still waiting on the radio.
+      if (done.scene) closeCaption();
+      say(done.lines || [], Boolean(done.duck), Boolean(done.urgent));
       story.step += 1;
       syncDoors();
       beginStep();
@@ -2283,7 +2299,13 @@
       const closed = closeSceneView();
       gameState = 'play';
       resetGameplayInput();
-      if (skipped) say(closed.data.essential || [], true);
+      // Skipped: the scene's essential lines play first, before anything queued during it.
+      if (skipped && story) {
+        const queued = story.queue;
+        story.queue = [];
+        say(closed.data.essential || [], true);
+        story.queue.push(...queued);
+      }
       const back = closed.returnFocus;
       if (back?.isConnected && back !== document.body && !sceneLayer.contains(back)) back.focus({ preventScroll: true });
       else if (sceneLayer.contains(document.activeElement)) document.activeElement.blur();
