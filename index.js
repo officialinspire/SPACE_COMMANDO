@@ -332,19 +332,20 @@
   //   cues      per-event cue names: field-sfx clips where a recording fits the
   //             attack (carbine, laser, armour damage), bank cues otherwise
   const EXPANSION = {
-    'cybercity-police': { stage: 'cyber', kind: 'projectile', body: [32, 32], hurt: [28, 50], health: 4, speed: 0.9,
+    'cybercity-police': { stages: ['cyber'], kind: 'projectile', body: [32, 32], hurt: [28, 50], health: 4, speed: 0.9,
       preferredRange: 230, reach: 520, damage: 7, shotSpeed: 4.6, firstDelay: [1200, 700], cooldown: [1900, 900],
       economy: 'robot', audio: 'robot', climbs: true,
       cues: { Warn: 'robotWarn', Attack: 'rifleFire', Hurt: 'robotHurt', Down: 'robotDown' } },
-    'cybercity-thug': { stage: 'cyber', kind: 'dash', body: [32, 32], hurt: [30, 52], health: 4, speed: 1.15,
+    'cybercity-thug': { stages: ['cyber'], kind: 'dash', body: [32, 32], hurt: [30, 52], health: 4, speed: 1.15,
       preferredRange: 36, reach: 70, damage: 7, dashSpeed: 8.5, firstDelay: [600, 600], cooldown: [1400, 600],
       economy: 'zombie', audio: 'zombie', climbs: true, hops: true,
       cues: { Warn: 'zombieWarn', Attack: 'robotAttack', Hurt: 'zombieHurt', Down: 'zombieDown' } },
-    'jungle-dinosaur': { stage: 'jungle', kind: 'pounce', body: [64, 40], hurt: [84, 52], health: 7, speed: 1.0,
+    'jungle-dinosaur': { stages: ['jungle'], kind: 'pounce', body: [64, 40], hurt: [84, 52], health: 7, speed: 1.0, minRun: 260,
       preferredRange: 40, reach: 190, damage: 9, pounce: [4.2, -4.6], firstDelay: [700, 600], cooldown: [1800, 700],
       vulnerable: 2, economy: 'alien', audio: 'alien', climbs: false, hops: true,
       cues: { Warn: 'alienWarn', Attack: 'alienAttack', Hurt: 'alienHurt', Down: 'alienDown' } },
-    'jungle-dark-elf': { stage: 'jungle', kind: 'laser', body: [32, 32], hurt: [28, 50], health: 3, speed: 1.05,
+    // Laser rangers lead the jungle roster and return as guests at the ruins.
+    'jungle-dark-elf': { stages: ['jungle'], guestStages: ['desert'], guestWeight: [0.2, 0.12], kind: 'laser', body: [32, 32], hurt: [28, 50], health: 3, speed: 1.05,
       preferredRange: 210, reach: 520, damage: 8, firstDelay: [1100, 700], cooldown: [2100, 900],
       economy: 'robot', audio: 'alien', climbs: true,
       cues: { Warn: 'ghostWarn', Attack: 'laserFire', Hurt: 'ghostHurt', Down: 'ghostDown' } }
@@ -2175,9 +2176,13 @@
       // loaded; the ramp shifts from the melee to the ranged member like the
       // original roster. Station and Desert Temple Ruins keep the original four.
       const stageId = STAGES[stageIndex].id;
-      const local = Object.keys(EXPANSION).filter(t => EXPANSION[t].stage === stageId && expansionArt[t]);
+      const local = Object.keys(EXPANSION).filter(t => EXPANSION[t].stages.includes(stageId) && expansionArt[t]);
       const melee = local.find(t => ['dash', 'pounce'].includes(EXPANSION[t].kind));
       const shooter = local.find(t => ['projectile', 'laser'].includes(EXPANSION[t].kind));
+      // Guests (the returning elf rangers at the ruins) join that stage's
+      // original roster with a small weight that grows with the ramp.
+      const guests = Object.keys(EXPANSION).filter(t => EXPANSION[t].guestStages?.includes(stageId) && expansionArt[t])
+        .map(t => ({ item: t, weight: EXPANSION[t].guestWeight[0] + progress * EXPANSION[t].guestWeight[1] }));
       const type = teach ? 'zombie' : (melee && shooter ? weightedChoice([
         { item: melee, weight: 0.6 - progress * 0.2 },
         { item: shooter, weight: 0.4 + progress * 0.2 }
@@ -2185,7 +2190,8 @@
         { item: 'zombie', weight: typeWeights.zombie },
         { item: 'ghost', weight: typeWeights.ghost },
         { item: 'robot', weight: typeWeights.robot },
-        { item: 'alien', weight: typeWeights.alien }
+        { item: 'alien', weight: typeWeights.alien },
+        ...guests
       ])) || 'zombie';
       const spawnDir = Math.random() < 0.65 ? 1 : -1;
       const spawnOffset = width + 140 + Math.random() * 280;
@@ -2344,6 +2350,8 @@
           // Wide bodies need the whole footprint on the surface; non-climbers
           // need a route without ladders.
           if (point.x < region.x0 + 4 || point.x + e.width > region.x1 - 4) continue;
+          // Large bodies need a long enough run to be seen and dodged.
+          if (EXPANSION[type]?.minRun && region.x1 - region.x0 < EXPANSION[type].minRun) continue;
           if (!routeExists(region, playerRegion, EXPANSION[type]?.climbs ?? true)) continue;
         }
         if (!fair(point.x, y)) continue;
@@ -3027,6 +3035,9 @@
           const gap = dir > 0 ? player.x - (e.x + e.width) : e.x - (player.x + player.width);
           if (gap > def.reach || gap < -8 || Math.abs(dy) > 30) return;
           if (firstSolidAlong(e.x + e.width / 2, player.x + player.width / 2, e.y + e.height - 10) !== null) return;
+          // A pounce needs floor all the way to where it lands, so it never
+          // leaps off a ledge and its vulnerable landing is always reachable.
+          if (def.kind === 'pounce' && !pounceLandingSupported(e, def, dir)) return;
         }
         e.special = { kind: def.kind, t: 0, dir, fired: false, hit: false, airborne: false };
         e.targetDir = dir;
@@ -3061,9 +3072,15 @@
       } else if (sp.kind === 'dash') e.moveVx = 0;
       if (sp.kind === 'pounce' && sp.fired) {
         if (wasFired && sp.airborne && e.onGround) {
-          // Landing: the bite closes and a vulnerable recovery begins.
+          // Landing: the bite closes from the chest to the jaw (it can still
+          // only hit once), then a vulnerable recovery begins. Without this a
+          // mid-range arc carried the jaw over the player's head.
           sp.airborne = false;
           e.moveVx = 0;
+          const frame = art.clips.special[art.trigger];
+          const jaw = framePoint(e, frame, frame.contact, sp.dir);
+          const chest = e.x + e.width / 2;
+          meleeHit(e, def, { x: Math.min(chest, jaw.x), y: e.y, width: Math.abs(jaw.x - chest) + 4, height: e.height });
           sp.t = art.triggerEnd;
           sp.vulnerable = true;
         }
@@ -3074,6 +3091,23 @@
         }
       }
       if (sp.t >= art.total) endSpecial(e, def);
+    }
+
+    // The pounce arc's landing span at the same feet height: ballistic
+    // flight from the pounce velocity under enemy gravity (0.25 per tick).
+    function pounceLandingSupported(e, def, dir) {
+      const airTicks = Math.ceil(-2 * def.pounce[1] / 0.25);
+      const travel = def.pounce[0] * airTicks;
+      const feet = e.y + e.height;
+      const x0 = dir > 0 ? e.x : e.x - travel;
+      const x1 = dir > 0 ? e.x + e.width + travel : e.x + e.width;
+      if (x0 < 0 || x1 > worldWidth) return false;
+      if (feet >= groundY - 0.5) return true;
+      // Merged walkable surfaces at this height must cover the whole span.
+      const spans = obstacles.filter(ob => Math.abs(ob.y - feet) < 0.6 && ob.role !== 'cover').map(ob => [ob.x, ob.x + ob.width]).sort((a, b) => a[0] - b[0]);
+      let reach = x0;
+      for (const [a, b] of spans) { if (a > reach + 0.5) break; reach = Math.max(reach, b); }
+      return spans.length > 0 && spans[0][0] <= x0 + 0.5 && reach >= x1 - 0.5;
     }
 
     function resolveSpecial(e, def, art, sp) {
