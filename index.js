@@ -1965,7 +1965,7 @@
     }
 
     function lineFor(id) {
-      return STORY.LINES[id] || { speaker: 'narration', text: String(id) };
+      return STORY.LINES[id] ? { id, ...STORY.LINES[id] } : { id, speaker: 'narration', text: String(id) };
     }
 
     // Radio lines are brief and clear on their own.
@@ -1996,14 +1996,34 @@
     }
 
     // Major beats duck the music slightly while their lines are on screen.
-    // An urgent beat (a pressure point) drops queued banter and cuts in.
-    function say(ids, major = false, urgent = false) {
-      if (!story) return;
+    // Priority: urgent 0, essential 1, banter 2. A said block keeps its own
+    // order and goes after everything of equal or higher priority. An urgent
+    // block drops queued banter (and cuts a banter caption) but keeps
+    // essential lines. `staleX` marks a trigger's `until` point.
+    const lineRank = line => line.urgent ? 0 : (line.priority === 'essential' ? 1 : 2);
+    function say(ids, major = false, urgent = false, staleX = null) {
+      if (!story || !ids.length) return;
       if (urgent) {
-        story.queue = story.queue.filter(line => line.urgent);
-        if (story.caption && !story.caption.line.urgent) story.caption.left = 0;
+        story.queue = story.queue.filter(line => lineRank(line) < 2);
+        if (story.caption && lineRank(story.caption.line) === 2) story.caption.left = 0;
       }
-      for (const id of ids) story.queue.push({ ...lineFor(id), major, urgent });
+      const block = ids.map(id => ({ ...lineFor(id), major, urgent, staleX }));
+      const rank = Math.min(...block.map(lineRank));
+      let at = story.queue.length;
+      while (at > 0 && lineRank(story.queue[at - 1]) > rank) at--;
+      story.queue.splice(at, 0, ...block);
+    }
+
+    // A line that went stale before its turn is dropped unheard.
+    function lineStale(line) {
+      if (line.urgent) return false;
+      // Only banter expires at its trigger's point; essential lines wait.
+      if (lineRank(line) === 2 && line.staleX !== null && line.staleX !== undefined && player.x + player.width / 2 > line.staleX) return true;
+      if (line.untilStep) {
+        const index = story.data.steps.findIndex(step => step.id === line.untilStep);
+        if (index >= 0 && story.step > index) return true;
+      }
+      return false;
     }
 
     // Story sound cues: [id, delay] pairs (or ids) from story.js. They play
@@ -2050,6 +2070,8 @@
       if (story.caption) {
         story.caption.left -= dt;
         if (story.caption.left > 0) return;
+        // `heard` means the line finished (or was cut): gated anchors open now.
+        story.heard.add(story.caption.line.id);
         story.caption = null;
         captionBox.hidden = true;
         // The transmission ends when nothing follows straight away.
@@ -2058,7 +2080,8 @@
           story.lastRadio = null;
         }
       }
-      const line = story.queue.shift();
+      let line = story.queue.shift();
+      while (line && lineStale(line)) line = story.queue.shift();
       if (!line) return;
       lineSfx(line, story);
       story.caption = { line, left: lineDuration(line), major: Boolean(line.major) };
@@ -2084,11 +2107,16 @@
         return;
       }
       story = { data, step: 0, done: new Set(), fired: new Set(), timer: null, hold: 0, cues: new Set(), warned: new Set(),
-        queue: [], caption: null, near: null, announcedNear: null, exitHintAt: -Infinity, closedDoors: [] };
+        queue: [], caption: null, near: null, announcedNear: null, exitHintAt: -Infinity, closedDoors: [], heard: new Set() };
       if (checkpoint) {
         story.step = checkpoint.step;
         checkpoint.done.forEach(id => story.done.add(id));
         checkpoint.fired.forEach(id => story.fired.add(id));
+        // Lines behind the checkpoint count as heard, so gated anchors open.
+        for (const step of data.steps.slice(0, checkpoint.step)) {
+          for (const id of [...(step.done?.lines || []), ...(step.progress?.lines || []), ...(step.cues || []).flatMap(cue => cue.lines)]) story.heard.add(id);
+        }
+        for (const trigger of data.triggers) if (story.fired.has(trigger.id)) [...trigger.lines, ...(trigger.then || [])].forEach(id => story.heard.add(id));
         const at = storyPlan.anchors[checkpoint.at];
         if (at) {
           player.x = at.x;
@@ -2145,7 +2173,10 @@
     // ones, plus optional extras such as the jungle recorder.
     function activeAnchors() {
       const step = story.data.steps[story.step];
-      const ids = step?.type === 'interact' ? step.anchors.filter(id => !story.done.has(id)) : [];
+      // An anchor with `after` waits until that line has played (or was
+      // already behind a checkpoint).
+      const ready = id => !story.data.anchors[id].after || story.heard.has(story.data.anchors[id].after);
+      const ids = step?.type === 'interact' ? step.anchors.filter(id => !story.done.has(id) && ready(id)) : [];
       for (const [id, a] of Object.entries(story.data.anchors)) {
         if (a.optional && !story.done.has(id) && storyPlan.anchors[id]) ids.push(id);
       }
@@ -2159,7 +2190,10 @@
         const chunk = layout.chunks[trigger.at.chunk];
         if (player.x + player.width / 2 >= chunk.x0 + trigger.at.f * (chunk.x1 - chunk.x0)) {
           story.fired.add(trigger.id);
-          say(trigger.lines, Boolean(trigger.duck), Boolean(trigger.urgent));
+          const until = trigger.until && layout.chunks[trigger.until.chunk];
+          const staleX = until ? until.x0 + trigger.until.f * (until.x1 - until.x0) : null;
+          say(trigger.lines, Boolean(trigger.duck), Boolean(trigger.urgent), staleX);
+          if (trigger.then) say(trigger.then, Boolean(trigger.duck), false, staleX);
         }
       }
       story.near = activeAnchors().find(id => anchorInRange(storyPlan.anchors[id])) || null;
