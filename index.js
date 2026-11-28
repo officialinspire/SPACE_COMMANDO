@@ -128,6 +128,40 @@
       quickplay: { health: 100, gold: 120, weapon: 'laser', owned: ['pistol', 'rifle', 'shotgun', 'laser'], clip: { pistol: 12, rifle: 50, shotgun: 5, laser: 30 }, reserve: { pistol: 24, rifle: 60, shotgun: 15, laser: 30 } } }
   ];
   const stageById = id => STAGES.find(stage => stage.id === id);
+
+  // Closing credits. Only confirmed attributions: sound effects from
+  // assets/audio/field-sfx/README.md and the font from assets/fonts/README.md.
+  // The repository records no composer or artist names or licences for the
+  // music and art, so those are listed without names. No story spoilers: the
+  // roll is also reachable from the title.
+  const CREDITS = [
+    ['SPACE COMMANDO', ['A teamInspire project.']],
+    ['Development', ['teamInspire', 'AI-assisted development with Claude (Anthropic) and Codex (OpenAI).']],
+    ['Music', ['Space Commando: Main Menu', 'Space Station: Level 1 Ambient', 'Jungle Planet: Level Theme',
+      'Cyber City: Urban Warfare', 'Desert Ruins: Ancient Temple', 'Orbital Station (Ambient Cutscene)',
+      'Jungle Planet: Emergency Crash Landing', 'CyberCity Escape (Cloudline Break)', 'Desolate Desert Ruins',
+      'Iron and Sand (Instrumental Credits)']],
+    ['Art', ['Commando, enemy and pickup sprites', 'Orbital station, Jungle Planet, CyberCity and desert ruins environments',
+      'Story stills, radio portraits, title art and star map']],
+    ['Sound effects · CC0 1.0', [
+      'Pistol fire: “Single Pistol Gunshot 3.2” by morganpurkis (Freesound)',
+      'Rifle fire: “Machine Gun 001 - single shot” by pgi (Freesound)',
+      'Shotgun fire: “shotgun-one-shot” by DeltaCode (Freesound)',
+      'Laser fire: Sci-Fi Sounds, “laserSmall_003” by Kenney (OpenGameArt)',
+      'Pistol reload: “Taurus G2c Magazine Release” by NoonerBear (Freesound)',
+      'Rifle reload: “Assault Rifle Reload” by qubodup (Freesound)',
+      'Shotgun pump: “R870 Pump 1” by qubodup (Freesound)',
+      'Laser recharge: “Power Charge” by Sojan (Freesound)',
+      'Alien hurt: “Creature Monster Alien Vocal FX-6” by CVLTIV8R (Freesound)',
+      'Ghost hurt: “Creepy Ghost Hit” by gmoney514093 (Freesound)',
+      'Robot hurt: “videogame sci-fi metalish damage efect” by saangosu (Freesound)',
+      'Robot movement: “MnG - Mech Step” by SergeyIonov (Freesound)',
+      'Zombie hurt: Monster Sound Effects Pack, “monster-3” by Ogrebane (OpenGameArt)',
+      'Grenade detonation (included for a future event): “Explosion / Gun” by SamsterBirdies (Freesound)']],
+    ['Typeface', ['Barlow Condensed SemiBold and Bold by The Barlow Project Authors, SIL Open Font License 1.1, packaged by Fontsource (@fontsource/barlow-condensed 5.1.0).']],
+    ['Software', ['No third-party code libraries ship with the game.']],
+    ['Thanks for playing', ['']]
+  ];
   const stageOrder = id => STAGES.findIndex(stage => stage.id === id);
 
   // Campaign progress: versioned unlocks, clears and the last stage entry
@@ -424,17 +458,27 @@
   };
   // World camera. The 800×450 canvas shows a zoomed window onto the world;
   // the HUD and screen overlays are drawn afterwards without the zoom.
+  // At 1.75× the 800×450 canvas shows 457×257 world units: the player's
+  // deck, the next deck's surface with ~85 units of standing room above it,
+  // and 64% of the width ahead of the player (~310 units with lead).
   const CAMERA = {
-    zoom: 1.4,
-    anchor: 0.39,      // player centre as a fraction of view width when facing right
-    lead: 24,          // world units of extra look-ahead at full run speed
+    zoom: 1.75,
+    anchor: 0.36,      // player centre as a fraction of view width when facing right (64% ahead)
+    lead: 28,          // world units of extra look-ahead at full run speed
     leadMs: 240,       // lead smoothing time constant
-    turnMs: 420,       // critically damped settle when the player turns
+    turnMs: 380,       // critically damped settle when the player turns
+    turnHoldMs: 140,   // a facing must hold this long before the view swings (quick turns don't pump)
     followXMs: 60,     // horizontal follow time constant
     followYMs: 150,    // vertical settle time
-    headroom: 64,      // dead zone above the collision top: sprite (16) + HUD band (41) + margin
-    footroom: 22       // dead zone: keep this much space below the next landing
+    fallFollowMs: 105, // vertical settle time while falling toward a lower landing
+    hudPx: 56,         // screen-space HUD band (canvas px); converted to world units by the zoom
+    footroom: 22,      // dead zone: keep this much space below the next landing
+    supportDeadband: 40 // landings closer than this to the resting deck (cover tops) don't move the view
   };
+  // Dead zone above the collision top: sprite overhang (16), the screen-space
+  // band (HUD, plus the objective panel when it sits over the playfield) in
+  // world units, and a margin, for a band height in canvas px.
+  CAMERA.headroomFor = bandPx => Math.round(16 + bandPx / CAMERA.zoom + 10);
   // Per-round feedback. recoil/duration drive the shoulder recoil pose;
   // kick/kickMs drive a short camera kick opposite the shot (canvas px);
   // pulse is the haptic length in ms (one pulse per round, not per pellet).
@@ -561,11 +605,23 @@
   };
   // Stage themes that can't play at all fall back to the menu theme.
   for (const name of ['play', 'cyber', 'jungle', 'desert']) MUSIC_TRACKS[name].instead = 'menu';
-  const MUSIC_FADE_MS = 700;
+  // Fades are linear in gain from wherever the track is now, so any fade
+  // can be reversed or cancelled mid-way. A fade-in only advances while the
+  // track is actually playing. At most one track fades in and one fades out;
+  // anything older is cut in `cutMs`.
+  const MUSIC_FADE = { inMs: 900, outMs: 700, cutMs: 120 };
+  // A track that hasn't started playing within this long (stalled or never
+  // decodes) is treated as unavailable and its stand-in plays instead.
+  const MUSIC_START_TIMEOUT_MS = 10000;
+  // Changes to the Music level ease with this time constant.
+  const MUSIC_LEVEL_MS = 150;
   // A track with nothing playable is retried after this long.
   const MUSIC_RETRY_MS = 15000;
-  // Light ducks: pause and shop sit under the menus; major radio beats dip slightly.
-  const MUSIC_DUCK = { pause: 0.45, shop: 0.6, radio: 0.72 };
+  // Ducks scale the active track. Pause, pause settings and game over sit at
+  // 0.45, the shop at 0.6, a major radio beat at 0.72. The duck eases in with
+  // a 120 ms time constant (about 0.35 s to settle) and releases with 300 ms
+  // (about 0.9 s), so leaving a menu swells the music back rather than jumping.
+  const MUSIC_DUCK = { pause: 0.45, shop: 0.6, radio: 0.72, attackMs: 120, releaseMs: 300 };
 
   // -----------------------------------------------------------------------------
   // Sound effects
@@ -670,85 +726,178 @@
     const viewHeight = height / CAMERA.zoom;
     const maxViewY = worldHeight - viewHeight;
     // Unshaken view in world units. Gameplay checks read this directly.
-    const camera = { x: 0, y: maxViewY, look: 1, lookVelocity: 0, lead: 0, yVelocity: 0, support: groundY };
+    // Canvas px from the top covered by screen-space UI over the playfield.
+    let screenBandPx = CAMERA.hudPx;
+    const camera = { x: 0, y: maxViewY, look: 1, lookVelocity: 0, lead: 0, yVelocity: 0, support: groundY, facing: 1, facingFor: 0 };
 
-    // Music tracks start with metadata only and stream once they play.
+    // ---------------------------------------------------------------------
+    // Music director. Each frame turns the screen into one desired state:
+    // a track name and an entry key. A new key for a story cue or a stage
+    // theme starts it from the top; the same key (pause, shop, retry, hidden
+    // tab, mute) continues from where it was.
+    //
+    //   boot / intro             nothing (the intro video has its own sound)
+    //   title, star map,
+    //   title settings           menu theme
+    //   stage gameplay           the stage theme, keyed by stage entry
+    //   pause, pause settings,
+    //   game over                the stage theme, ducked (retry continues it)
+    //   shop                     the stage theme, ducked less
+    //   cutscene                 its cue (dock, escape, reveal), keyed per opening
+    //   stage clear              the stage's clear cue (station: crash landing;
+    //                            CyberCity: the launch cue carries on), else menu
+    //   mission complete         credits (Iron and Sand), keyed per completion
+    //   credits screen           the same credits key, so it never restarts
+    //   quickplay                the stage theme; its clear screen uses menu
+    //
+    // Sources are set only when a track is first wanted, so nothing streams
+    // at boot and only the active tracks download.
     const music = {};
     let musicBlocked = false;
     let musicLast = null;
-    function startTrack(track) {
-      if (track.pending) return;
-      track.pending = true;
-      track.audio.preload = 'auto';
-      const done = () => { track.pending = false; };
-      // Story cues start from the top when they come in from silence.
-      if (track.restart && track.level === 0) {
-        try { track.audio.currentTime = 0; } catch {}
-      }
-      const attempt = track.audio.play();
-      // Autoplay rejection waits for the next gesture instead of retrying
-      // every frame. A missing or undecodable file is handled by 'error'.
-      if (attempt?.then) attempt.then(done, err => { done(); if (err?.name === 'NotAllowedError') musicBlocked = true; });
-      else done();
+    let musicSeq = 0;
+    // The track fading in (or playing) and the one fading out.
+    // `level` eases toward the Music setting, so muting fades rather than cuts.
+    const director = { current: null, outgoing: null, duck: 1, level: null };
+    // Entry keys: a new stage entry, scene opening or end screen gets a new key.
+    const musicEntry = { stage: 0, scene: 0, end: 0, credits: 0 };
+
+    function trackSource(track) {
+      const def = MUSIC_TRACKS[track.name];
+      return track.failed ? def.fallback : def.src;
     }
+
+    function ensureSource(track) {
+      if (track.srcSet) return;
+      track.srcSet = true;
+      track.audio.preload = 'auto';
+      track.audio.src = encodeURI(trackSource(track));
+    }
+
+    // Stop a track now and forget any play request still in flight.
+    function stopTrack(track) {
+      track.token = ++musicSeq;
+      track.pending = false;
+      track.ready = false;
+      track.fade = 0;
+      track.requestedAt = 0;
+      if (!track.audio.paused) track.audio.pause();
+      track.audio.volume = 0;
+    }
+
+    const isActive = track => director.current === track.name || director.outgoing === track.name;
+
+    function startTrack(track) {
+      if (track.pending || !track.audio.paused) return;
+      ensureSource(track);
+      const token = track.token = ++musicSeq;
+      track.pending = true;
+      track.requestedAt ||= performance.now();
+      track.audio.volume = 0;
+      let attempt;
+      try { attempt = track.audio.play(); } catch { attempt = null; }
+      const settle = ok => {
+        if (token !== track.token) return;
+        track.pending = false;
+        // A play that resolves after the track stopped being wanted, or after
+        // the tab was hidden, must not start it.
+        if (ok && (!isActive(track) || document.hidden)) track.audio.pause();
+      };
+      if (attempt?.then) {
+        attempt.then(() => settle(true), err => {
+          settle(false);
+          // Autoplay rejection waits for the next gesture instead of retrying
+          // every frame. Missing or undecodable files are handled by 'error'.
+          // A blocked start is waiting for a gesture, not failing.
+          if (token === track.token && err?.name === 'NotAllowedError') { musicBlocked = true; track.requestedAt = 0; }
+        });
+      } else settle(true);
+    }
+
+    function markUnavailable(track) {
+      track.unavailableUntil = performance.now() + MUSIC_RETRY_MS;
+      stopTrack(track);
+    }
+
     for (const [name, def] of Object.entries(MUSIC_TRACKS)) {
       const audio = new Audio();
-      audio.preload = 'metadata';
-      const track = { name, audio, level: 0, gain: def.gain, tail: def.tail, restart: Boolean(def.restart),
-        failed: false, pending: false, unavailableUntil: 0 };
+      audio.preload = 'none';
+      const track = { name, audio, fade: 0, duck: 1, gain: def.gain, tail: def.tail, restart: Boolean(def.restart),
+        failed: false, pending: false, ready: false, srcSet: false, token: 0, key: null, requestedAt: 0, unavailableUntil: 0 };
       audio.addEventListener('error', () => {
+        if (!track.srcSet) return;
         if (!track.failed && def.fallback) {
+          // Primary file failed: switch to the legacy fallback and keep going.
           track.failed = true;
           track.gain = def.fallbackGain;
           track.tail = def.fallbackTail;
+          track.pending = false;
+          track.ready = false;
+          track.requestedAt = isActive(track) ? performance.now() : 0;
           audio.src = encodeURI(def.fallback);
           audio.load();
           return;
         }
-        // Nothing playable right now: another track stands in until a retry.
-        track.unavailableUntil = performance.now() + MUSIC_RETRY_MS;
-        track.pending = false;
-        track.level = 0;
+        // Nothing playable right now: its stand-in plays until a retry.
+        markUnavailable(track);
       });
-      // Loop inside the silent tail rather than waiting for the file end.
+      // Fade-ins wait for real playback; buffering holds the fade where it is.
+      audio.addEventListener('playing', () => {
+        if (!isActive(track) || document.hidden) { audio.pause(); return; }
+        track.ready = true;
+        track.requestedAt = 0;
+      });
+      audio.addEventListener('waiting', () => { track.ready = false; });
+      audio.addEventListener('pause', () => { track.ready = false; });
+      // Loop inside the measured silent tail rather than waiting for the file end.
       audio.addEventListener('timeupdate', () => {
         if (track.tail && audio.duration && audio.currentTime >= audio.duration - track.tail + 0.12) audio.currentTime = 0;
       });
       audio.addEventListener('ended', () => {
         audio.currentTime = 0;
-        if (track.level > 0) startTrack(track);
+        // Only the current track loops; a late 'ended' can't revive anything else.
+        if (director.current === name && !document.hidden) startTrack(track);
       });
-      audio.src = encodeURI(def.src);
       music[name] = track;
     }
     for (const event of ['pointerdown', 'keydown']) {
       window.addEventListener(event, () => { musicBlocked = false; }, { capture: true, passive: true });
     }
-    // Hidden tabs pause at once; the director fades back in on return.
+    // Hidden tabs stop everything at once. On return the desired state is
+    // picked up again, continuing from the same positions with a fresh fade.
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) { musicLast = null; return; }
-      for (const track of Object.values(music)) {
-        track.audio.pause();
-        track.level = 0;
-        track.audio.volume = 0;
-      }
+      for (const track of Object.values(music)) stopTrack(track);
+      director.current = null;
+      director.outgoing = null;
     });
 
-    // The track each screen wants. Stage themes follow the stage ID and keep
-    // playing (ducked) under pause, shop and pause settings, so resuming
-    // never restarts them. Scenes and end screens use the story cues.
-    function wantedMusic() {
-      if (document.body.dataset.boot !== 'ready' || !SETTINGS.audio || document.hidden) return null;
-      const stageTrack = STAGES[stageIndex].music;
+    // The desired music state for the current screen.
+    function wantedState() {
+      if (document.body.dataset.boot !== 'ready' || !SETTINGS.audio || !SETTINGS.musicLevel || document.hidden) return null;
+      const stageTrack = { name: STAGES[stageIndex].music, key: `stage:${musicEntry.stage}` };
       const campaignStory = playMode === 'campaign' ? STORY.STAGES[STAGES[stageIndex].id] : null;
-      if (gameState === 'scene') return (scene && STORY.SCENES[scene.id].music) || stageTrack;
-      if (gameState === 'play' || gameState === 'menu' || gameState === 'shop') return stageTrack;
-      if (gameState === 'settings') return prevSettingsState === 'menu' ? stageTrack : 'menu';
-      if (gameState === 'gameover' && campaignStory) {
-        if (endKind === 'complete') return campaignStory.endMusic || 'menu';
-        if (endKind === 'cleared') return campaignStory.clearMusic || 'menu';
+      if (gameState === 'scene') {
+        const cue = scene && STORY.SCENES[scene.id].music;
+        return cue ? { name: cue, key: `scene:${musicEntry.scene}` } : stageTrack;
       }
-      return 'menu';
+      if (gameState === 'play' || gameState === 'menu' || gameState === 'shop') return stageTrack;
+      if (gameState === 'settings') return prevSettingsState === 'menu' ? stageTrack : { name: 'menu', key: 'menu' };
+      if (gameState === 'credits') return { name: 'credits', key: `credits:${musicEntry.credits}` };
+      if (gameState === 'gameover') {
+        if (endKind === 'dead') return stageTrack;
+        if (campaignStory && endKind === 'complete') return { name: campaignStory.endMusic || 'credits', key: `credits:${musicEntry.credits}` };
+        if (campaignStory && endKind === 'cleared' && campaignStory.clearMusic) {
+          // A cue already playing (CyberCity's launch) carries on under its clear screen.
+          const name = campaignStory.clearMusic;
+          return { name, key: director.current === name ? music[name].key : `end:${musicEntry.end}` };
+        }
+      }
+      return { name: 'menu', key: 'menu' };
+    }
+
+    function wantedMusic() {
+      return wantedState()?.name ?? null;
     }
 
     // The wanted track, or the one standing in while it is unavailable. An
@@ -763,8 +912,7 @@
           track.failed = false;
           track.gain = def.gain;
           track.tail = def.tail;
-          track.audio.src = encodeURI(def.src);
-          track.audio.load();
+          track.srcSet = false;
           return name;
         }
         name = MUSIC_TRACKS[name].instead;
@@ -774,29 +922,95 @@
 
     function musicDuck() {
       if (gameState === 'menu' || (gameState === 'settings' && prevSettingsState === 'menu')) return MUSIC_DUCK.pause;
+      if (gameState === 'gameover' && endKind === 'dead') return MUSIC_DUCK.pause;
       if (gameState === 'shop') return MUSIC_DUCK.shop;
       if (gameState === 'play' && story?.caption?.major) return MUSIC_DUCK.radio;
       return 1;
     }
 
-    // Called every frame: fade each track toward its target for the state.
+    // Make `name` the current track. The previous current one becomes the
+    // outgoing track; an older outgoing track is cut.
+    function bringIn(name, key) {
+      const incoming = music[name];
+      // An older outgoing track stops at once: never more than two audible.
+      if (director.outgoing && director.outgoing !== name && director.outgoing !== director.current) {
+        stopTrack(music[director.outgoing]);
+        director.outgoing = null;
+      }
+      if (director.current && director.current !== name) director.outgoing = director.current;
+      if (director.outgoing === name) director.outgoing = null;
+      director.current = name;
+      // A new entry key restarts story cues and stage themes from the top.
+      // Re-entered while still fading out, it simply continues: no cut.
+      if (key !== incoming.key) {
+        const fresh = incoming.restart || name !== 'menu';
+        if (fresh && incoming.key !== null && incoming.fade === 0) {
+          try { incoming.audio.currentTime = 0; } catch {}
+        }
+        incoming.key = key;
+      }
+    }
+
+    // Called every frame: one desired state, at most two audible tracks.
     function updateMusic(now) {
       const dt = musicLast === null ? 0 : Math.min(100, now - musicLast);
       musicLast = now;
-      const wanted = playableMusic(wantedMusic());
-      const duck = musicDuck();
+      const state = wantedState();
+      let name = state ? playableMusic(state.name) : null;
+      // A stand-in keeps its own position instead of restarting.
+      const key = name && name === state?.name ? state.key : (name ? music[name].key ?? 'standin' : null);
+      if (name !== director.current || (name && key !== music[name].key)) {
+        if (name) bringIn(name, key);
+        else {
+          if (director.current) {
+            if (director.outgoing && director.outgoing !== director.current) stopTrack(music[director.outgoing]);
+            director.outgoing = director.current;
+          }
+          director.current = null;
+        }
+      }
+      // Duck: each track eases its own duck, faster down than back up. Only
+      // the current track follows the screen; an outgoing track holds the
+      // duck it had, so handing over never makes it jump louder.
+      const duckTarget = musicDuck();
+      const easeDuck = track => {
+        const tau = duckTarget < track.duck ? MUSIC_DUCK.attackMs : MUSIC_DUCK.releaseMs;
+        track.duck += (duckTarget - track.duck) * (dt ? 1 - Math.exp(-dt / tau) : 0);
+        if (Math.abs(track.duck - duckTarget) < 0.002) track.duck = duckTarget;
+      };
+      // The Music level eases (150 ms time constant); while muting, the last
+      // audible level carries the outgoing fade so it fades instead of cutting.
+      const levelTarget = SETTINGS.audio ? SETTINGS.musicVolume * AUDIO_LEVELS[SETTINGS.musicLevel] : 0;
+      if (director.level === null) director.level = levelTarget;
+      if (levelTarget > 0 || director.current) director.level += (levelTarget - director.level) * (dt ? 1 - Math.exp(-dt / MUSIC_LEVEL_MS) : 0);
+      if (Math.abs(director.level - levelTarget) < 0.002 && levelTarget > 0) director.level = levelTarget;
+      const level = director.level;
       for (const track of Object.values(music)) {
-        const target = track.name === wanted ? Math.min(1, track.gain * duck * SETTINGS.musicVolume * AUDIO_LEVELS[SETTINGS.musicLevel]) : 0;
-        const step = dt / MUSIC_FADE_MS;
-        // A track that is not playing yet (blocked or buffering) waits at zero, so it still fades in.
-        if (target > track.level && !track.audio.paused) track.level = Math.min(target, track.level + step);
-        else if (target < track.level) track.level = Math.max(target, track.level - step);
-        if (target > 0 && track.audio.paused && !musicBlocked && !document.hidden) startTrack(track);
-        track.audio.volume = Math.max(0, Math.min(1, track.level));
-        if (!target && !track.level && !track.audio.paused) track.audio.pause();
+        const role = track.name === director.current ? 'in' : (track.name === director.outgoing ? 'out' : (track.fade > 0 || !track.audio.paused ? 'cut' : null));
+        if (!role) continue;
+        if (role === 'in') {
+          // A track coming in from silence takes the screen's duck at once.
+          if (track.fade === 0) track.duck = duckTarget;
+          else easeDuck(track);
+          director.duck = track.duck;
+          if (track.audio.paused && !track.pending && !musicBlocked && !document.hidden) startTrack(track);
+          // A start that never gets going hands over to the stand-in.
+          if (!track.ready && !musicBlocked && track.requestedAt && now - track.requestedAt > MUSIC_START_TIMEOUT_MS) { markUnavailable(track); continue; }
+          if (track.ready && !track.audio.paused) track.fade = Math.min(1, track.fade + dt / MUSIC_FADE.inMs);
+        } else {
+          // Outgoing fades from its current gain; a stray track is cut quickly.
+          track.fade = Math.max(0, track.fade - dt / (role === 'cut' ? MUSIC_FADE.cutMs : MUSIC_FADE.outMs));
+          if (track.fade === 0) {
+            stopTrack(track);
+            if (role === 'out') director.outgoing = null;
+            continue;
+          }
+        }
+        track.audio.volume = Math.max(0, Math.min(1, track.fade * track.gain * track.duck * level));
       }
     }
-    window.commandoMusic = { tracks: music, wanted: wantedMusic, playing: () => playableMusic(wantedMusic()), duck: musicDuck };
+
+    window.commandoMusic = { tracks: music, director, wanted: wantedMusic, state: wantedState, playing: () => director.current, duck: musicDuck };
 
     // Menu music starts after the intro video ends (see index.html), so the
     // two never overlap.
@@ -1065,8 +1279,8 @@
           gameState = prevSettingsState || 'start';
         }
       } else if (gameState === 'start') {
-        // Start menu options: 0 Start Game, 1 Game Settings
-        const optionsCount = 2;
+        // Start menu options: 0 Star map, 1 Settings, 2 Credits
+        const optionsCount = 3;
         if (e.key === 'ArrowUp') {
           startMenuSelection = (startMenuSelection + optionsCount - 1) % optionsCount;
         } else if (e.key === 'ArrowDown') {
@@ -1080,11 +1294,28 @@
             prevSettingsState = 'start';
             settingsSelection = 0;
             gameState = 'settings';
+          } else if (startMenuSelection === 2) {
+            openCredits('start');
           }
           // Play selection sound on start menu action
           playLegacyEffect(selectSfx);
         }
         // no escape action on start menu
+      } else if (gameState === 'credits') {
+        // Arrows and Page keys scroll the roll; Enter or Escape leaves.
+        const roll = menuLayer.querySelector('.credits-roll');
+        const steps = { ArrowDown: 48, ArrowUp: -48, PageDown: 0.85, PageUp: -0.85 };
+        if (roll && e.key in steps) {
+          const step = steps[e.key];
+          roll.scrollTop += Math.abs(step) < 1 ? step * roll.clientHeight : step;
+          creditsRoll.holdUntil = performance.now() + 3000;
+        } else if (roll && (e.key === 'Home' || e.key === 'End')) {
+          roll.scrollTop = e.key === 'Home' ? 0 : roll.scrollHeight;
+          creditsRoll.holdUntil = performance.now() + 3000;
+        } else if (e.key === 'Enter' || e.key === 'Escape') {
+          playLegacyEffect(selectSfx);
+          leaveCredits();
+        }
       } else if (gameState === 'gameover') {
         const count = endOptions.length || 1;
         if (e.key === 'ArrowUp') endSelection = (endSelection + count - 1) % count;
@@ -1127,6 +1358,10 @@
       if (scrollKeys.includes(key)) e.preventDefault();
       if (e.repeat || keyboardKeys.has(key)) return;
       if (gameState === 'play') pressGameplayKey(keyboardKeys, key);
+      // The game handles this Enter or Space itself. If a menu rebuild moves
+      // focus to a button, the same press must not also activate it (that
+      // turned one Enter on the start screen into Star map + Start campaign).
+      if ((key === 'Enter' || key === 'Space') && gameState !== 'play') e.preventDefault();
       handleMenuInput(e);
     });
     document.addEventListener('keyup', e => {
@@ -1158,152 +1393,185 @@
 
     if (isMobile) {
       const ctrlBar = document.getElementById('mobile-controls');
-      if (ctrlBar) {
-        ctrlBar.hidden = false;
-        document.body.setAttribute('data-touch', '');
+      ctrlBar.hidden = false;
+      document.body.setAttribute('data-touch', '');
+      const buttons = Array.from(ctrlBar.querySelectorAll('.control-btn'));
+      // These open or leave a menu, so they also go through the menu input.
+      const menuKeys = new Set(['Escape', 'p', 'P']);
+      // A pointer press is followed by a compatibility click; remember when
+      // each control was last pressed so that click isn't counted twice.
+      const pointerActivity = new WeakMap();
+      const POINTER_CLICK_WINDOW = 1000;
 
-        const buttons = Array.from(ctrlBar.querySelectorAll('.control-btn'));
-        const menuKeys = new Set(['Enter', 'Escape', 'p', 'P', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
-        const pointerToButton = new Map();
-        const activePointersByButton = new Map();
-        const directionPad = ctrlBar.querySelector('.direction-pad');
-        const directionPointers = new Set();
-        // A pointer activation is followed by a compatibility click whose
-        // detail can be 0 on touch screens. Remember when each control was
-        // last pressed or released by a pointer so that click is ignored.
-        const pointerActivity = new WeakMap();
-        const POINTER_CLICK_WINDOW = 1000;
+      // A press that opens a menu hides the controls under the finger, so the
+      // browser's click after it would land on the new menu (and could buy
+      // something in the shop). That one click is swallowed.
+      const swallowAfterUp = new Set();
+      let swallowClicksUntil = 0;
+      document.addEventListener('pointerup', event => {
+        if (swallowAfterUp.delete(event.pointerId)) swallowClicksUntil = performance.now() + 400;
+      }, true);
+      document.addEventListener('click', event => {
+        if (performance.now() < swallowClicksUntil && !ctrlBar.contains(event.target)) {
+          event.preventDefault();
+          event.stopPropagation();
+          swallowClicksUntil = 0;
+        }
+      }, true);
 
-        const pressButton = (btn, keyName, pointerId, event, pointerType) => {
+      const vibrate = pointerType => {
+        if ((pointerType === 'touch' || pointerType === 'pen') && canPulse()) navigator.vibrate(10);
+      };
+
+      // ------------------------------------------------ buttons: one pointer each
+      const buttonPointers = new Map();
+      const releaseButton = pointerId => {
+        const btn = buttonPointers.get(pointerId);
+        if (!btn) return;
+        buttonPointers.delete(pointerId);
+        releaseGameplayKey(touchKeys, btn.dataset.key);
+        if (![...buttonPointers.values()].includes(btn)) btn.classList.remove('pressed');
+      };
+      for (const btn of buttons) {
+        const key = btn.dataset.key;
+        btn.addEventListener('pointerdown', event => {
           if (event.cancelable) event.preventDefault();
           event.stopPropagation();
-
-          const setForButton = activePointersByButton.get(btn) || new Set();
-          if (setForButton.has(pointerId)) return;
-
-          setForButton.add(pointerId);
-          activePointersByButton.set(btn, setForButton);
-          pointerToButton.set(pointerId, btn);
-          if (setForButton.size === 1) btn.classList.add('pressed');
-          pressGameplayKey(touchKeys, keyName);
-
-          // Fire is confirmed by the per-round shot pulse instead.
-          if ((pointerType === 'touch' || pointerType === 'pen') && keyName !== 'z' && canPulse()) navigator.vibrate(10);
-
-          if (menuKeys.has(keyName) && setForButton.size === 1) {
-            handleMenuInput({ key: keyName, repeat: false });
-          }
-        };
-
-        const releaseButton = (btn, keyName, pointerId, event) => {
-          const setForButton = activePointersByButton.get(btn);
-          if (!setForButton || !setForButton.has(pointerId)) return;
-
-          if (event && event.cancelable) event.preventDefault();
-          if (event) event.stopPropagation();
-
-          setForButton.delete(pointerId);
-          pointerToButton.delete(pointerId);
-          releaseGameplayKey(touchKeys, keyName);
-
-          if (setForButton.size === 0) {
-            activePointersByButton.delete(btn);
-            btn.classList.remove('pressed');
-          }
-        };
-
-        clearTouchInputs = () => {
-          pointerToButton.forEach((btn, pointerId) => {
-            const keyName = btn.getAttribute('data-key');
-            releaseButton(btn, keyName, pointerId);
-          });
-          touchKeys.clear();
-          activePointersByButton.clear();
-          directionPointers.clear();
-          pointerToButton.clear();
-          buttons.forEach((btn) => btn.classList.remove('pressed'));
-        };
-
-        const finishPointer = event => {
-          const { pointerId } = event;
-          directionPointers.delete(pointerId);
-          const current = pointerToButton.get(pointerId);
-          if (current) releaseButton(current, current.dataset.key, pointerId, event);
-        };
-
-        buttons.forEach((btn) => {
-          const keyName = btn.dataset.key;
-
-          btn.addEventListener('pointerdown', (event) => {
-            pointerActivity.set(btn, performance.now());
-            if (event.pointerType !== 'mouse' && directionPad.contains(btn)) {
-              directionPointers.add(event.pointerId);
-            }
-            pressButton(btn, keyName, event.pointerId, event, event.pointerType);
-            if (btn.setPointerCapture) {
-              try { btn.setPointerCapture(event.pointerId); } catch (err) {}
-            }
-          }, { passive: false });
-
-          for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-            btn.addEventListener(type, finishPointer, { passive: false });
-          }
-          btn.addEventListener('pointerup', () => pointerActivity.set(btn, performance.now()));
-
-          btn.addEventListener('pointerleave', (event) => {
-            if (event.pointerType === 'mouse') {
-              releaseButton(btn, keyName, event.pointerId, event);
-            }
-          }, { passive: false });
-
-          btn.addEventListener('touchcancel', () => {
-            const setForButton = activePointersByButton.get(btn);
-            if (!setForButton) return;
-            Array.from(setForButton).forEach((pointerId) => {
-              releaseButton(btn, keyName, pointerId);
-            });
-          }, { passive: true });
-
-          btn.addEventListener('contextmenu', (event) => event.preventDefault());
-          btn.addEventListener('dragstart', (event) => event.preventDefault());
-          btn.addEventListener('selectstart', (event) => event.preventDefault());
-        });
-
-        ctrlBar.addEventListener('pointermove', (event) => {
-          if (event.pointerType === 'mouse') return;
-          const { pointerId, clientX, clientY } = event;
-          const current = pointerToButton.get(pointerId);
-          if (directionPointers.has(pointerId) && gameState === 'play') {
-            const hit = document.elementFromPoint(clientX, clientY);
-            const next = hit?.closest('.control-btn');
-            if (next && directionPad.contains(next)) {
-              if (next === current) return;
-              if (current) releaseButton(current, current.dataset.key, pointerId);
-              pressButton(next, next.dataset.key, pointerId, event, event.pointerType);
-              return;
-            }
-            // Maintain the held direction while rocking across the center.
-            if (directionPad.contains(hit)) return;
-          }
-          if (!current) return;
-          const bounds = current.getBoundingClientRect();
-          if (clientX < bounds.left || clientX > bounds.right || clientY < bounds.top || clientY > bounds.bottom) {
-            releaseButton(current, current.dataset.key, pointerId, event);
+          if (buttonPointers.has(event.pointerId)) return;
+          pointerActivity.set(btn, performance.now());
+          buttonPointers.set(event.pointerId, btn);
+          btn.classList.add('pressed');
+          try { btn.setPointerCapture(event.pointerId); } catch {}
+          vibrate(event.pointerType);
+          pressGameplayKey(touchKeys, key);
+          if (menuKeys.has(key)) {
+            swallowAfterUp.add(event.pointerId);
+            handleMenuInput({ key, repeat: false });
           }
         }, { passive: false });
-
-        // Keyboard and assistive-technology activations have no pointerdown.
-        // Clicks that follow a pointer press on the same control already acted.
-        ctrlBar.addEventListener('click', event => {
-          const btn = event.target.closest('.control-btn');
-          const key = btn?.dataset.key;
-          if (!key) return;
+        for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+          btn.addEventListener(type, event => {
+            pointerActivity.set(btn, performance.now());
+            releaseButton(event.pointerId);
+          });
+        }
+        btn.addEventListener('contextmenu', event => event.preventDefault());
+        // Keyboard and assistive activations have no pointer press.
+        btn.addEventListener('click', event => {
+          event.stopPropagation();
           if (performance.now() - (pointerActivity.get(btn) ?? -Infinity) < POINTER_CLICK_WINDOW) return;
           pressGameplayKey(touchKeys, key);
           if (menuKeys.has(key)) handleMenuInput({ key });
           releaseGameplayKey(touchKeys, key);
         });
       }
+
+      // ------------------------------------------------------- thumb sticks
+      // Positions are measured from the stick's centre as a fraction of its
+      // radius. Inside the dead zone nothing is held. Horizontal input needs
+      // HORIZONTAL; up and down need VERTICAL and an angle within 55° of
+      // straight up or down, so a sideways drag never crouches or climbs.
+      const STICK = { dead: 0.24, horizontal: 0.3, vertical: 0.5, verticalSlope: Math.tan(55 * Math.PI / 180), jumpZone: 0.36, travel: 0.55 };
+      const sticks = [];
+      function makeStick(el, kind) {
+        const stick = { el, kind, knob: el.querySelector('.stick-knob'), pointerId: null, keys: new Set(), lastPointer: -Infinity };
+        const setKeys = next => {
+          for (const k of stick.keys) if (!next.has(k)) releaseGameplayKey(touchKeys, k);
+          for (const k of next) if (!stick.keys.has(k)) pressGameplayKey(touchKeys, k);
+          stick.keys = next;
+        };
+        const vector = event => {
+          const box = el.getBoundingClientRect();
+          const r = box.width / 2;
+          return { x: (event.clientX - box.left - r) / r, y: (event.clientY - box.top - r) / r, r };
+        };
+        const directions = (v, keys) => {
+          const d = Math.hypot(v.x, v.y);
+          if (d < STICK.dead) return keys;
+          if (kind === 'move' && Math.abs(v.x) >= STICK.horizontal) keys.add(v.x < 0 ? 'ArrowLeft' : 'ArrowRight');
+          if (Math.abs(v.y) >= STICK.vertical && Math.abs(v.x) <= Math.abs(v.y) * STICK.verticalSlope) keys.add(v.y < 0 ? 'ArrowUp' : 'ArrowDown');
+          return keys;
+        };
+        const show = v => {
+          const d = Math.min(1, Math.hypot(v.x, v.y));
+          const angle = Math.atan2(v.y, v.x);
+          el.style.setProperty('--kx', `${Math.cos(angle) * d * STICK.travel * v.r}px`);
+          el.style.setProperty('--ky', `${Math.sin(angle) * d * STICK.travel * v.r}px`);
+        };
+        stick.release = () => {
+          if (stick.pointerId !== null) {
+            try { el.releasePointerCapture(stick.pointerId); } catch {}
+          }
+          stick.pointerId = null;
+          setKeys(new Set());
+          el.dataset.active = 'false';
+          el.dataset.jump = 'false';
+          el.style.setProperty('--kx', '0px');
+          el.style.setProperty('--ky', '0px');
+        };
+        el.addEventListener('pointerdown', event => {
+          if (event.cancelable) event.preventDefault();
+          event.stopPropagation();
+          if (stick.pointerId !== null) return;
+          stick.pointerId = event.pointerId;
+          stick.lastPointer = performance.now();
+          try { el.setPointerCapture(event.pointerId); } catch {}
+          const v = vector(event);
+          const keys = new Set();
+          if (kind === 'move') {
+            // A deliberate press in the centre jumps once; the same touch can
+            // then drag into movement. A press on the ring only moves.
+            if (Math.hypot(v.x, v.y) <= STICK.jumpZone) {
+              keys.add('Space');
+              el.dataset.jump = 'true';
+              vibrate(event.pointerType);
+            }
+          } else {
+            // Fire: one round on the press, sustained while held for automatics.
+            keys.add('z');
+          }
+          setKeys(directions(v, keys));
+          el.dataset.active = 'true';
+          show(v);
+        }, { passive: false });
+        el.addEventListener('pointermove', event => {
+          if (event.pointerId !== stick.pointerId) return;
+          if (event.cancelable) event.preventDefault();
+          const v = vector(event);
+          const keys = new Set([...stick.keys].filter(k => k === 'Space' || k === 'z'));
+          setKeys(directions(v, keys));
+          show(v);
+        }, { passive: false });
+        for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+          el.addEventListener(type, event => {
+            if (event.pointerId !== stick.pointerId) return;
+            stick.lastPointer = performance.now();
+            stick.release();
+          });
+        }
+        el.addEventListener('contextmenu', event => event.preventDefault());
+        // Keyboard and assistive activation: the move stick jumps, the fire stick fires once.
+        el.addEventListener('click', event => {
+          event.stopPropagation();
+          if (performance.now() - stick.lastPointer < POINTER_CLICK_WINDOW) return;
+          const k = kind === 'move' ? 'Space' : 'z';
+          pressGameplayKey(touchKeys, k);
+          releaseGameplayKey(touchKeys, k);
+        });
+        sticks.push(stick);
+        return stick;
+      }
+      makeStick(document.getElementById('stick-move'), 'move');
+      makeStick(document.getElementById('stick-aim'), 'aim');
+
+      // Called on blur, hidden tab, pause and other state changes, rotation
+      // and fullscreen changes: every held control lets go.
+      clearTouchInputs = () => {
+        for (const stick of sticks) stick.release();
+        for (const pointerId of [...buttonPointers.keys()]) releaseButton(pointerId);
+        for (const btn of buttons) btn.classList.remove('pressed');
+        touchKeys.clear();
+      };
     }
 
     // Collections for dynamic entities
@@ -1434,7 +1702,9 @@
     // Begin a stage in either mode from a known seed and loadout. Campaign
     // entries are saved so Continue and Retry restore exactly this start.
     // A checkpoint resumes the same seed mid-stage with its own loadout.
-    function startStage(mode, id, seed, loadout, elapsed = 0, checkpoint = null) {
+    // A retry continues the stage theme; any other entry starts it fresh.
+    function startStage(mode, id, seed, loadout, elapsed = 0, checkpoint = null, retry = false) {
+      if (!retry) musicEntry.stage++;
       resetRunState();
       playMode = mode;
       applyLoadout(loadout);
@@ -1459,19 +1729,54 @@
     // and one-shot triggers all reset, and any checkpoint is dropped.
     function retryStage() {
       const entry = sessionEntry || { stage: 'station', seed: freshSeed('station'), loadout: defaultLoadout(), elapsed: 0 };
-      startStage(playMode, entry.stage, entry.seed, entry.loadout, entry.elapsed);
+      startStage(playMode, entry.stage, entry.seed, entry.loadout, entry.elapsed, null, Boolean(sessionEntry));
     }
 
     function retryCheckpoint() {
       const entry = sessionEntry;
       if (!entry?.checkpoint) { retryStage(); return; }
-      startStage(playMode, entry.stage, entry.seed, entry.loadout, entry.elapsed, entry.checkpoint);
+      startStage(playMode, entry.stage, entry.seed, entry.loadout, entry.elapsed, entry.checkpoint, true);
     }
 
     function startQuickplay(id) {
       const stage = stageById(id);
       if (!stage || !campaign.unlocked.includes(id)) return;
       startStage('quickplay', id, freshSeed(id), stage.quickplay);
+    }
+
+    // Credits: after Mission complete the credits track carries on; from the
+    // title it starts fresh.
+    let creditsFrom = 'start';
+    // The roll scrolls itself slowly unless effects are reduced; any manual
+    // scroll, key or touch holds it for a few seconds.
+    const creditsRoll = { holdUntil: 0, last: null, offset: 0 };
+    function openCredits(from) {
+      if (from !== 'complete') musicEntry.credits++;
+      creditsFrom = from;
+      creditsRoll.holdUntil = performance.now() + 1500;
+      creditsRoll.last = null;
+      creditsRoll.offset = 0;
+      resetGameplayInput();
+      gameState = 'credits';
+    }
+
+    // Leaving returns where Credits was opened: the Mission complete summary
+    // (whose credits track carries on) or the title.
+    function leaveCredits() {
+      if (creditsFrom === 'complete') { gameState = 'gameover'; endSelection = Math.max(0, endOptions.length - 1); }
+      else { gameState = 'start'; startMenuSelection = 2; }
+    }
+
+    function updateCreditsRoll(now) {
+      if (gameState !== 'credits') return;
+      const roll = menuLayer.querySelector('.credits-roll');
+      const dt = creditsRoll.last === null ? 0 : Math.min(100, now - creditsRoll.last);
+      creditsRoll.last = now;
+      if (!roll || effectsReduced() || now < creditsRoll.holdUntil || document.hidden) return;
+      // Sub-pixel accumulation keeps the 28 px/s scroll smooth.
+      creditsRoll.offset += dt * 0.028;
+      const whole = Math.floor(creditsRoll.offset);
+      if (whole) { roll.scrollTop += whole; creditsRoll.offset -= whole; }
     }
 
     function openStarMap() {
@@ -1492,8 +1797,11 @@
           : [['Retry stage', retryStage], ['Star map', openStarMap]],
         quickplay: [['Retry stage', retryStage], ['Star map', openStarMap]],
         cleared: [[`Continue to ${next?.name}`, continueCampaign], ['Star map', openStarMap]],
-        complete: [['Star map', openStarMap]]
+        complete: [['Credits', () => openCredits('complete')], ['Star map', openStarMap]]
       }[kind];
+      // Each clear screen is a new entry for its cue; a completion starts the credits.
+      if (kind === 'cleared') musicEntry.end++;
+      if (kind === 'complete') musicEntry.credits++;
       runComplete = kind === 'complete';
       if (kind !== 'dead') endReason = '';
       closeCaption();
@@ -1882,7 +2190,13 @@
         interactButton.hidden = !v;
         interactButton.setAttribute('aria-label', v ? `Interact: ${v}` : 'Interact');
       });
-      if (!show) return;
+      if (!show) { screenBandPx = CAMERA.hudPx; return; }
+      // When the objective panel covers the top of the playfield (it sits
+      // above it in portrait), the camera keeps the player's head below it.
+      const canvasBox = canvas.getBoundingClientRect();
+      const panelBox = objectivePanel.getBoundingClientRect();
+      const panelBottom = (panelBox.bottom - canvasBox.top) * height / canvasBox.height;
+      screenBandPx = panelBox.top >= canvasBox.top && panelBottom > CAMERA.hudPx ? Math.min(height * 0.4, panelBottom) : CAMERA.hudPx;
       const step = story.data.steps[story.step];
       setCached('objective', step?.text || '', v => { objectiveText.textContent = v; });
       const parts = [];
@@ -1912,6 +2226,7 @@
     // Escape) closes and replays the scene's essential lines as captions.
     function openScene(id, onDone = null) {
       const data = STORY.SCENES[id];
+      musicEntry.scene++;
       resetGameplayInput();
       const beats = data.frames.flatMap((frame, f) => frame.lines.map(line => ({ frame: f, line })));
       scene = { id, data, beats, index: -1, left: 0, onDone, returnFocus: document.activeElement };
@@ -2270,8 +2585,10 @@
         ...guests
       ])) || 'zombie';
       const spawnDir = Math.random() < 0.65 ? 1 : -1;
-      const spawnOffset = width + 140 + Math.random() * 280;
-      const spawnX = teach ? Math.max(680, player.x + 240) : player.x + spawnDir * spawnOffset;
+      // Distances keep the gap beyond the view edge the zoom-1.40 camera had,
+      // so enemies arrive on screen as quickly at any zoom.
+      const spawnOffset = viewWidth * (1 - CAMERA.anchor) + 590 + Math.random() * 280;
+      const spawnX = teach ? Math.max(camera.x + viewWidth + 110, player.x + 240) : player.x + spawnDir * spawnOffset;
       const e = {
         type: type,
         x: 0,
@@ -2899,6 +3216,27 @@
       return landing;
     }
 
+    // Where the current arc comes down, assuming the player keeps their
+    // horizontal speed: the first surface top the feet cross on the way down.
+    // Framing this instead of the floor straight below keeps a hop over a
+    // gap, or onto cover, from dipping the view toward the floor beneath.
+    function predictedLanding() {
+      let x = player.x, y = player.y + player.height, vy = player.vy;
+      for (let t = 0; t < 120; t++) {
+        vy += MOVEMENT.gravity;
+        const next = y + vy;
+        x = clamp(x + player.vx, 0, worldWidth - player.width);
+        if (vy > 0) {
+          for (const ob of obstacles) {
+            if (ob.y >= y - 0.01 && ob.y <= next && x + player.width > ob.x && x < ob.x + ob.width) return ob.y;
+          }
+        }
+        if (next >= groundY) return groundY;
+        y = next;
+      }
+      return nextLanding();
+    }
+
     function cameraTargetX() {
       const anchor = 0.5 - (0.5 - CAMERA.anchor) * camera.look;
       const x = player.x + player.width / 2 - viewWidth * anchor + camera.lead;
@@ -2917,14 +3255,21 @@
       // single-deck framing. The support only changes on landing or while
       // climbing, so ordinary jumps stay inside the dead zone.
       const rest = clamp(camera.support + 32 - viewHeight, 0, maxViewY);
-      let y = Math.min(rest, head - CAMERA.headroom);
-      y = Math.max(y, nextLanding() + CAMERA.footroom - viewHeight);
+      let y = Math.min(rest, head - CAMERA.headroomFor(screenBandPx));
+      // In the air the view frames where the arc lands, but never below the
+      // take-off deck until the apex: rising past a crate's side can stall
+      // the horizontal speed and briefly point the prediction into a gap.
+      const airborne = !player.onGround && !player.isClimbing;
+      const landing = !airborne ? nextLanding() : (player.vy < 0 ? Math.min(predictedLanding(), camera.support) : predictedLanding());
+      y = Math.max(y, landing + CAMERA.footroom - viewHeight);
       y = Math.min(y, head - 24);
       return clamp(Math.max(y, feet + 8 - viewHeight), 0, maxViewY);
     }
 
     function snapCamera() {
       camera.look = player.facing;
+      camera.facing = player.facing;
+      camera.facingFor = CAMERA.turnHoldMs;
       camera.lookVelocity = 0;
       camera.lead = 0;
       camera.yVelocity = 0;
@@ -2934,12 +3279,23 @@
     }
 
     function updateCamera(dt) {
-      if (player.onGround || player.isClimbing) camera.support = player.y + player.height;
-      [camera.look, camera.lookVelocity] = smoothDamp(camera.look, camera.lookVelocity, player.facing, CAMERA.turnMs, dt);
+      // The resting deck follows landings and climbs, but not hops onto
+      // cover or other small steps, so short hops don't pump the view.
+      const feet = player.y + player.height;
+      if (player.isClimbing || (player.onGround && Math.abs(feet - camera.support) >= CAMERA.supportDeadband)) camera.support = feet;
+      // The view swings only after a turn has held briefly.
+      if (player.facing !== camera.facing) {
+        camera.facingFor += dt;
+        if (camera.facingFor >= CAMERA.turnHoldMs) camera.facing = player.facing;
+      } else camera.facingFor = 0;
+      [camera.look, camera.lookVelocity] = smoothDamp(camera.look, camera.lookVelocity, camera.facing, CAMERA.turnMs, dt);
       const leadTarget = clamp(player.vx / MOVEMENT.runSpeed, -1, 1) * CAMERA.lead;
       camera.lead += (leadTarget - camera.lead) * settle(dt, CAMERA.leadMs);
       camera.x += (cameraTargetX() - camera.x) * settle(dt, CAMERA.followXMs);
-      [camera.y, camera.yVelocity] = smoothDamp(camera.y, camera.yVelocity, cameraTargetY(), CAMERA.followYMs, dt);
+      // Falls are followed a little faster so the landing below reads sooner.
+      const targetY = cameraTargetY();
+      const falling = !player.onGround && !player.isClimbing && player.vy > 0 && targetY > camera.y;
+      [camera.y, camera.yVelocity] = smoothDamp(camera.y, camera.yVelocity, targetY, falling ? CAMERA.fallFollowMs : CAMERA.followYMs, dt);
       // Hard limits: the whole player always stays in frame.
       const centre = player.x + player.width / 2;
       camera.x = clamp(camera.x, centre + 24 - viewWidth, centre - 24);
@@ -3797,7 +4153,9 @@
     // Reflection gives identical edge samples at every repeat, including the planet
     // horizon and translucent trusses. Each panel overlaps its neighbour by one
     // pixel so fractional scroll positions never open a seam.
-    function drawLayer(image, scroll, scale = 1, top = 0, cropHeight = height) {
+    // cropHeight limits a layer's height from its top (the ceiling truss);
+    // other layers are never clipped, since a lifted layer starts above the canvas.
+    function drawLayer(image, scroll, scale = 1, top = 0, cropHeight = Infinity) {
       const tileWidth = width * scale;
       const tileHeight = image.height * tileWidth / image.width;
       let tile = Math.floor(scroll / tileWidth);
@@ -4415,13 +4773,14 @@
       if (age > 2600) { stageBanner = null; return; }
       const alpha = Math.min(1, age / 250, (2600 - age) / 500);
       ctx.globalAlpha = alpha;
-      ctx.font = '800 22px system-ui, sans-serif';
+      ctx.font = '700 26px "Barlow Condensed", system-ui, sans-serif';
       ctx.textAlign = 'center';
       const w = ctx.measureText(stageBanner.text).width + 36;
       ctx.fillStyle = 'rgba(10,18,29,0.82)';
-      ctx.fillRect(width / 2 - w / 2, 78, w, 38);
+      // Below the HUD and objective panel, above the player's deck.
+      ctx.fillRect(width / 2 - w / 2, 150, w, 40);
       ctx.fillStyle = '#ffe3b8';
-      ctx.fillText(stageBanner.text, width / 2, 105);
+      ctx.fillText(stageBanner.text, width / 2, 179);
       ctx.textAlign = 'left';
       ctx.globalAlpha = 1;
     }
@@ -4492,6 +4851,7 @@
       if (gameState === 'shop') return menuSelection;
       if (gameState === 'map') return mapRow;
       if (gameState === 'gameover') return endSelection;
+      if (gameState === 'credits') return 0;
       return 0;
     }
 
@@ -4576,9 +4936,11 @@
       const briefText = element('p', 'map-text');
       brief.append(briefName, briefStatus, briefObjective, briefText);
       const actions = element('div', 'menu-options map-actions');
-      addMenuRow(actions, 'Continue', STAGES.length, true);
-      addMenuRow(actions, 'Quickplay', STAGES.length + 1, true);
-      addMenuRow(actions, 'Back', STAGES.length + 2, false);
+      // Campaign Continue is the amber primary action; Quickplay is a
+      // separate cyan-outlined run that never touches campaign progress.
+      addMenuRow(actions, 'Continue', STAGES.length, true).classList.add('action-campaign');
+      addMenuRow(actions, 'Quickplay', STAGES.length + 1, true).classList.add('action-quickplay');
+      addMenuRow(actions, 'Back', STAGES.length + 2, false).classList.add('action-back');
       const notice = element('p', 'map-notice');
       notice.setAttribute('role', 'status');
       side.append(brief, actions, notice);
@@ -4596,9 +4958,12 @@
         row.dataset.status = status;
         row.dataset.next = String(next);
         row.setAttribute('aria-pressed', String(i === mapPick));
-        value.textContent = statusText[status] + (next ? ' · Next' : '');
+        const picked = i === mapPick;
+        // Every state is written out, not only coloured.
+        value.textContent = (status === 'locked' ? '🔒 ' : status === 'cleared' ? '✓ ' : '') + statusText[status] +
+          (next ? ' · Next' : '') + (picked ? ' · Selected' : '');
         // Spoken state: name, status and, when locked, how to unlock it.
-        row.setAttribute('aria-label', `${stage.name}. ${statusText[status]}${next ? ', next campaign stop' : ''}. ${status === 'locked' ? unlockCondition(stage) : ''}`.trim());
+        row.setAttribute('aria-label', `${stage.name}. ${statusText[status]}${next ? ', next campaign stop' : ''}${picked ? ', selected' : ''}. ${status === 'locked' ? unlockCondition(stage) : ''}`.trim());
       });
       mapParts.segments.forEach((line, i) => line.setAttribute('class', campaign.unlocked.includes(STAGES[i + 1].id) ? 'open' : 'locked'));
       const picked = STAGES[mapPick];
@@ -4660,7 +5025,7 @@
       const panel = element('section', mode === 'shop' ? 'menu-panel shop-panel' : (mode === 'map' ? 'menu-panel map-panel' : 'menu-panel'));
       const endHeading = { dead: 'Game over', quickplay: 'Quickplay clear', cleared: 'Stage clear', complete: 'Mission complete' }[endKind] || 'Game over';
       const heading = element(mode === 'start' ? 'h1' : 'h2', '', {
-        start: 'SPACE COMMANDO', menu: 'Paused', settings: 'Settings', shop: 'Shop', map: 'Star map',
+        start: 'SPACE COMMANDO', menu: 'Paused', settings: 'Settings', shop: 'Shop', map: 'Star map', credits: 'Credits',
         gameover: endHeading
       }[mode]);
       heading.id = 'menu-heading';
@@ -4700,9 +5065,33 @@
         buildStarMap(panel);
         return;
       }
+      if (mode === 'credits') {
+        panel.classList.add('credits-panel');
+        const roll = element('div', 'credits-roll');
+        // Focusable and labelled, so keyboard and screen-reader users can read it.
+        roll.tabIndex = 0;
+        roll.setAttribute('role', 'region');
+        roll.setAttribute('aria-label', 'Credits');
+        for (const [title, lines] of CREDITS) {
+          const section = element('section');
+          section.append(element('h3', '', title));
+          for (const line of lines) if (line) section.append(element('p', '', line));
+          roll.append(section);
+        }
+        // A touch, wheel or drag on the roll holds the auto-scroll.
+        for (const type of ['pointerdown', 'wheel', 'touchstart']) {
+          roll.addEventListener(type, () => { creditsRoll.holdUntil = performance.now() + 3000; }, { passive: true });
+        }
+        panel.append(roll);
+        panel.append(element('p', 'menu-hint', effectsReduced() ? 'Scroll or use the arrow keys to read.' : 'The credits scroll on their own; scroll or use the arrow keys to read at your pace.'));
+        const options = element('div', 'menu-options');
+        addMenuRow(options, creditsFrom === 'complete' ? 'Skip credits' : 'Back', 0, false).classList.add('primary');
+        panel.append(options);
+        return;
+      }
       const options = element('div', 'menu-options');
       const labels = {
-        start: ['Star map', 'Settings'],
+        start: ['Star map', 'Settings', 'Credits'],
         menu: ['Resume', 'Retry stage', 'Star map', 'Settings'],
         settings: ['Difficulty', 'Music', 'Particles', 'Camera shake and flashes', 'Sound effects', 'Haptics'],
         gameover: endOptions.map(([label]) => label)
@@ -4722,7 +5111,11 @@
         panel.append(element('p', 'gameover-summary', `${summary} · Gold: ${player.gold}`));
         if (data && endKind === 'complete' && data.endCard) panel.append(element('p', 'gameover-card', data.endCard));
       }
-      labels.forEach((label, index) => addMenuRow(options, label, index, mode === 'settings'));
+      labels.forEach((label, index) => {
+        const row = addMenuRow(options, label, index, mode === 'settings');
+        // The first action on the start, pause and results screens is the primary one.
+        if (index === 0 && (mode === 'start' || mode === 'menu' || mode === 'gameover')) row.classList.add('primary');
+      });
       panel.append(options);
       if (mode === 'settings') addBackButton(panel, 'Back', 'system-button menu-back');
       if (mode === 'start' && !isMobile) {
@@ -4737,6 +5130,7 @@
         menuMode = mode;
         buildMenu(mode);
         document.body.toggleAttribute('data-playing', mode === 'play' || mode === 'scene');
+        document.body.dataset.state = mode;
       }
       if (menuLayer.hidden) return;
       const selected = selectedRow();
@@ -4794,6 +5188,7 @@
         if (scene.left <= 0) advanceScene();
       }
       syncStoryHud();
+      updateCreditsRoll(now);
       if ((document.body.dataset.boot === 'ready' && gameState !== menuMode) ||
           (menuMode === 'start' && menuRows[0].row.disabled !== !artReady)) syncMenu();
       updateMusic(now);

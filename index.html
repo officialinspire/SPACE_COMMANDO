@@ -19,6 +19,7 @@
   <meta name="twitter:description" content="Fight through a breached orbital station in this military sci-fi side-scroller from INSPIRE.">
   <meta name="twitter:image" content="https://officialinspire.github.io/SPACE_COMMANDO/assets/ui/orbital-breach-social.jpg">
   <meta name="twitter:image:alt" content="An armored commando looks out through a breached orbital hangar.">
+  <link rel="preload" href="assets/fonts/BarlowCondensed-Bold.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body data-boot="start">
@@ -59,22 +60,21 @@
       </div>
     </div>
 
-    <div id="mobile-controls" class="touch-controls" role="group" aria-label="Game controls" hidden>
-      <div class="direction-pad" role="group" aria-label="Movement and aim">
-        <button class="control-btn" type="button" data-key="ArrowUp" aria-label="Up, aim or climb">↑</button>
-        <button class="control-btn" type="button" data-key="ArrowLeft" aria-label="Move left">←</button>
-        <button class="control-btn" type="button" data-key="ArrowDown" aria-label="Down, crouch or climb">↓</button>
-        <button class="control-btn" type="button" data-key="ArrowRight" aria-label="Move right">→</button>
+    <div id="mobile-controls" class="touch-controls" role="group" aria-label="Touch controls" hidden>
+      <!-- Left stick: drag the ring to move, crouch or climb; press the centre to jump. -->
+      <button id="stick-move" class="stick stick-move" type="button" aria-label="Move stick. Drag to move, crouch or climb. Press the centre to jump.">
+        <span class="stick-knob"></span><span class="stick-label">Jump</span>
+      </button>
+      <!-- Right stick: press to fire, hold for automatic fire, drag up or down to aim. -->
+      <button id="stick-aim" class="stick stick-aim" type="button" aria-label="Fire stick. Press to fire, hold for automatic weapons, drag up to aim up or down to crouch-fire.">
+        <span class="stick-knob"></span><span class="stick-label">Fire</span>
+      </button>
+      <div class="touch-buttons touch-left">
+        <button class="control-btn" type="button" data-key="Escape" aria-label="Pause menu">Menu</button>
       </div>
-      <div class="utility-pad" role="group" aria-label="Menu controls">
-        <button class="control-btn" type="button" data-key="Escape">Menu</button>
-        <button class="control-btn" type="button" data-key="Enter">Select</button>
-        <button class="control-btn" type="button" data-key="p">Shop</button>
-      </div>
-      <div class="action-pad" role="group" aria-label="Action controls">
-        <button class="control-btn" type="button" data-key="Space">Jump</button>
-        <button class="control-btn" type="button" data-key="z">Fire</button>
+      <div class="touch-buttons touch-right">
         <button class="control-btn" type="button" data-key="x">Reload</button>
+        <button class="control-btn" type="button" data-key="p">Shop</button>
         <button id="interact-btn" class="control-btn interact-btn" type="button" data-key="e" aria-label="Interact" hidden>Use</button>
       </div>
     </div>
