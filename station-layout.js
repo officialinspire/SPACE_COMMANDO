@@ -779,7 +779,108 @@
     return { seed, solids, ladders, surfaces, accessible, dropSurfaces, regions, navEdges, encounters: placed, chunks, report, start, goal, graph };
   }
 
-  const api = { build, STAGE_PLANS, moveBody, steer, overlaps, jumpHeight, extractSurfaces, surfaceUnder, shortestPath, mulberry32, SLAB, CATWALK, WALL, LADDER_WIDTH, HEADROOM };
+  // Story anchors (interactables) and doors on a built layout.
+  //
+  // spec: { anchors: { id: { chunks, decks, f, optional } }, doors: [{ id,
+  // chunk, until }], phases: [[anchor ids], ...] } where phases list the
+  // required anchors in the order the objectives ask for them.
+  //
+  // A door is a full-height barrier at the end of its chunk, shut until its
+  // `until` anchors are done. Each required anchor must stand on a surface
+  // with a clear body box away from ladders and cover, and for its phase
+  // (doors of unfinished anchors shut) every surface the player can reach
+  // from the start must still be able to reach it by robust moves. So a
+  // player can never get past or below an interaction they still need.
+  function placeStory(layout, config, spec) {
+    const c = { ...config, world: { width: config.worldWidth, groundY: config.deckY[0] } };
+    const G = c.deckY[0];
+    const doors = (spec.doors || []).map(d => {
+      const chunk = layout.chunks[d.chunk];
+      return { ...d, solid: { type: 'door', role: 'door', x: chunk.x1 - 16, y: 0, width: 16, height: G, door: d.id } };
+    });
+    const phases = spec.phases || [];
+    const phaseOf = id => phases.findIndex(list => list.includes(id));
+    const closedFor = phase => doors.filter(d => d.until.some(id => phaseOf(id) >= phase));
+    const graphs = new Map();
+    const graphFor = phase => {
+      const closed = closedFor(phase).map(d => d.solid);
+      const key = closed.map(s => s.door).join(',');
+      if (!graphs.has(key)) {
+        const solids = [...layout.solids, ...closed];
+        const surfaces = extractSurfaces(solids);
+        const { edges } = buildGraph({ ...c, _ladders: layout.ladders }, solids, layout.ladders, surfaces, { x0: -Infinity, x1: Infinity });
+        const start = surfaceUnder(surfaces, layout.start.x - 16, 32, layout.start.y);
+        const forward = start ? reach(edges, start.id) : new Set();
+        graphs.set(key, { solids, surfaces, edges, forward });
+      }
+      return graphs.get(key);
+    };
+    const fits = (g, x, y) => {
+      const body = { x, y: y - 32, width: 32, height: 32 };
+      if (g.solids.some(o => overlaps(body, o))) return false;
+      if (layout.ladders.some(l => x + 32 > l.x - 40 && x < l.x + l.width + 40 && y > l.top - 1 && y < l.bottom + 1)) return false;
+      // No cover directly under or beside the spot, and room to stand.
+      if (layout.solids.some(o => o.role === 'cover' && x + 32 > o.x - 20 && x < o.x + o.width + 20 && Math.abs(o.y + o.height - y) < 1)) return false;
+      return true;
+    };
+    const placed = {};
+    const checks = [];
+    for (const [id, a] of Object.entries(spec.anchors)) {
+      const phase = phaseOf(id);
+      const g = graphFor(Math.max(0, phase));
+      let spot = null;
+      const tried = [];
+      for (const ci of a.chunks) {
+        const chunk = layout.chunks[ci];
+        if (!chunk) continue;
+        const doorX = Math.min(...doors.filter(d => d.chunk === ci).map(d => d.solid.x), Infinity);
+        for (const deck of a.decks) {
+          // The preferred spots first, then a fine sweep across the chunk.
+          const sweep = Array.from({ length: 21 }, (_, i) => +(0.1 + i * 0.04).toFixed(2));
+          for (const f of [...a.f, ...sweep.filter(v => !a.f.includes(v))]) {
+            const x = Math.round(chunk.x0 + f * (chunk.x1 - chunk.x0) - 16);
+            if (x + 32 > doorX - 40) continue;
+            const y = c.deckY[deck];
+            const surface = surfaceUnder(g.surfaces, x, 32, y);
+            if (!surface || x < surface.x0 + 8 || x + 32 > surface.x1 - 8 || !fits(g, x, y)) { tried.push([ci, deck, f, 'surface']); continue; }
+            if (!g.forward.has(surface.id)) { tried.push([ci, deck, f, 'unreachable']); continue; }
+            if (!a.optional) {
+              const back = reach(g.edges, surface.id, true, true);
+              const stranded = [...g.forward].filter(s => !back.has(s));
+              if (stranded.length) { tried.push([ci, deck, f, `stranded ${stranded.length}`]); continue; }
+            }
+            spot = { id, x, y, chunk: ci, deck, f, surface: { x0: surface.x0, x1: surface.x1, y: surface.y } };
+            break;
+          }
+          if (spot) break;
+        }
+        if (spot) break;
+      }
+      checks.push({ id, ok: Boolean(spot), tried: spot ? tried.length : tried });
+      if (spot) placed[id] = spot;
+    }
+    const ok = checks.every(ch => ch.ok || spec.anchors[ch.id].optional);
+    // Fallback: a required anchor with no valid spot moves onto the goal
+    // surface, which every reachable surface can reach, and doors are dropped.
+    let fallback = false;
+    let kept = doors;
+    if (!ok) {
+      fallback = true;
+      kept = [];
+      const base = surfaceUnder(layout.surfaces, layout.goal.x - 16, 32, layout.goal.y);
+      let x = layout.goal.x - 180;
+      // Without doors every required anchor must be unskippable, so all move.
+      for (const ch of checks) {
+        if (spec.anchors[ch.id].optional) continue;
+        while (x > base.x0 + 8 && !fits({ solids: layout.solids }, x, base.y)) x -= 24;
+        placed[ch.id] = { id: ch.id, x, y: base.y, chunk: layout.chunks.length - 1, deck: c.deckY.indexOf(base.y), fallback: true, surface: { x0: base.x0, x1: base.x1, y: base.y } };
+        x -= 120;
+      }
+    }
+    return { ok, fallback, anchors: placed, doors: kept.map(d => ({ id: d.id, until: d.until, label: d.label, solid: d.solid })), checks };
+  }
+
+  const api = { build, placeStory, STAGE_PLANS, moveBody, steer, overlaps, jumpHeight, extractSurfaces, surfaceUnder, shortestPath, mulberry32, SLAB, CATWALK, WALL, LADDER_WIDTH, HEADROOM };
   root.SpaceStation = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

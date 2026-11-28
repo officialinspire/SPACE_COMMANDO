@@ -150,6 +150,33 @@
     }
   })();
 
+  const STORY = window.SpaceStory;
+
+  // Required anchors in the order the objectives ask for them.
+  function storyPhases(data) {
+    return data.steps.filter(step => step.type !== 'reach').map(step => step.anchors || [step.anchor])
+      .filter((list, i, all) => all.findIndex(other => other.join() === list.join()) === i);
+  }
+
+  // A mid-stage checkpoint from untrusted data, or null. A bad checkpoint
+  // only drops back to the stage entry; it never resets the campaign.
+  function sanitizeCheckpoint(stageId, raw) {
+    const data = STORY.STAGES[stageId];
+    if (!data || !raw || typeof raw !== 'object') return null;
+    const step = raw.step;
+    if (!Number.isInteger(step) || step < 1 || step >= data.steps.length || !data.steps[step - 1].checkpoint) return null;
+    const loadout = sanitizeLoadout(raw.loadout);
+    if (!loadout || !(raw.at in data.anchors)) return null;
+    const list = (value, allowed) => Array.isArray(value) ? [...new Set(value.filter(v => allowed.includes(v)))] : [];
+    const done = list(raw.done, Object.keys(data.anchors));
+    // Every anchor of the finished steps must be done.
+    const needed = data.steps.slice(0, step).flatMap(s => s.anchors || []);
+    if (!needed.every(id => done.includes(id))) return null;
+    const fired = list(raw.fired, data.triggers.map(t => t.id));
+    const elapsed = Number.isFinite(raw.elapsed) && raw.elapsed >= 0 ? Math.min(raw.elapsed, 3.6e7) : 0;
+    return { step, at: raw.at, done, fired, loadout, elapsed };
+  }
+
   function freshCampaign() {
     return { unlocked: ['station'], cleared: [], entry: null };
   }
@@ -195,7 +222,7 @@
         const loadout = sanitizeLoadout(data.entry.loadout) || sanitizeLoadout(stageById(data.entry.stage).quickplay);
         // Elapsed play time at entry keeps the difficulty ramp where it was.
         const elapsed = Number.isFinite(data.entry.elapsed) && data.entry.elapsed >= 0 ? Math.min(data.entry.elapsed, 3.6e7) : 0;
-        entry = { stage: data.entry.stage, seed, loadout, elapsed };
+        entry = { stage: data.entry.stage, seed, loadout, elapsed, checkpoint: sanitizeCheckpoint(data.entry.stage, data.entry.checkpoint) };
       }
       return { unlocked, cleared, entry };
     } catch {
@@ -680,7 +707,7 @@
 
     function wantedMusic() {
       if (document.body.dataset.boot !== 'ready' || !SETTINGS.audio || document.hidden) return null;
-      return gameState === 'play' ? STAGES[stageIndex].music : 'menu';
+      return gameState === 'play' || gameState === 'scene' ? STAGES[stageIndex].music : 'menu';
     }
 
     // Called every frame: fade each track toward its target for the state.
@@ -996,6 +1023,9 @@
           playLegacyEffect(selectSfx);
           endOptions[endSelection][1]();
         }
+      } else if (gameState === 'scene') {
+        if (e.key === 'Escape') closeScene(true);
+        else if (e.key === 'Enter' || e.key === ' ' || e.key === 'Space' || e.key === 'ArrowRight') advanceScene();
       } else if (gameState === 'map') {
         // Rows: the four waypoints, then Continue, Quickplay and Back.
         const rows = STAGES.length + 3;
@@ -1034,8 +1064,19 @@
       releaseGameplayKey(keyboardKeys, key);
       if (scrollKeys.includes(key) && !(key === 'Space' && e.target?.closest?.('button'))) e.preventDefault();
     });
-    window.addEventListener('blur', resetGameplayInput);
-    document.addEventListener('visibilitychange', resetGameplayInput);
+    // Losing focus releases held input and pauses play, so timers and holds
+    // never run while the player can't see or control the game.
+    function autoPause() {
+      resetGameplayInput();
+      if (gameState === 'play' && document.body.dataset.boot === 'ready') {
+        gameState = 'menu';
+        mainMenuSelection = 0;
+        syncMenu();
+      }
+    }
+    window.addEventListener('blur', () => { windowFocused = false; autoPause(); });
+    window.addEventListener('focus', () => { windowFocused = true; });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) autoPause(); else resetGameplayInput(); });
     document.addEventListener('fullscreenchange', resetGameplayInput);
     window.addEventListener('orientationchange', resetGameplayInput);
     window.screen.orientation?.addEventListener('change', resetGameplayInput);
@@ -1276,6 +1317,13 @@
     let endSelection = 0;
     let mapRow = 0;
     let mapPick = 0;
+    // Campaign story: placement, the running attempt and the open scene.
+    let storyPlan = null;
+    let story = null;
+    let scene = null;
+    let endReason = '';
+    let leaving = false;
+    let windowFocused = true;
 
     function stageSeed(id, base) {
       if (id === 'station') return base >>> 0;
@@ -1315,28 +1363,39 @@
 
     // Begin a stage in either mode from a known seed and loadout. Campaign
     // entries are saved so Continue and Retry restore exactly this start.
-    function startStage(mode, id, seed, loadout, elapsed = 0) {
+    // A checkpoint resumes the same seed mid-stage with its own loadout.
+    function startStage(mode, id, seed, loadout, elapsed = 0, checkpoint = null) {
       resetRunState();
       playMode = mode;
-      elapsedTime = elapsed;
       applyLoadout(loadout);
-      sessionEntry = { stage: id, seed, loadout: captureLoadout(), elapsed };
+      sessionEntry = { stage: id, seed, loadout: captureLoadout(), elapsed, checkpoint: mode === 'campaign' ? checkpoint || null : null };
+      if (sessionEntry.checkpoint) applyLoadout(checkpoint.loadout);
+      elapsedTime = sessionEntry.checkpoint ? checkpoint.elapsed : elapsed;
       if (mode === 'campaign') {
         campaign.entry = sessionEntry;
         saveCampaign(campaign);
       }
       enterStage(stageOrder(id), seed);
+      setupStory(sessionEntry.checkpoint);
     }
 
     function continueCampaign() {
       const entry = campaign.entry;
-      if (entry) startStage('campaign', entry.stage, entry.seed, entry.loadout, entry.elapsed || 0);
+      if (entry) startStage('campaign', entry.stage, entry.seed, entry.loadout, entry.elapsed || 0, entry.checkpoint);
       else startStage('campaign', 'station', freshSeed('station'), defaultLoadout());
     }
 
+    // Retry stage starts over from the stage entry: objectives, timer, doors
+    // and one-shot triggers all reset, and any checkpoint is dropped.
     function retryStage() {
       const entry = sessionEntry || { stage: 'station', seed: freshSeed('station'), loadout: defaultLoadout(), elapsed: 0 };
       startStage(playMode, entry.stage, entry.seed, entry.loadout, entry.elapsed);
+    }
+
+    function retryCheckpoint() {
+      const entry = sessionEntry;
+      if (!entry?.checkpoint) { retryStage(); return; }
+      startStage(playMode, entry.stage, entry.seed, entry.loadout, entry.elapsed, entry.checkpoint);
     }
 
     function startQuickplay(id) {
@@ -1357,13 +1416,17 @@
       endKind = kind;
       endSelection = 0;
       const next = STAGES[stageIndex + 1];
+      const checkpoint = playMode === 'campaign' && sessionEntry?.checkpoint;
       endOptions = {
-        dead: [['Retry stage', retryStage], ['Star map', openStarMap]],
+        dead: checkpoint ? [['Retry from checkpoint', retryCheckpoint], ['Restart stage', retryStage], ['Star map', openStarMap]]
+          : [['Retry stage', retryStage], ['Star map', openStarMap]],
         quickplay: [['Retry stage', retryStage], ['Star map', openStarMap]],
         cleared: [[`Continue to ${next?.name}`, continueCampaign], ['Star map', openStarMap]],
         complete: [['Star map', openStarMap]]
       }[kind];
       runComplete = kind === 'complete';
+      if (kind !== 'dead') endReason = '';
+      closeCaption();
       gameState = 'gameover';
       playerDownAt = performance.now();
       resetGameplayInput();
@@ -1379,6 +1442,12 @@
       obstacles = layout.solids;
       ladders = layout.ladders;
       decorations = stage.env ? placeDecorations(stage.env) : [];
+      // Story anchors and doors exist only in the campaign.
+      const data = playMode === 'campaign' ? STORY.STAGES[stage.id] : null;
+      storyPlan = data ? window.SpaceStation.placeStory(layout, {
+        worldWidth, worldHeight, deckY: DECK_Y, movement: MOVEMENT, body: { width: 32, height: 32 }
+      }, { anchors: data.anchors, doors: data.doors, phases: storyPhases(data) }) : null;
+      if (storyPlan) obstacles = [...layout.solids, ...storyPlan.doors.map(door => door.solid)];
     }
 
     // Non-solid props: floor pieces on walkable decks and hanging pieces
@@ -1444,6 +1513,7 @@
       player.hitFlashTimer = 0;
       lastLanding = -Infinity;
       resetGameplayInput();
+      story = null;
       generateEnvironment();
       snapCamera();
       stageBanner = { text: playMode === 'quickplay' ? `Quickplay · ${STAGES[index].name}` : `Stage ${index + 1} · ${STAGES[index].name}`, at: performance.now() };
@@ -1460,6 +1530,9 @@
     // its entry with the loadout carried out of this stage; a Quickplay clear
     // changes nothing in the campaign.
     function leaveStage() {
+      // One clear per attempt, however the exit and its scene are reached.
+      if (leaving) return;
+      leaving = true;
       if (playMode === 'quickplay') { showEnd('quickplay'); return; }
       const id = STAGES[stageIndex].id;
       if (!campaign.cleared.includes(id)) campaign.cleared.push(id);
@@ -1473,6 +1546,441 @@
         campaign.entry = null;
         saveCampaign(campaign);
         showEnd('complete');
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // Campaign story. story.js holds the captions, speakers, one-shot
+    // triggers, objectives and scenes; this runs one attempt of a stage.
+    const storyHud = document.getElementById('story-hud');
+    const objectivePanel = storyHud.querySelector('.story-objective');
+    const objectiveText = document.getElementById('story-objective-text');
+    const objectiveMeta = document.getElementById('story-objective-meta');
+    const objectiveBar = storyHud.querySelector('.objective-progress');
+    const captionBox = document.getElementById('story-caption');
+    const liveRegion = document.getElementById('story-live');
+    const interactButton = document.getElementById('interact-btn');
+    const gameContainer = document.getElementById('game-container');
+    const sceneLayer = document.getElementById('story-scene');
+    const sceneArt = sceneLayer.querySelector('.scene-art');
+    const sceneTitle = document.getElementById('scene-title');
+    const sceneCaption = sceneLayer.querySelector('.scene-caption');
+    const sceneNext = document.getElementById('scene-next');
+    const sceneSkip = document.getElementById('scene-skip');
+    const hudCache = new Map();
+
+    function setCached(key, value, apply) {
+      if (hudCache.get(key) === value) return;
+      hudCache.set(key, value);
+      apply(value);
+    }
+
+    function announce(text) {
+      // A repeated message still re-announces.
+      liveRegion.textContent = liveRegion.textContent === text ? `${text}​` : text;
+    }
+
+    function lineFor(id) {
+      return STORY.LINES[id] || { speaker: 'narration', text: String(id) };
+    }
+
+    // Radio lines are brief and clear on their own.
+    function lineDuration(line) {
+      return Math.max(2600, Math.min(6000, 1400 + line.text.length * 46));
+    }
+
+    function fillCaption(box, line) {
+      const speaker = STORY.SPEAKERS[line.speaker] || { label: '' };
+      const portrait = box.querySelector('.caption-portrait');
+      if (speaker.portrait) {
+        portrait.onerror = () => { portrait.hidden = true; };
+        portrait.src = `assets/story/portrait-${speaker.portrait}.webp`;
+        portrait.hidden = false;
+      } else portrait.hidden = true;
+      box.querySelector('.caption-speaker').textContent = speaker.label;
+      box.querySelector('.caption-text').textContent = line.text;
+    }
+
+    function say(ids) {
+      if (story) for (const id of ids) story.queue.push(lineFor(id));
+    }
+
+    function closeCaption() {
+      if (story) {
+        story.queue = [];
+        story.caption = null;
+      }
+      captionBox.hidden = true;
+    }
+
+    // Captions age with simulation time, so pause and menus hold them.
+    function updateCaptions(dt) {
+      if (story.caption) {
+        story.caption.left -= dt;
+        if (story.caption.left > 0) return;
+        story.caption = null;
+        captionBox.hidden = true;
+      }
+      const line = story.queue.shift();
+      if (!line) return;
+      story.caption = { line, left: lineDuration(line) };
+      fillCaption(captionBox, line);
+      captionBox.hidden = false;
+      const label = STORY.SPEAKERS[line.speaker]?.label;
+      announce(label ? `${label}: ${line.text}` : line.text);
+    }
+
+    function setupStory(checkpoint) {
+      const data = playMode === 'campaign' && storyPlan ? STORY.STAGES[STAGES[stageIndex].id] : null;
+      closeCaption();
+      hudCache.clear();
+      if (!data) {
+        story = null;
+        storyHud.hidden = true;
+        interactButton.hidden = true;
+        return;
+      }
+      story = { data, step: 0, done: new Set(), fired: new Set(), timer: null, hold: 0, cues: new Set(), warned: new Set(),
+        queue: [], caption: null, near: null, announcedNear: null, exitHintAt: -Infinity, closedDoors: [] };
+      if (checkpoint) {
+        story.step = checkpoint.step;
+        checkpoint.done.forEach(id => story.done.add(id));
+        checkpoint.fired.forEach(id => story.fired.add(id));
+        const at = storyPlan.anchors[checkpoint.at];
+        if (at) {
+          player.x = at.x;
+          player.y = at.y - player.height;
+          snapCamera();
+        }
+      }
+      syncDoors();
+      beginStep();
+      if (!checkpoint && data.start?.scene) openScene(data.start.scene);
+    }
+
+    // A step's timer and hold progress always start fresh, including after
+    // a checkpoint retry.
+    function beginStep() {
+      const step = story.data.steps[story.step];
+      story.timer = step?.timer ? step.timer * 1000 : null;
+      story.hold = 0;
+      story.cues = new Set();
+      story.warned = new Set();
+    }
+
+    function syncDoors() {
+      story.closedDoors = storyPlan.doors.filter(door => !door.until.every(id => story.done.has(id)));
+      obstacles = [...layout.solids, ...story.closedDoors.map(door => door.solid)];
+    }
+
+    function closedDoorX() {
+      return story?.closedDoors.length ? Math.min(...story.closedDoors.map(door => door.solid.x)) : Infinity;
+    }
+
+    function storyExitOpen() {
+      return !story || story.data.steps[story.step]?.type === 'reach';
+    }
+
+    function anchorInRange(a) {
+      const feet = player.y + player.height;
+      return !player.isClimbing && Math.abs(feet - a.y) < 3 && Math.abs(player.x + player.width / 2 - (a.x + 16)) < 40;
+    }
+
+    function inHoldZone(id) {
+      const a = storyPlan.anchors[id];
+      const zone = story.data.anchors[id].zone || 140;
+      return Math.abs(player.y + player.height - a.y) < 3 && Math.abs(player.x + player.width / 2 - (a.x + 16)) < zone;
+    }
+
+    // Anchors the player can use right now: the current step's unfinished
+    // ones, plus optional extras such as the jungle recorder.
+    function activeAnchors() {
+      const step = story.data.steps[story.step];
+      const ids = step?.type === 'interact' ? step.anchors.filter(id => !story.done.has(id)) : [];
+      for (const [id, a] of Object.entries(story.data.anchors)) {
+        if (a.optional && !story.done.has(id) && storyPlan.anchors[id]) ids.push(id);
+      }
+      return ids;
+    }
+
+    function updateStory(dt, interactTap) {
+      const data = story.data;
+      for (const trigger of data.triggers) {
+        if (story.fired.has(trigger.id)) continue;
+        const chunk = layout.chunks[trigger.at.chunk];
+        if (player.x + player.width / 2 >= chunk.x0 + trigger.at.f * (chunk.x1 - chunk.x0)) {
+          story.fired.add(trigger.id);
+          say(trigger.lines);
+        }
+      }
+      story.near = activeAnchors().find(id => anchorInRange(storyPlan.anchors[id])) || null;
+      if (story.near && story.announcedNear !== story.near) announce(`${isMobile ? 'Use' : 'Press E'}: ${data.anchors[story.near].prompt}`);
+      story.announcedNear = story.near;
+      if (interactTap && story.near) {
+        interact(story.near);
+        if (gameState !== 'play') return;
+      }
+      const step = data.steps[story.step];
+      if (step?.type === 'hold') {
+        if (inHoldZone(step.anchor)) story.hold += dt;
+        const progress = story.hold / (step.seconds * 1000);
+        for (const cue of step.cues || []) {
+          if (progress >= cue.at && !story.cues.has(cue.at)) {
+            story.cues.add(cue.at);
+            say(cue.lines);
+          }
+        }
+        if (progress >= 1) completeStep(step.anchor);
+      } else if (story.timer !== null) {
+        story.timer -= dt;
+        const left = Math.ceil(story.timer / 1000);
+        for (const mark of [30, 10]) {
+          if (left <= mark && !story.warned.has(mark)) {
+            story.warned.add(mark);
+            announce(`${mark} seconds left.`);
+          }
+        }
+        if (story.timer <= 0) {
+          endReason = step.fail;
+          showEnd('dead');
+          return;
+        }
+      }
+      if (gameState === 'play') updateCaptions(dt);
+    }
+
+    function interact(id) {
+      story.done.add(id);
+      playLegacyEffect(selectSfx);
+      const step = story.data.steps[story.step];
+      if (story.data.anchors[id].optional) {
+        say(story.data.interactions?.[id]?.lines || []);
+        return;
+      }
+      if (step.anchors.every(a => story.done.has(a))) completeStep(id);
+      else {
+        syncDoors();
+        say(step.progress?.lines || []);
+      }
+    }
+
+    function completeStep(at) {
+      const step = story.data.steps[story.step];
+      const done = step.done || {};
+      say(done.lines || []);
+      story.step += 1;
+      syncDoors();
+      beginStep();
+      const save = () => { if (step.checkpoint) saveCheckpoint(at); };
+      // A scene's checkpoint is saved once it closes, so leaving mid-scene
+      // replays it.
+      if (done.scene) openScene(done.scene, save);
+      else save();
+    }
+
+    function saveCheckpoint(at) {
+      if (playMode !== 'campaign' || !sessionEntry) return;
+      const required = [...story.done].filter(id => !story.data.anchors[id].optional);
+      sessionEntry.checkpoint = { step: story.step, at, done: required, fired: [...story.fired], loadout: captureLoadout(), elapsed: elapsedTime };
+      campaign.entry = sessionEntry;
+      saveCampaign(campaign);
+    }
+
+    // An exit that isn't open yet holds the player back and says why.
+    function blockExit() {
+      player.x = Math.min(player.x, worldWidth - EXIT_WIDTH - player.width - 2);
+      player.vx = Math.min(0, player.vx);
+      if (elapsedTime - story.exitHintAt > 4500) {
+        story.exitHintAt = elapsedTime;
+        story.queue.unshift({ speaker: 'narration', text: story.data.exitLocked });
+      }
+    }
+
+    // Objective panel, captions and the contextual Interact button.
+    function syncStoryHud() {
+      const show = Boolean(story) && gameState === 'play';
+      setCached('show', show, v => { storyHud.hidden = !v; });
+      const prompt = show && story.near ? story.data.anchors[story.near].prompt : '';
+      setCached('interact', prompt, v => {
+        interactButton.hidden = !v;
+        interactButton.setAttribute('aria-label', v ? `Interact: ${v}` : 'Interact');
+      });
+      if (!show) return;
+      const step = story.data.steps[story.step];
+      setCached('objective', step?.text || '', v => { objectiveText.textContent = v; });
+      const parts = [];
+      let urgent = false;
+      if (story.timer !== null) {
+        const sec = Math.max(0, Math.ceil(story.timer / 1000));
+        parts.push(`${step.meter || 'Time'} ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`);
+        urgent = sec <= 10;
+      }
+      let progress = null;
+      if (step?.type === 'hold') {
+        progress = Math.min(1, story.hold / (step.seconds * 1000));
+        parts.push(`${step.meter || 'Progress'} ${Math.floor(progress * 100)}%${inHoldZone(step.anchor) ? '' : ' · stay in range'}`);
+      } else if (step?.type === 'interact' && step.anchors.length > 1) {
+        parts.push(`${step.anchors.filter(id => story.done.has(id)).length} of ${step.anchors.length}`);
+      }
+      if (prompt) parts.push(`${isMobile ? 'Use' : 'E'} · ${prompt}`);
+      setCached('meta', parts.join(' · '), v => { objectiveMeta.textContent = v; });
+      setCached('urgent', urgent, v => { objectivePanel.dataset.urgent = String(v); });
+      setCached('bar', progress === null ? -1 : Math.round(progress * 100), v => {
+        objectiveBar.hidden = v < 0;
+        objectiveBar.firstElementChild.style.width = `${Math.max(0, v)}%`;
+      });
+    }
+
+    // Still-image scenes pause the simulation. Next advances, Skip (or
+    // Escape) closes and replays the scene's essential lines as captions.
+    function openScene(id, onDone = null) {
+      const data = STORY.SCENES[id];
+      resetGameplayInput();
+      const beats = data.frames.flatMap((frame, f) => frame.lines.map(line => ({ frame: f, line })));
+      scene = { id, data, beats, index: -1, left: 0, onDone, returnFocus: document.activeElement };
+      gameState = 'scene';
+      sceneTitle.textContent = data.title;
+      sceneLayer.hidden = false;
+      gameContainer.inert = true;
+      menuLayer.inert = true;
+      showBeat(0);
+      syncMenu();
+      sceneNext.focus({ preventScroll: true });
+    }
+
+    // Missing story art falls back to an existing environment image.
+    function setSceneArt(frame) {
+      if (sceneArt.dataset.frame === frame.art) return;
+      sceneArt.dataset.frame = frame.art;
+      sceneArt.hidden = false;
+      sceneArt.onerror = () => {
+        if (sceneArt.dataset.frame !== frame.art) return;
+        if (frame.fallback && !sceneArt.src.endsWith(frame.fallback)) sceneArt.src = frame.fallback;
+        else sceneArt.hidden = true;
+      };
+      sceneArt.src = frame.art;
+    }
+
+    function showBeat(index) {
+      scene.index = index;
+      const beat = scene.beats[index];
+      setSceneArt(scene.data.frames[beat.frame]);
+      const line = lineFor(beat.line);
+      fillCaption(sceneCaption, line);
+      scene.left = lineDuration(line) + 900;
+      sceneNext.textContent = index === scene.beats.length - 1 ? 'Continue' : 'Next';
+    }
+
+    function advanceScene() {
+      if (!scene) return;
+      if (scene.index + 1 < scene.beats.length) showBeat(scene.index + 1);
+      else closeScene(false);
+    }
+
+    function closeSceneView() {
+      const closed = scene;
+      scene = null;
+      sceneLayer.hidden = true;
+      gameContainer.inert = false;
+      menuLayer.inert = false;
+      return closed;
+    }
+
+    function closeScene(skipped) {
+      if (!scene) return;
+      const closed = closeSceneView();
+      gameState = 'play';
+      resetGameplayInput();
+      if (skipped) say(closed.data.essential || []);
+      const back = closed.returnFocus;
+      if (back?.isConnected && back !== document.body && !sceneLayer.contains(back)) back.focus({ preventScroll: true });
+      else if (sceneLayer.contains(document.activeElement)) document.activeElement.blur();
+      syncMenu();
+      closed.onDone?.();
+    }
+
+    sceneNext.addEventListener('click', advanceScene);
+    sceneSkip.addEventListener('click', () => closeScene(true));
+    // Keep keyboard focus inside the open scene.
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Tab' || !scene) return;
+      e.preventDefault();
+      const items = [sceneNext, sceneSkip];
+      const i = items.indexOf(document.activeElement);
+      items[(i + (e.shiftKey ? -1 : 1) + items.length) % items.length].focus();
+    });
+
+    function drawStory(view) {
+      if (!story) return;
+      const reduced = effectsReduced();
+      const now = performance.now();
+      for (const door of story.closedDoors) {
+        const s = door.solid;
+        if (!onScreen(view, s.x, s.y, s.width, s.height)) continue;
+        ctx.fillStyle = '#18212d';
+        ctx.fillRect(s.x, s.y, s.width, s.height);
+        ctx.fillStyle = 'rgba(244,195,123,0.55)';
+        for (let y = s.y + 10; y < s.y + s.height; y += 30) ctx.fillRect(s.x + 2, y, s.width - 4, 6);
+        ctx.fillStyle = '#ff9f86';
+        for (const deck of DECK_Y) ctx.fillRect(s.x + s.width / 2 - 2, deck - 52, 4, 4);
+      }
+      const step = story.data.steps[story.step];
+      const active = new Set(activeAnchors());
+      const holding = step?.type === 'hold' ? step.anchor : null;
+      if (holding) {
+        const a = storyPlan.anchors[holding];
+        const zone = story.data.anchors[holding].zone || 140;
+        const progress = Math.min(1, story.hold / (step.seconds * 1000));
+        ctx.fillStyle = 'rgba(138,221,223,0.16)';
+        ctx.fillRect(a.x + 16 - zone, a.y - 4, zone * 2, 4);
+        ctx.fillStyle = 'rgba(138,221,223,0.75)';
+        ctx.fillRect(a.x + 16 - zone, a.y - 4, zone * 2 * progress, 4);
+      }
+      for (const [id, a] of Object.entries(storyPlan.anchors)) {
+        if (!onScreen(view, a.x - 20, a.y - 100, 72, 100)) continue;
+        const def = story.data.anchors[id];
+        const live = active.has(id) || holding === id;
+        const color = live ? '#f4c37b' : (story.done.has(id) ? '#8fd486' : '#6f8197');
+        if (def.kind === 'remains') {
+          ctx.fillStyle = '#3a4350';
+          ctx.fillRect(a.x + 2, a.y - 7, 28, 7);
+          ctx.fillStyle = '#56606d';
+          ctx.fillRect(a.x + 24, a.y - 10, 8, 8);
+          ctx.fillStyle = color;
+          ctx.fillRect(a.x + 8, a.y - 9, 4, 3);
+        } else {
+          const wide = def.kind === 'archive';
+          if (def.kind === 'switch') {
+            ctx.fillStyle = '#3b4a55';
+            ctx.fillRect(a.x + 15, a.y - 96, 3, 70);
+            const blink = reduced || Math.floor(now / 520) % 2 === 0;
+            ctx.fillStyle = blink ? '#ff6b5e' : '#5a2b28';
+            ctx.fillRect(a.x + 13, a.y - 100, 7, 5);
+          }
+          ctx.fillStyle = wide ? '#5b4a33' : '#243243';
+          ctx.fillRect(a.x + (wide ? -4 : 6), a.y - (wide ? 20 : 28), wide ? 40 : 20, wide ? 20 : 28);
+          ctx.fillStyle = color;
+          ctx.fillRect(a.x + (wide ? 4 : 9), a.y - (wide ? 16 : 25), wide ? 24 : 14, wide ? 4 : 9);
+        }
+        if (live && !story.done.has(id)) {
+          const bob = reduced ? 0 : Math.sin(now / 240) * 2;
+          const cx = a.x + 16;
+          const top = a.y - 46 + bob;
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.moveTo(cx - 5, top);
+          ctx.lineTo(cx + 5, top);
+          ctx.lineTo(cx, top + 6);
+          ctx.closePath();
+          ctx.fill();
+          if (story.near === id) {
+            ctx.font = '700 8px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#ffe3b8';
+            ctx.fillText(isMobile ? 'USE' : 'E', cx, top - 4);
+            ctx.textAlign = 'left';
+          }
+        }
       }
     }
 
@@ -1610,6 +2118,11 @@
       gameState = 'play';
       runComplete = false;
       endKind = null;
+      endReason = '';
+      leaving = false;
+      story = null;
+      storyPlan = null;
+      if (scene) closeSceneView();
       stageBanner = null;
       player.x = 100;
       player.height = player.baseHeight;
@@ -1817,9 +2330,10 @@
       // the room's clear height.
       const playerRegion = regionAt(player);
       let best = null;
+      const barrier = closedDoorX();
       for (const point of layout.encounters) {
         const dx = point.x - player.x;
-        if (Math.abs(dx) > 1400) continue;
+        if (Math.abs(dx) > 1400 || point.x + e.width > barrier) continue;
         let y = point.y - e.height;
         if (type === 'ghost') {
           const low = point.y - e.height - 12;
@@ -2607,13 +3121,23 @@
       player.hitFlashTimer = Math.max(0, player.hitFlashTimer - dt);
       player.recoilTimer = Math.max(0, player.recoilTimer - dt);
       const wasGrounded = player.onGround;
+      const interactTap = pressedKeys.has('e') || pressedKeys.has('Enter');
       // Age kicks before this tick's shots so a new kick shows at full strength.
       updateShotKicks(dt);
       updatePlayer(dt);
       updateCamera(dt);
       if (atStageExit()) {
-        leaveStage();
-        return;
+        if (story && !storyExitOpen()) blockExit();
+        else {
+          const exitScene = story?.data.steps[story.step]?.exitScene;
+          if (exitScene) openScene(exitScene, leaveStage);
+          else leaveStage();
+          return;
+        }
+      }
+      if (story) {
+        updateStory(dt, interactTap);
+        if (gameState !== 'play') return;
       }
       if (!wasGrounded && player.onGround) lastLanding = elapsedTime;
       fallenSprites = fallenSprites.filter(enemy => elapsedTime - enemy.at < ENEMY_FALL[enemy.type]);
@@ -2994,7 +3518,7 @@
 
       // Spawn new enemies periodically with a smoother ramp and cap to avoid
       // sudden overcrowding.
-      spawnCooldown -= dt;
+      spawnCooldown -= dt * (story?.data.steps[story.step]?.spawnRate || 1);
       if (spawnCooldown <= 0 && gameState === 'play') {
         const maxEnemies = SETTINGS.difficulty === 'easy' ? 8 : (SETTINGS.difficulty === 'hard' ? 14 : 11);
         const delayed = enemies.length < maxEnemies && !spawnEnemy();
@@ -3276,7 +3800,7 @@
       ctx.fillStyle = art.tint;
       ctx.fillRect(view.x - WORLD_OVERSCAN, groundY, viewWidth + WORLD_OVERSCAN * 2, deckDepth + WORLD_OVERSCAN);
       drawEnvBand(env, art.deck, floor, view);
-      for (const ob of obstacles) {
+      for (const ob of layout.solids) {
         if (ob.role !== 'wall' || !onScreen(view, ob.x, ob.y, ob.width, ob.height)) continue;
         const src = envSource(env, art.wall);
         if (!src) continue;
@@ -3305,7 +3829,7 @@
         for (let y = top; y < ladder.bottom; y += tileH - 2) drawEnvImage(ladderSrc, ladder.x - r0 * scale, y, w, tileH, false);
         ctx.restore();
       }
-      for (const ob of obstacles) {
+      for (const ob of layout.solids) {
         if (ob.role === 'wall' || ob.type === 'deck' || !onScreen(view, ob.x, ob.y, ob.width, ob.height, 24)) continue;
         if (ob.role === 'cover') {
           const def = art.cover[ob.type] || art.cover.crate;
@@ -3347,7 +3871,9 @@
       ctx.fillStyle = `rgba(255,227,184,${0.75 + pulse * 0.25})`;
       ctx.font = '700 8px system-ui, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(playMode === 'campaign' && stageIndex + 1 === STAGES.length ? 'EXTRACT' : 'EXIT', x + EXIT_WIDTH / 2, top - 9);
+      const sealed = story && !storyExitOpen();
+      if (sealed) ctx.fillStyle = '#ff9f86';
+      ctx.fillText(sealed ? 'SEALED' : (playMode === 'campaign' && stageIndex + 1 === STAGES.length ? 'EXTRACT' : 'EXIT'), x + EXIT_WIDTH / 2, top - 9);
       ctx.textAlign = 'left';
     }
 
@@ -3426,7 +3952,7 @@
       if (left < 51) drawTerrainTile('deckEnd', 0, groundY, 51, deckDepth, true);
       if (right > worldWidth - 51) drawTerrainTile('deckEnd', worldWidth - 51, groundY, 51, deckDepth);
 
-      for (const ob of obstacles) {
+      for (const ob of layout.solids) {
         if (ob.role !== 'wall' || !onScreen(view, ob.x, ob.y, ob.width, ob.height)) continue;
         ctx.fillStyle = '#1a2738';
         ctx.fillRect(ob.x, ob.y, ob.width, ob.height);
@@ -3450,7 +3976,7 @@
           ctx.fillRect(x + 3, top + rung, ladder.width - 6, 2);
         }
       }
-      for (const obstacle of obstacles) {
+      for (const obstacle of layout.solids) {
         if (obstacle.role === 'wall' || obstacle.type === 'deck') continue;
         if (!onScreen(view, obstacle.x, obstacle.y, obstacle.width, obstacle.height)) continue;
         const x = obstacle.x;
@@ -3564,6 +4090,7 @@
       ctx.save();
       ctx.setTransform(zoom, 0, 0, zoom, offset.x - view.x * zoom, offset.y - view.y * zoom);
       drawTerrain(view);
+      drawStory(view);
       // Draw pickups
       pickups.forEach(p => {
         if (!onScreen(view, p.x, p.y, p.width, p.height, 24)) return;
@@ -3961,7 +4488,8 @@
       const complete = STAGES.every(stage => campaign.cleared.includes(stage.id));
       const cont = menuRows[STAGES.length];
       cont.name.textContent = entry ? `Continue · ${stageById(entry.stage).name}` : (complete ? 'Replay campaign' : 'Start campaign');
-      cont.value.textContent = entry ? `${WEAPONS[entry.loadout.weapon].name} · ${entry.loadout.health}% · ${entry.loadout.gold} G` : 'From Space Station';
+      const kit = entry?.checkpoint?.loadout || entry?.loadout;
+      cont.value.textContent = entry ? `${entry.checkpoint ? 'Checkpoint · ' : ''}${WEAPONS[kit.weapon].name} · ${kit.health}% · ${kit.gold} G` : 'From Space Station';
       const quick = menuRows[STAGES.length + 1];
       const locked = status === 'locked';
       quick.name.textContent = `Quickplay · ${picked.name}`;
@@ -4003,7 +4531,7 @@
       menuLayer.classList.toggle('title-art', mode === 'start');
       menuLayer.classList.toggle('map-layer', mode === 'map');
       menuLayer.classList.remove('map-fallback');
-      menuLayer.hidden = mode === 'play' || mode === 'boot';
+      menuLayer.hidden = mode === 'play' || mode === 'boot' || mode === 'scene';
       if (menuLayer.hidden) return;
 
       const panel = element('section', mode === 'shop' ? 'menu-panel shop-panel' : (mode === 'map' ? 'menu-panel map-panel' : 'menu-panel'));
@@ -4065,13 +4593,17 @@
           cleared: `${stage.name} cleared · ${next?.name} unlocked`,
           complete: `All ${STAGES.length} stages cleared`
         }[endKind] || stage.name;
+        const data = playMode === 'campaign' ? STORY.STAGES[stage.id] : null;
+        if (endKind === 'dead' && endReason) panel.append(element('p', 'gameover-summary', endReason));
+        if (data && (endKind === 'cleared' || endKind === 'complete')) panel.append(element('p', 'gameover-story', data.clear));
         panel.append(element('p', 'gameover-summary', `${summary} · Gold: ${player.gold}`));
+        if (data && endKind === 'complete' && data.endCard) panel.append(element('p', 'gameover-card', data.endCard));
       }
       labels.forEach((label, index) => addMenuRow(options, label, index, mode === 'settings'));
       panel.append(options);
       if (mode === 'settings') addBackButton(panel, 'Back', 'system-button menu-back');
       if (mode === 'start' && !isMobile) {
-        panel.append(element('p', 'menu-hint', 'Move: A/D or arrows · Jump: Space · Fire: Z · Reload: X · Shop: P'));
+        panel.append(element('p', 'menu-hint', 'Move: A/D or arrows · Jump: Space · Fire: Z · Reload: X · Interact: E · Shop: P'));
       }
     }
 
@@ -4081,7 +4613,7 @@
       if (changed) {
         menuMode = mode;
         buildMenu(mode);
-        document.body.toggleAttribute('data-playing', mode === 'play');
+        document.body.toggleAttribute('data-playing', mode === 'play' || mode === 'scene');
       }
       if (menuLayer.hidden) return;
       const selected = selectedRow();
@@ -4134,6 +4666,11 @@
       } else {
         accumulator = 0;
       }
+      if (gameState === 'scene' && scene && !document.hidden && windowFocused) {
+        scene.left -= frameMs;
+        if (scene.left <= 0) advanceScene();
+      }
+      syncStoryHud();
       if ((document.body.dataset.boot === 'ready' && gameState !== menuMode) ||
           (menuMode === 'start' && menuRows[0].row.disabled !== !artReady)) syncMenu();
       updateMusic(now);
