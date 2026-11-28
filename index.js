@@ -1174,152 +1174,185 @@
 
     if (isMobile) {
       const ctrlBar = document.getElementById('mobile-controls');
-      if (ctrlBar) {
-        ctrlBar.hidden = false;
-        document.body.setAttribute('data-touch', '');
+      ctrlBar.hidden = false;
+      document.body.setAttribute('data-touch', '');
+      const buttons = Array.from(ctrlBar.querySelectorAll('.control-btn'));
+      // These open or leave a menu, so they also go through the menu input.
+      const menuKeys = new Set(['Escape', 'p', 'P']);
+      // A pointer press is followed by a compatibility click; remember when
+      // each control was last pressed so that click isn't counted twice.
+      const pointerActivity = new WeakMap();
+      const POINTER_CLICK_WINDOW = 1000;
 
-        const buttons = Array.from(ctrlBar.querySelectorAll('.control-btn'));
-        const menuKeys = new Set(['Enter', 'Escape', 'p', 'P', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
-        const pointerToButton = new Map();
-        const activePointersByButton = new Map();
-        const directionPad = ctrlBar.querySelector('.direction-pad');
-        const directionPointers = new Set();
-        // A pointer activation is followed by a compatibility click whose
-        // detail can be 0 on touch screens. Remember when each control was
-        // last pressed or released by a pointer so that click is ignored.
-        const pointerActivity = new WeakMap();
-        const POINTER_CLICK_WINDOW = 1000;
+      // A press that opens a menu hides the controls under the finger, so the
+      // browser's click after it would land on the new menu (and could buy
+      // something in the shop). That one click is swallowed.
+      const swallowAfterUp = new Set();
+      let swallowClicksUntil = 0;
+      document.addEventListener('pointerup', event => {
+        if (swallowAfterUp.delete(event.pointerId)) swallowClicksUntil = performance.now() + 400;
+      }, true);
+      document.addEventListener('click', event => {
+        if (performance.now() < swallowClicksUntil && !ctrlBar.contains(event.target)) {
+          event.preventDefault();
+          event.stopPropagation();
+          swallowClicksUntil = 0;
+        }
+      }, true);
 
-        const pressButton = (btn, keyName, pointerId, event, pointerType) => {
+      const vibrate = pointerType => {
+        if ((pointerType === 'touch' || pointerType === 'pen') && canPulse()) navigator.vibrate(10);
+      };
+
+      // ------------------------------------------------ buttons: one pointer each
+      const buttonPointers = new Map();
+      const releaseButton = pointerId => {
+        const btn = buttonPointers.get(pointerId);
+        if (!btn) return;
+        buttonPointers.delete(pointerId);
+        releaseGameplayKey(touchKeys, btn.dataset.key);
+        if (![...buttonPointers.values()].includes(btn)) btn.classList.remove('pressed');
+      };
+      for (const btn of buttons) {
+        const key = btn.dataset.key;
+        btn.addEventListener('pointerdown', event => {
           if (event.cancelable) event.preventDefault();
           event.stopPropagation();
-
-          const setForButton = activePointersByButton.get(btn) || new Set();
-          if (setForButton.has(pointerId)) return;
-
-          setForButton.add(pointerId);
-          activePointersByButton.set(btn, setForButton);
-          pointerToButton.set(pointerId, btn);
-          if (setForButton.size === 1) btn.classList.add('pressed');
-          pressGameplayKey(touchKeys, keyName);
-
-          // Fire is confirmed by the per-round shot pulse instead.
-          if ((pointerType === 'touch' || pointerType === 'pen') && keyName !== 'z' && canPulse()) navigator.vibrate(10);
-
-          if (menuKeys.has(keyName) && setForButton.size === 1) {
-            handleMenuInput({ key: keyName, repeat: false });
-          }
-        };
-
-        const releaseButton = (btn, keyName, pointerId, event) => {
-          const setForButton = activePointersByButton.get(btn);
-          if (!setForButton || !setForButton.has(pointerId)) return;
-
-          if (event && event.cancelable) event.preventDefault();
-          if (event) event.stopPropagation();
-
-          setForButton.delete(pointerId);
-          pointerToButton.delete(pointerId);
-          releaseGameplayKey(touchKeys, keyName);
-
-          if (setForButton.size === 0) {
-            activePointersByButton.delete(btn);
-            btn.classList.remove('pressed');
-          }
-        };
-
-        clearTouchInputs = () => {
-          pointerToButton.forEach((btn, pointerId) => {
-            const keyName = btn.getAttribute('data-key');
-            releaseButton(btn, keyName, pointerId);
-          });
-          touchKeys.clear();
-          activePointersByButton.clear();
-          directionPointers.clear();
-          pointerToButton.clear();
-          buttons.forEach((btn) => btn.classList.remove('pressed'));
-        };
-
-        const finishPointer = event => {
-          const { pointerId } = event;
-          directionPointers.delete(pointerId);
-          const current = pointerToButton.get(pointerId);
-          if (current) releaseButton(current, current.dataset.key, pointerId, event);
-        };
-
-        buttons.forEach((btn) => {
-          const keyName = btn.dataset.key;
-
-          btn.addEventListener('pointerdown', (event) => {
-            pointerActivity.set(btn, performance.now());
-            if (event.pointerType !== 'mouse' && directionPad.contains(btn)) {
-              directionPointers.add(event.pointerId);
-            }
-            pressButton(btn, keyName, event.pointerId, event, event.pointerType);
-            if (btn.setPointerCapture) {
-              try { btn.setPointerCapture(event.pointerId); } catch (err) {}
-            }
-          }, { passive: false });
-
-          for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-            btn.addEventListener(type, finishPointer, { passive: false });
-          }
-          btn.addEventListener('pointerup', () => pointerActivity.set(btn, performance.now()));
-
-          btn.addEventListener('pointerleave', (event) => {
-            if (event.pointerType === 'mouse') {
-              releaseButton(btn, keyName, event.pointerId, event);
-            }
-          }, { passive: false });
-
-          btn.addEventListener('touchcancel', () => {
-            const setForButton = activePointersByButton.get(btn);
-            if (!setForButton) return;
-            Array.from(setForButton).forEach((pointerId) => {
-              releaseButton(btn, keyName, pointerId);
-            });
-          }, { passive: true });
-
-          btn.addEventListener('contextmenu', (event) => event.preventDefault());
-          btn.addEventListener('dragstart', (event) => event.preventDefault());
-          btn.addEventListener('selectstart', (event) => event.preventDefault());
-        });
-
-        ctrlBar.addEventListener('pointermove', (event) => {
-          if (event.pointerType === 'mouse') return;
-          const { pointerId, clientX, clientY } = event;
-          const current = pointerToButton.get(pointerId);
-          if (directionPointers.has(pointerId) && gameState === 'play') {
-            const hit = document.elementFromPoint(clientX, clientY);
-            const next = hit?.closest('.control-btn');
-            if (next && directionPad.contains(next)) {
-              if (next === current) return;
-              if (current) releaseButton(current, current.dataset.key, pointerId);
-              pressButton(next, next.dataset.key, pointerId, event, event.pointerType);
-              return;
-            }
-            // Maintain the held direction while rocking across the center.
-            if (directionPad.contains(hit)) return;
-          }
-          if (!current) return;
-          const bounds = current.getBoundingClientRect();
-          if (clientX < bounds.left || clientX > bounds.right || clientY < bounds.top || clientY > bounds.bottom) {
-            releaseButton(current, current.dataset.key, pointerId, event);
+          if (buttonPointers.has(event.pointerId)) return;
+          pointerActivity.set(btn, performance.now());
+          buttonPointers.set(event.pointerId, btn);
+          btn.classList.add('pressed');
+          try { btn.setPointerCapture(event.pointerId); } catch {}
+          vibrate(event.pointerType);
+          pressGameplayKey(touchKeys, key);
+          if (menuKeys.has(key)) {
+            swallowAfterUp.add(event.pointerId);
+            handleMenuInput({ key, repeat: false });
           }
         }, { passive: false });
-
-        // Keyboard and assistive-technology activations have no pointerdown.
-        // Clicks that follow a pointer press on the same control already acted.
-        ctrlBar.addEventListener('click', event => {
-          const btn = event.target.closest('.control-btn');
-          const key = btn?.dataset.key;
-          if (!key) return;
+        for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+          btn.addEventListener(type, event => {
+            pointerActivity.set(btn, performance.now());
+            releaseButton(event.pointerId);
+          });
+        }
+        btn.addEventListener('contextmenu', event => event.preventDefault());
+        // Keyboard and assistive activations have no pointer press.
+        btn.addEventListener('click', event => {
+          event.stopPropagation();
           if (performance.now() - (pointerActivity.get(btn) ?? -Infinity) < POINTER_CLICK_WINDOW) return;
           pressGameplayKey(touchKeys, key);
           if (menuKeys.has(key)) handleMenuInput({ key });
           releaseGameplayKey(touchKeys, key);
         });
       }
+
+      // ------------------------------------------------------- thumb sticks
+      // Positions are measured from the stick's centre as a fraction of its
+      // radius. Inside the dead zone nothing is held. Horizontal input needs
+      // HORIZONTAL; up and down need VERTICAL and an angle within 55° of
+      // straight up or down, so a sideways drag never crouches or climbs.
+      const STICK = { dead: 0.24, horizontal: 0.3, vertical: 0.5, verticalSlope: Math.tan(55 * Math.PI / 180), jumpZone: 0.36, travel: 0.55 };
+      const sticks = [];
+      function makeStick(el, kind) {
+        const stick = { el, kind, knob: el.querySelector('.stick-knob'), pointerId: null, keys: new Set(), lastPointer: -Infinity };
+        const setKeys = next => {
+          for (const k of stick.keys) if (!next.has(k)) releaseGameplayKey(touchKeys, k);
+          for (const k of next) if (!stick.keys.has(k)) pressGameplayKey(touchKeys, k);
+          stick.keys = next;
+        };
+        const vector = event => {
+          const box = el.getBoundingClientRect();
+          const r = box.width / 2;
+          return { x: (event.clientX - box.left - r) / r, y: (event.clientY - box.top - r) / r, r };
+        };
+        const directions = (v, keys) => {
+          const d = Math.hypot(v.x, v.y);
+          if (d < STICK.dead) return keys;
+          if (kind === 'move' && Math.abs(v.x) >= STICK.horizontal) keys.add(v.x < 0 ? 'ArrowLeft' : 'ArrowRight');
+          if (Math.abs(v.y) >= STICK.vertical && Math.abs(v.x) <= Math.abs(v.y) * STICK.verticalSlope) keys.add(v.y < 0 ? 'ArrowUp' : 'ArrowDown');
+          return keys;
+        };
+        const show = v => {
+          const d = Math.min(1, Math.hypot(v.x, v.y));
+          const angle = Math.atan2(v.y, v.x);
+          el.style.setProperty('--kx', `${Math.cos(angle) * d * STICK.travel * v.r}px`);
+          el.style.setProperty('--ky', `${Math.sin(angle) * d * STICK.travel * v.r}px`);
+        };
+        stick.release = () => {
+          if (stick.pointerId !== null) {
+            try { el.releasePointerCapture(stick.pointerId); } catch {}
+          }
+          stick.pointerId = null;
+          setKeys(new Set());
+          el.dataset.active = 'false';
+          el.dataset.jump = 'false';
+          el.style.setProperty('--kx', '0px');
+          el.style.setProperty('--ky', '0px');
+        };
+        el.addEventListener('pointerdown', event => {
+          if (event.cancelable) event.preventDefault();
+          event.stopPropagation();
+          if (stick.pointerId !== null) return;
+          stick.pointerId = event.pointerId;
+          stick.lastPointer = performance.now();
+          try { el.setPointerCapture(event.pointerId); } catch {}
+          const v = vector(event);
+          const keys = new Set();
+          if (kind === 'move') {
+            // A deliberate press in the centre jumps once; the same touch can
+            // then drag into movement. A press on the ring only moves.
+            if (Math.hypot(v.x, v.y) <= STICK.jumpZone) {
+              keys.add('Space');
+              el.dataset.jump = 'true';
+              vibrate(event.pointerType);
+            }
+          } else {
+            // Fire: one round on the press, sustained while held for automatics.
+            keys.add('z');
+          }
+          setKeys(directions(v, keys));
+          el.dataset.active = 'true';
+          show(v);
+        }, { passive: false });
+        el.addEventListener('pointermove', event => {
+          if (event.pointerId !== stick.pointerId) return;
+          if (event.cancelable) event.preventDefault();
+          const v = vector(event);
+          const keys = new Set([...stick.keys].filter(k => k === 'Space' || k === 'z'));
+          setKeys(directions(v, keys));
+          show(v);
+        }, { passive: false });
+        for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+          el.addEventListener(type, event => {
+            if (event.pointerId !== stick.pointerId) return;
+            stick.lastPointer = performance.now();
+            stick.release();
+          });
+        }
+        el.addEventListener('contextmenu', event => event.preventDefault());
+        // Keyboard and assistive activation: the move stick jumps, the fire stick fires once.
+        el.addEventListener('click', event => {
+          event.stopPropagation();
+          if (performance.now() - stick.lastPointer < POINTER_CLICK_WINDOW) return;
+          const k = kind === 'move' ? 'Space' : 'z';
+          pressGameplayKey(touchKeys, k);
+          releaseGameplayKey(touchKeys, k);
+        });
+        sticks.push(stick);
+        return stick;
+      }
+      makeStick(document.getElementById('stick-move'), 'move');
+      makeStick(document.getElementById('stick-aim'), 'aim');
+
+      // Called on blur, hidden tab, pause and other state changes, rotation
+      // and fullscreen changes: every held control lets go.
+      clearTouchInputs = () => {
+        for (const stick of sticks) stick.release();
+        for (const pointerId of [...buttonPointers.keys()]) releaseButton(pointerId);
+        for (const btn of buttons) btn.classList.remove('pressed');
+        touchKeys.clear();
+      };
     }
 
     // Collections for dynamic entities
@@ -4480,13 +4513,14 @@
       if (age > 2600) { stageBanner = null; return; }
       const alpha = Math.min(1, age / 250, (2600 - age) / 500);
       ctx.globalAlpha = alpha;
-      ctx.font = '800 22px system-ui, sans-serif';
+      ctx.font = '700 26px "Barlow Condensed", system-ui, sans-serif';
       ctx.textAlign = 'center';
       const w = ctx.measureText(stageBanner.text).width + 36;
       ctx.fillStyle = 'rgba(10,18,29,0.82)';
-      ctx.fillRect(width / 2 - w / 2, 78, w, 38);
+      // Below the HUD and objective panel, above the player's deck.
+      ctx.fillRect(width / 2 - w / 2, 150, w, 40);
       ctx.fillStyle = '#ffe3b8';
-      ctx.fillText(stageBanner.text, width / 2, 105);
+      ctx.fillText(stageBanner.text, width / 2, 179);
       ctx.textAlign = 'left';
       ctx.globalAlpha = 1;
     }
@@ -4641,9 +4675,11 @@
       const briefText = element('p', 'map-text');
       brief.append(briefName, briefStatus, briefObjective, briefText);
       const actions = element('div', 'menu-options map-actions');
-      addMenuRow(actions, 'Continue', STAGES.length, true);
-      addMenuRow(actions, 'Quickplay', STAGES.length + 1, true);
-      addMenuRow(actions, 'Back', STAGES.length + 2, false);
+      // Campaign Continue is the amber primary action; Quickplay is a
+      // separate cyan-outlined run that never touches campaign progress.
+      addMenuRow(actions, 'Continue', STAGES.length, true).classList.add('action-campaign');
+      addMenuRow(actions, 'Quickplay', STAGES.length + 1, true).classList.add('action-quickplay');
+      addMenuRow(actions, 'Back', STAGES.length + 2, false).classList.add('action-back');
       const notice = element('p', 'map-notice');
       notice.setAttribute('role', 'status');
       side.append(brief, actions, notice);
@@ -4661,9 +4697,12 @@
         row.dataset.status = status;
         row.dataset.next = String(next);
         row.setAttribute('aria-pressed', String(i === mapPick));
-        value.textContent = statusText[status] + (next ? ' · Next' : '');
+        const picked = i === mapPick;
+        // Every state is written out, not only coloured.
+        value.textContent = (status === 'locked' ? '🔒 ' : status === 'cleared' ? '✓ ' : '') + statusText[status] +
+          (next ? ' · Next' : '') + (picked ? ' · Selected' : '');
         // Spoken state: name, status and, when locked, how to unlock it.
-        row.setAttribute('aria-label', `${stage.name}. ${statusText[status]}${next ? ', next campaign stop' : ''}. ${status === 'locked' ? unlockCondition(stage) : ''}`.trim());
+        row.setAttribute('aria-label', `${stage.name}. ${statusText[status]}${next ? ', next campaign stop' : ''}${picked ? ', selected' : ''}. ${status === 'locked' ? unlockCondition(stage) : ''}`.trim());
       });
       mapParts.segments.forEach((line, i) => line.setAttribute('class', campaign.unlocked.includes(STAGES[i + 1].id) ? 'open' : 'locked'));
       const picked = STAGES[mapPick];
@@ -4787,7 +4826,11 @@
         panel.append(element('p', 'gameover-summary', `${summary} · Gold: ${player.gold}`));
         if (data && endKind === 'complete' && data.endCard) panel.append(element('p', 'gameover-card', data.endCard));
       }
-      labels.forEach((label, index) => addMenuRow(options, label, index, mode === 'settings'));
+      labels.forEach((label, index) => {
+        const row = addMenuRow(options, label, index, mode === 'settings');
+        // The first action on the start, pause and results screens is the primary one.
+        if (index === 0 && (mode === 'start' || mode === 'menu' || mode === 'gameover')) row.classList.add('primary');
+      });
       panel.append(options);
       if (mode === 'settings') addBackButton(panel, 'Back', 'system-button menu-back');
       if (mode === 'start' && !isMobile) {
@@ -4802,6 +4845,7 @@
         menuMode = mode;
         buildMenu(mode);
         document.body.toggleAttribute('data-playing', mode === 'play' || mode === 'scene');
+        document.body.dataset.state = mode;
       }
       if (menuLayer.hidden) return;
       const selected = selectedRow();
