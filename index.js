@@ -129,15 +129,38 @@
   ];
   const stageById = id => STAGES.find(stage => stage.id === id);
 
-  // Credits roll (no story spoilers: it is also reachable from the title).
+  // Closing credits. Only confirmed attributions: sound effects from
+  // assets/audio/field-sfx/README.md and the font from assets/fonts/README.md.
+  // The repository records no composer or artist names or licences for the
+  // music and art, so those are listed without names. No story spoilers: the
+  // roll is also reachable from the title.
   const CREDITS = [
-    ['SPACE COMMANDO', ['A game by INSPIRE.']],
+    ['SPACE COMMANDO', ['A teamInspire project.']],
+    ['Development', ['teamInspire', 'AI-assisted development with Claude (Anthropic) and Codex (OpenAI).']],
     ['Music', ['Space Commando: Main Menu', 'Space Station: Level 1 Ambient', 'Jungle Planet: Level Theme',
       'Cyber City: Urban Warfare', 'Desert Ruins: Ancient Temple', 'Orbital Station (Ambient Cutscene)',
       'Jungle Planet: Emergency Crash Landing', 'CyberCity Escape (Cloudline Break)', 'Desolate Desert Ruins',
       'Iron and Sand (Instrumental Credits)']],
-    ['Sound effects', ['CC0 recordings by morganpurkis, pgi, DeltaCode, NoonerBear, qubodup, Sojan, CVLTIV8R, gmoney514093, saangosu and SergeyIonov on Freesound, and by Kenney and Ogrebane on OpenGameArt.']],
-    ['Type', ['Barlow Condensed by The Barlow Project Authors, SIL Open Font License 1.1.']]
+    ['Art', ['Commando, enemy and pickup sprites', 'Orbital station, Jungle Planet, CyberCity and desert ruins environments',
+      'Story stills, radio portraits, title art and star map']],
+    ['Sound effects · CC0 1.0', [
+      'Pistol fire: “Single Pistol Gunshot 3.2” by morganpurkis (Freesound)',
+      'Rifle fire: “Machine Gun 001 - single shot” by pgi (Freesound)',
+      'Shotgun fire: “shotgun-one-shot” by DeltaCode (Freesound)',
+      'Laser fire: Sci-Fi Sounds, “laserSmall_003” by Kenney (OpenGameArt)',
+      'Pistol reload: “Taurus G2c Magazine Release” by NoonerBear (Freesound)',
+      'Rifle reload: “Assault Rifle Reload” by qubodup (Freesound)',
+      'Shotgun pump: “R870 Pump 1” by qubodup (Freesound)',
+      'Laser recharge: “Power Charge” by Sojan (Freesound)',
+      'Alien hurt: “Creature Monster Alien Vocal FX-6” by CVLTIV8R (Freesound)',
+      'Ghost hurt: “Creepy Ghost Hit” by gmoney514093 (Freesound)',
+      'Robot hurt: “videogame sci-fi metalish damage efect” by saangosu (Freesound)',
+      'Robot movement: “MnG - Mech Step” by SergeyIonov (Freesound)',
+      'Zombie hurt: Monster Sound Effects Pack, “monster-3” by Ogrebane (OpenGameArt)',
+      'Grenade detonation (included for a future event): “Explosion / Gun” by SamsterBirdies (Freesound)']],
+    ['Typeface', ['Barlow Condensed SemiBold and Bold by The Barlow Project Authors, SIL Open Font License 1.1, packaged by Fontsource (@fontsource/barlow-condensed 5.1.0).']],
+    ['Software', ['No third-party code libraries ship with the game.']],
+    ['Thanks for playing', ['']]
   ];
   const stageOrder = id => STAGES.findIndex(stage => stage.id === id);
 
@@ -1279,10 +1302,19 @@
         }
         // no escape action on start menu
       } else if (gameState === 'credits') {
-        if (e.key === 'Enter' || e.key === 'Escape') {
+        // Arrows and Page keys scroll the roll; Enter or Escape leaves.
+        const roll = menuLayer.querySelector('.credits-roll');
+        const steps = { ArrowDown: 48, ArrowUp: -48, PageDown: 0.85, PageUp: -0.85 };
+        if (roll && e.key in steps) {
+          const step = steps[e.key];
+          roll.scrollTop += Math.abs(step) < 1 ? step * roll.clientHeight : step;
+          creditsRoll.holdUntil = performance.now() + 3000;
+        } else if (roll && (e.key === 'Home' || e.key === 'End')) {
+          roll.scrollTop = e.key === 'Home' ? 0 : roll.scrollHeight;
+          creditsRoll.holdUntil = performance.now() + 3000;
+        } else if (e.key === 'Enter' || e.key === 'Escape') {
           playLegacyEffect(selectSfx);
-          if (creditsFrom === 'complete') openStarMap();
-          else { gameState = 'start'; startMenuSelection = 2; }
+          leaveCredits();
         }
       } else if (gameState === 'gameover') {
         const count = endOptions.length || 1;
@@ -1715,11 +1747,36 @@
     // Credits: after Mission complete the credits track carries on; from the
     // title it starts fresh.
     let creditsFrom = 'start';
+    // The roll scrolls itself slowly unless effects are reduced; any manual
+    // scroll, key or touch holds it for a few seconds.
+    const creditsRoll = { holdUntil: 0, last: null, offset: 0 };
     function openCredits(from) {
       if (from !== 'complete') musicEntry.credits++;
       creditsFrom = from;
+      creditsRoll.holdUntil = performance.now() + 1500;
+      creditsRoll.last = null;
+      creditsRoll.offset = 0;
       resetGameplayInput();
       gameState = 'credits';
+    }
+
+    // Leaving returns where Credits was opened: the Mission complete summary
+    // (whose credits track carries on) or the title.
+    function leaveCredits() {
+      if (creditsFrom === 'complete') { gameState = 'gameover'; endSelection = Math.max(0, endOptions.length - 1); }
+      else { gameState = 'start'; startMenuSelection = 2; }
+    }
+
+    function updateCreditsRoll(now) {
+      if (gameState !== 'credits') return;
+      const roll = menuLayer.querySelector('.credits-roll');
+      const dt = creditsRoll.last === null ? 0 : Math.min(100, now - creditsRoll.last);
+      creditsRoll.last = now;
+      if (!roll || effectsReduced() || now < creditsRoll.holdUntil || document.hidden) return;
+      // Sub-pixel accumulation keeps the 28 px/s scroll smooth.
+      creditsRoll.offset += dt * 0.028;
+      const whole = Math.floor(creditsRoll.offset);
+      if (whole) { roll.scrollTop += whole; creditsRoll.offset -= whole; }
     }
 
     function openStarMap() {
@@ -5011,15 +5068,24 @@
       if (mode === 'credits') {
         panel.classList.add('credits-panel');
         const roll = element('div', 'credits-roll');
+        // Focusable and labelled, so keyboard and screen-reader users can read it.
+        roll.tabIndex = 0;
+        roll.setAttribute('role', 'region');
+        roll.setAttribute('aria-label', 'Credits');
         for (const [title, lines] of CREDITS) {
           const section = element('section');
           section.append(element('h3', '', title));
-          for (const line of lines) section.append(element('p', '', line));
+          for (const line of lines) if (line) section.append(element('p', '', line));
           roll.append(section);
         }
+        // A touch, wheel or drag on the roll holds the auto-scroll.
+        for (const type of ['pointerdown', 'wheel', 'touchstart']) {
+          roll.addEventListener(type, () => { creditsRoll.holdUntil = performance.now() + 3000; }, { passive: true });
+        }
         panel.append(roll);
+        panel.append(element('p', 'menu-hint', effectsReduced() ? 'Scroll or use the arrow keys to read.' : 'The credits scroll on their own; scroll or use the arrow keys to read at your pace.'));
         const options = element('div', 'menu-options');
-        addMenuRow(options, creditsFrom === 'complete' ? 'Star map' : 'Back', 0, false).classList.add('primary');
+        addMenuRow(options, creditsFrom === 'complete' ? 'Skip credits' : 'Back', 0, false).classList.add('primary');
         panel.append(options);
         return;
       }
@@ -5122,6 +5188,7 @@
         if (scene.left <= 0) advanceScene();
       }
       syncStoryHud();
+      updateCreditsRoll(now);
       if ((document.body.dataset.boot === 'ready' && gameState !== menuMode) ||
           (menuMode === 'start' && menuRows[0].row.disabled !== !artReady)) syncMenu();
       updateMusic(now);
